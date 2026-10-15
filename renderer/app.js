@@ -867,7 +867,8 @@ function wire() {
       setMode(MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]);
     }
   });
-  $('#send-btn').addEventListener('click', () => (activeChat()?.busy ? stop() : send()));
+  $('#send-btn').addEventListener('click', () => ($('#send-btn').classList.contains('stop') ? stop() : send()));
+  $('#input').addEventListener('input', updateSendButton);
   $('#model-select').addEventListener('change', (e) => desk.setSettings({ model: e.target.value }));
   $('#effort-select').addEventListener('change', (e) => desk.setSettings({ effort: e.target.value }));
 

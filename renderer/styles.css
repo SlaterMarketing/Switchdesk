@@ -438,6 +438,20 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .theme-btn { display: inline-flex; align-items: center; justify-content: center; }
 .theme-btn:hover { color: var(--text-strong); background: var(--bg-hover); }
 
+/* changes card: one collapsed row */
+.card.changes { padding: 0; }
+.changes-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; cursor: pointer; font-size: 12px; }
+.changes-head .twisty { color: var(--text-dim); transition: transform 0.12s; display: inline-block; width: 10px; }
+.card.changes.open .changes-head .twisty { transform: rotate(90deg); }
+.changes-count { color: var(--text-dim); }
+.changes-status { color: var(--text-dim); font-style: italic; }
+.ghost-btn { border: none; background: none; color: var(--text-dim); font: 12px var(--sans); padding: 3px 8px; border-radius: 5px; cursor: pointer; }
+.ghost-btn:hover { color: var(--text-strong); background: var(--bg-hover); }
+.ghost-btn.strong { background: var(--bg-hover); color: var(--text-strong); }
+.card.changes.settled .ghost-btn { display: none; }
+.changes-body { border-top: 1px solid var(--border); padding: 6px 10px 8px; }
+.changes-body.hidden { display: none; }
+
 /* plans open as documents */
 #editor-host.with-plan #editor { top: 40px; }
 #plan-bar { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); z-index: 4; }
@@ -478,6 +492,8 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 #queue .queued { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 8px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg-input); font-size: 12px; min-width: 0; }
 #queue .q-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 600; flex: none; }
 #queue .q-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+#queue .q-now { border: 1px solid var(--accent); background: none; color: var(--accent); border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-weight: 700; flex: none; }
+#queue .q-now:hover { background: var(--accent); color: #fff; }
 #queue .q-x { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 14px; padding: 0 4px; }
 #queue .q-x:hover { color: var(--err); }
 

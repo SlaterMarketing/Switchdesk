@@ -370,7 +370,8 @@ function startTurn(chat, shown, mode, images, rwText) {
 }
 
 function endTurn(chat) {
-  const stopped = !chat.turn || chat.turn.interrupted;
+  const stopped = (!chat.turn || chat.turn.interrupted) && !chat.sendNext;
+  chat.sendNext = false;
   if (chat.turn) for (const row of chat.turn.tools.values()) row.el.classList.remove('running');
   chat.turn = null;
   chat.busy = false;
@@ -457,7 +458,7 @@ function handleEvent(chat, ev) {
       chat.usage.turns++;
       if (chat.id === activeChatId) renderChatMeta();
       if (turn) {
-        if (turn.interrupted) appendChat(h('div', { class: 'notice' }, 'Stopped.'), chat);
+        if (turn.interrupted) appendChat(h('div', { class: 'notice' }, turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
         else if (ev.is_error) appendChat(h('div', { class: 'turn-error' }, ev.result || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`), chat);
         else {
           const secs = Math.round((ev.duration_ms || Date.now() - turn.started) / 1000);
@@ -782,11 +783,14 @@ function reviewChange(c) {
   openDiff(c);
 }
 
+// Collapsed by default, like Cursor: "› 2 Files  Undo  Keep  Review". Click the row to list the files.
 function changesCard(chat, turnId, changes) {
-  const card = h('div', { class: 'card changes' }, h('h4', {}, `${changes.length} file${changes.length > 1 ? 's' : ''} changed`));
+  let add = 0;
+  let del = 0;
   const rows = changes.map((c) => {
     c.turnId = turnId;
     const s = c.binary ? null : lineDiffStats(c.before, c.after);
+    if (s) (add += s.add), (del += s.del);
     const label = c.rel + (c.created ? ' (new)' : c.deleted ? ' (deleted)' : c.binary ? ' (binary)' : '');
     const row = h(
       'div',
@@ -801,6 +805,12 @@ function changesCard(chat, turnId, changes) {
     if (!c.worktree) state.changedFiles.add(c.rel);
     return row;
   });
+  const body = h('div', { class: 'changes-body hidden' }, ...rows);
+  const status = h('span', { class: 'changes-status' });
+  const setStatus = (text) => {
+    status.textContent = text;
+    card.classList.toggle('settled', !!text);
+  };
   const undo = async (list) => {
     list = list.filter((c) => !c.undone);
     if (!list.length) return;
@@ -812,21 +822,46 @@ function changesCard(chat, turnId, changes) {
       $('button', c.row).disabled = true;
       state.changedFiles.delete(c.rel);
     }
+    if (changes.every((c) => c.undone)) setStatus('Undone');
     await reloadOpenFiles(list.map((c) => c.rel));
     if (activeTab()?.change && list.includes(activeTab().change)) activateTab(state.activeTab);
     refreshFiles();
     refreshGit();
+    renderTree();
   };
-  const reviewable = changes.find((c) => !c.binary);
-  card.append(
-    ...rows,
-    h(
-      'div',
-      { class: 'actions' },
-      reviewable ? h('button', { class: 'btn small primary', onclick: () => reviewChange(changes.find((c) => reviews.has(c.rel)) || reviewable) }, 'Review') : null,
-      h('button', { class: 'btn small danger', onclick: () => undo(changes) }, 'Undo all')
-    )
+  // Keep accepts everything: the inline green/red highlights go away.
+  const keep = () => {
+    const live = changes.filter((c) => !c.undone);
+    dropReviews(live.map((c) => c.rel));
+    for (const c of live) state.changedFiles.delete(c.rel);
+    renderTree();
+    setStatus('Kept');
+  };
+  const reviewable = changes.find((c) => !c.binary && !c.undone);
+  const stop = (fn) => (e) => (e.stopPropagation(), fn());
+  const twisty = h('span', { class: 'twisty' }, '›');
+  const head = h(
+    'div',
+    {
+      class: 'changes-head',
+      title: 'Show the files',
+      onclick: () => {
+        body.classList.toggle('hidden');
+        card.classList.toggle('open', !body.classList.contains('hidden'));
+        if (!body.classList.contains('hidden')) body.scrollIntoView({ block: 'nearest' });
+      },
+    },
+    twisty,
+    h('span', { class: 'changes-count' }, `${changes.length} File${changes.length > 1 ? 's' : ''}`),
+    add || del ? h('span', { class: 'stat-add' }, `+${add}`) : null,
+    add || del ? h('span', { class: 'stat-del' }, `−${del}`) : null,
+    status,
+    h('span', { class: 'spacer' }),
+    h('button', { class: 'ghost-btn', title: 'Put every file back how it was', onclick: stop(() => undo(changes)) }, 'Undo'),
+    changes[0] && changes[0].worktree ? null : h('button', { class: 'ghost-btn', title: 'Accept these changes', onclick: stop(keep) }, 'Keep'),
+    reviewable ? h('button', { class: 'ghost-btn strong', title: 'Step through the changes', onclick: stop(() => reviewChange(changes.find((c) => reviews.has(c.rel)) || reviewable)) }, 'Review') : null
   );
+  const card = h('div', { class: 'card changes' }, head, body);
   card.undo = undo;
   changeCards.set(turnId, card);
   appendChat(card, chat);
@@ -912,12 +947,20 @@ function setMode(mode) {
 }
 
 function setRunning(running) {
-  const btn = $('#send-btn');
-  btn.classList.toggle('stop', running);
-  btn.title = running ? 'Stop' : 'Send (Enter)';
   const input = $('#input');
   if (!input.dataset.placeholder) input.dataset.placeholder = input.placeholder;
-  input.placeholder = running ? 'Claude is working. Press Enter to queue a message for when it finishes.' : input.dataset.placeholder;
+  input.placeholder = running ? 'Claude is working. Enter queues a message; Enter again (empty box) sends it now.' : input.dataset.placeholder;
+  updateSendButton();
+}
+
+// While Claude works the button is Stop, unless there's something typed (then it queues it).
+function updateSendButton() {
+  const btn = $('#send-btn');
+  const busy = !!activeChat()?.busy;
+  const typed = !!$('#input').value.trim() || state.chips.length > 0;
+  const stopping = busy && !typed;
+  btn.classList.toggle('stop', stopping);
+  btn.title = stopping ? 'Stop' : busy ? 'Queue this message (Enter)' : 'Send (Enter)';
 }
 
 function buildPrompt(text) {
@@ -937,6 +980,8 @@ async function send(textOverride, modeOverride, display) {
   const input = $('#input');
   const text = (textOverride ?? input.value).trim();
   const images = textOverride ? [] : state.chips.filter((c) => c.kind === 'image');
+  // Enter with an empty box while Claude works: send the next queued message right away.
+  if (!text && !images.length && chat.busy && chat.queue.length) return sendNow(chat, 0);
   if (!text && !images.length) return;
   const mode = modeOverride || state.mode;
   const slash = !textOverride && /^\/[\w:.-]+/.exec(text);
@@ -1013,7 +1058,11 @@ function renderQueue() {
         { class: 'queued' },
         h('span', { class: 'q-label' }, i === 0 ? (chat.busy ? 'Next' : 'Paused') : 'Queued'),
         h('span', { class: 'q-text', title: item.shown }, item.shown.split('\n')[0]),
-        !chat.busy && i === 0 ? h('button', { class: 'btn small primary', onclick: () => runQueue(chat) }, 'Send') : null,
+        chat.busy
+          ? h('button', { class: 'q-now', title: i === 0 ? 'Send now: stops Claude and sends this (or press Enter in the empty box)' : 'Send now: stops Claude and sends this', onclick: () => sendNow(chat, i) }, '↑')
+          : i === 0
+            ? h('button', { class: 'btn small primary', onclick: () => runQueue(chat) }, 'Send')
+            : null,
         h('button', { class: 'btn small', title: 'Move back to the chat box to edit', onclick: () => editQueued(chat, i) }, 'Edit'),
         h('button', { class: 'q-x', title: 'Remove', onclick: () => (chat.queue.splice(i, 1), renderQueue()) }, '×')
       )
@@ -1027,6 +1076,17 @@ function editQueued(chat, i) {
   input.value = item.rwText + (input.value ? '\n' + input.value : '');
   autoGrow();
   input.focus();
+  renderQueue();
+}
+
+// Interrupts Claude and sends this queued message straight after, so you can steer it mid-task.
+function sendNow(chat, i) {
+  if (!chat.busy) return runQueue(chat);
+  const [item] = chat.queue.splice(i, 1);
+  chat.queue.unshift(item);
+  chat.sendNext = true;
+  if (chat.turn) chat.turn.interrupted = chat.turn.forQueued = true;
+  desk.chatInterrupt(chat.id);
   renderQueue();
 }
 
@@ -1069,7 +1129,7 @@ desk.onChatExit(({ chatId, code, stderr }) => {
   const chat = chatById(chatId);
   if (!chat) return;
   if (chat.busy) {
-    if (chat.turn && chat.turn.interrupted) appendChat(h('div', { class: 'notice' }, 'Stopped.'), chat);
+    if (chat.turn && chat.turn.interrupted) appendChat(h('div', { class: 'notice' }, chat.turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
     else appendChat(h('div', { class: 'turn-error' }, `Claude Code stopped unexpectedly (code ${code}).\n${(stderr || '').trim().slice(-1500)}`.trim()), chat);
     endTurn(chat);
   }
@@ -1091,6 +1151,7 @@ function renderChips() {
         : h('span', { class: `chip${c.kind === 'element' ? ' element' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
     )
   );
+  updateSendButton();
 }
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
