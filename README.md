@@ -1,8 +1,8 @@
 # Switchdesk
 
-A Cursor-style desktop editor for the coding agents you already use. It works with **Claude Code, Codex and Kimi**, and with **Gemini, Qwen and DeepSeek** through your own API key. Every chat runs the agent maker's own, unmodified CLI on your machine, signed in with your own plan or key. Switchdesk never sees your logins.
+A Cursor-style desktop editor for the coding agents you already use. It works with **Claude Code, Codex, Cursor and Kimi**, and with **Gemini, Qwen and DeepSeek** through your own API key. Every chat runs the agent maker's own, unmodified CLI on your machine, signed in with your own plan or key. Switchdesk never sees your logins.
 
-Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Moonshot, Google, Alibaba or DeepSeek.
+Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
 
 ## What you get
 
@@ -39,6 +39,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
   - **Claude** runs Claude Code with your Claude plan.
   - **Codex** runs OpenAI's Codex CLI with your ChatGPT plan or an OpenAI API key. The model list comes from Codex itself.
   - **Kimi** runs Moonshot's Kimi Code CLI with your Kimi Code membership.
+  - **Cursor** runs Cursor's own command-line agent (`agent`) with your Cursor plan, through `agent acp`, the connection Cursor provides for other editors. Sign in with `agent login`.
   - **Gemini** runs Google's Gemini CLI with your Gemini API key. (Google doesn't allow third-party apps to use a Google-account sign-in.)
   - **Qwen** and **DeepSeek** run Qwen Code (open source) with your Alibaba Cloud or DeepSeek API key. The API address and model can be changed, so other OpenAI-compatible providers work too.
   - Every agent gets the same chat panel, modes, approval cards, changes card, inline review, queue and parallel copies. Rewind, History and slash commands are Claude only for now. API keys are stored encrypted with your operating system's keychain.
@@ -88,7 +89,7 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 - `src/terminal.js` runs the terminal through node-pty. `src/gitops.js` runs your own git, so it uses your existing credentials.
 - Conversations are Claude Code's own transcripts in `~/.claude/projects/`, so the terminal and the app share history.
 - `src/worktrees.js` makes the copies for parallel agents under the app's data folder and merges with `git merge-file`.
-- `src/codex-session.js` runs `codex app-server`, the JSON-RPC mode OpenAI provides for apps that embed Codex. `src/acp-session.js` speaks the [Agent Client Protocol](https://agentclientprotocol.com) to Kimi (`kimi acp`), Gemini CLI (`gemini --acp`) and Qwen Code (`qwen --acp`). Both translate the agent's events into the same shapes Claude Code's stream-json uses (`src/agent-events.js`), so the chat panel is shared.
+- `src/codex-session.js` runs `codex app-server`, the JSON-RPC mode OpenAI provides for apps that embed Codex. `src/acp-session.js` speaks the [Agent Client Protocol](https://agentclientprotocol.com) to Cursor (`agent acp`), Kimi (`kimi acp`), Gemini CLI (`gemini --acp`) and Qwen Code (`qwen --acp`). Both translate the agent's events into the same shapes Claude Code's stream-json uses (`src/agent-events.js`), so the chat panel is shared.
 - Each extra account is its own Claude Code config folder under the app's data folder, passed to the CLI as `CLAUDE_CONFIG_DIR`, so its sign-in, settings and history stay apart. Switching a chat to another account copies its transcript across before resuming it.
 - Rewind resumes with `--resume <session> --resume-session-at <reply> --fork-session`, and restores files from the turn's git snapshot.
 

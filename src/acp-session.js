@@ -16,8 +16,8 @@ const NOT_SIGNED_IN = -32000;
 const MODE_PREFS = {
   ask: ['default', 'ask'],
   plan: ['plan', 'default'],
-  agent: ['auto-edit', 'autoedit', 'accept-edits', 'acceptedits', 'default'],
-  auto: ['auto', 'yolo', 'auto-edit', 'autoedit'],
+  agent: ['auto-edit', 'autoedit', 'accept-edits', 'acceptedits', 'default', 'agent'],
+  auto: ['auto', 'yolo', 'auto-edit', 'autoedit', 'agent'],
 };
 const PLAN_PREFIX = '[Plan mode: research the code, then reply with a step-by-step plan. Do not edit files or run commands that change anything.]\n\n';
 
@@ -76,8 +76,8 @@ function diffLines(items) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, env, sessionId, model, mode, label, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', onEvent, onPermission, onExit });
+  constructor({ bin, args, cwd, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, args: args || [], cwd, extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -122,7 +122,7 @@ class AcpSession {
         if (!r) this.sessionId = null;
       }
       if (!this.sessionId) {
-        r = await this.rpc.request('session/new', { cwd: this.cwd, mcpServers: [] }, 120000);
+        r = await newSession(this.rpc, this.cwd, this.authMethod, init);
         this.sessionId = r.sessionId;
       }
       this.modes = (r && r.modes && r.modes.availableModes) || [];
@@ -269,8 +269,22 @@ class AcpSession {
   }
 }
 
+// session/new. Some agents (Cursor) want `authenticate` with their own stored-login method first;
+// that uses the login the user made with the CLI and never passes credentials through here.
+async function newSession(rpc, cwd, authMethod, init) {
+  const params = { cwd, mcpServers: [] };
+  try {
+    return await rpc.request('session/new', params, 120000);
+  } catch (err) {
+    const offered = (init.authMethods || []).some((m) => m.id === authMethod);
+    if (err.code !== NOT_SIGNED_IN || !authMethod || !offered) throw err;
+    await rpc.request('authenticate', { methodId: authMethod }, 60000);
+    return rpc.request('session/new', params, 120000);
+  }
+}
+
 // Signed in? Starts the agent and asks for a session, without sending anything.
-async function acpStatus(bin, args, extraEnv) {
+async function acpStatus(bin, args, extraEnv, authMethod) {
   const env = await cli.childEnv(extraEnv);
   const child = spawnAgent(bin, args, { env, cwd: os.tmpdir() });
   const rpc = new RpcPeer(child);
@@ -281,7 +295,7 @@ async function acpStatus(bin, args, extraEnv) {
   try {
     const init = await rpc.request('initialize', CLIENT, 60000);
     try {
-      const r = await rpc.request('session/new', { cwd: os.tmpdir(), mcpServers: [] }, 60000);
+      const r = await newSession(rpc, os.tmpdir(), authMethod, init);
       if (init.agentCapabilities && init.agentCapabilities.sessionCapabilities && init.agentCapabilities.sessionCapabilities.close) rpc.request('session/close', { sessionId: r.sessionId }).catch(() => {});
       return { loggedIn: true, version: init.agentInfo ? init.agentInfo.version : '' };
     } catch (err) {

@@ -34,6 +34,21 @@ const AGENTS = {
     login: ['login'],
     help: 'Signs in with your Kimi Code membership.',
   },
+  cursor: {
+    label: 'Cursor',
+    vendor: 'Anysphere',
+    kind: 'acp',
+    // The CLI is called `agent`, with `cursor-agent` kept as an alias. Look for the specific name
+    // first, and only trust a bare `agent` in Cursor's own install folder.
+    bins: ['cursor-agent'],
+    extraPaths: () => (isWin ? [path.join(os.homedir(), '.local', 'bin', 'agent.exe'), path.join(process.env.LOCALAPPDATA || '', 'cursor-agent', 'agent.cmd'), path.join(process.env.LOCALAPPDATA || '', 'cursor-agent', 'cursor-agent.cmd')] : [path.join(os.homedir(), '.local', 'bin', 'agent')]),
+    args: ['acp'],
+    authMethod: 'cursor_login',
+    statusArgs: ['status'], // checking over ACP could start a browser sign-in, so ask the CLI
+    install: () => (isWin ? "irm 'https://cursor.com/install?win32=true' | iex" : 'curl https://cursor.com/install -fsS | bash'),
+    login: ['login'],
+    help: 'Runs Cursor\'s own command-line agent with your Cursor plan, through the connection Cursor provides for other editors.',
+  },
   gemini: {
     label: 'Gemini',
     vendor: 'Google',
@@ -95,6 +110,7 @@ async function findBin(id, settings) {
   if (id === 'claude') return cli.findClaude(settings.claudePath);
   const override = (settings.agentPaths || {})[id];
   if (override && fs.existsSync(override)) return override;
+  for (const p of a.extraPaths ? a.extraPaths() : []) if (p && fs.existsSync(p)) return p;
   for (const name of a.bins) {
     for (const p of candidates(name)) if (fs.existsSync(p)) return p;
     const env = await cli.childEnv();
@@ -147,10 +163,21 @@ function commandLine(bin, args) {
   return [q(bin), ...args].join(' ');
 }
 
+// `<cli> status`: signed in unless it says otherwise.
+function cliStatus(bin, args) {
+  return new Promise((resolve) => {
+    execFile(bin, args, { timeout: 20000, windowsHide: true, shell: isWin && /\.(cmd|bat)$/i.test(bin) }, (err, out, errOut) => {
+      const text = (String(out || '') + String(errOut || '')).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
+      const loggedIn = !err && !/not (logged|signed) in|log ?in required|unauthenticated/i.test(text);
+      resolve({ loggedIn, detail: text.split('\n').find((l) => /@|logged|signed/i.test(l)) || '' });
+    });
+  });
+}
+
 function version(bin) {
   return new Promise((resolve) => {
     execFile(bin, ['--version'], { timeout: 15000, windowsHide: true, shell: isWin && /\.(cmd|bat)$/i.test(bin) }, (err, out) => resolve(err ? '' : String(out).trim().split('\n')[0]));
   });
 }
 
-module.exports = { AGENTS, findBin, readKey, sealKey, options, envFor, commandLine, version };
+module.exports = { AGENTS, findBin, readKey, sealKey, options, envFor, commandLine, version, cliStatus };

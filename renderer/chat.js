@@ -21,7 +21,7 @@ function emptyState() {
     'div',
     { class: 'empty-chat' },
     h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
   );
 }
 

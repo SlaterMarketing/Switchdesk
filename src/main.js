@@ -345,6 +345,7 @@ async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd,
     bin,
     args: a.args,
     label: a.label,
+    authMethod: a.authMethod,
     cwd: chat.cwd,
     env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model),
     sessionId,
@@ -475,6 +476,10 @@ function registerIpc() {
       if (a.kind === 'codex') {
         const r = await codexStatus(bin, {});
         return { installed: true, path: bin, version, loggedIn: r.loggedIn, detail: r.loggedIn ? [r.email || (r.method === 'apiKey' ? 'API key' : 'ChatGPT'), r.plan].filter(Boolean).join(' · ') : 'Not signed in' };
+      }
+      if (a.statusArgs) {
+        const r = await agents.cliStatus(bin, a.statusArgs);
+        return { installed: true, path: bin, version, loggedIn: r.loggedIn, detail: r.loggedIn ? r.detail.slice(0, 80) || 'Signed in' : 'Not signed in' };
       }
       const r = await acpStatus(bin, a.args, agents.envFor(settings, id));
       return { installed: true, path: bin, version: version || r.version, loggedIn: r.loggedIn, detail: r.loggedIn ? (a.key ? 'API key saved' : 'Signed in') : a.key ? 'The key was not accepted' : 'Not signed in' };
