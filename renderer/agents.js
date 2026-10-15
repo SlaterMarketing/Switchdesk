@@ -10,7 +10,7 @@
 
 const agentState = { list: [], status: new Map(), models: new Map() };
 const CLAUDE_MODELS = [
-  ['', 'Default model'],
+  ['', 'Model'],
   ['opus', 'Opus'],
   ['sonnet', 'Sonnet'],
   ['haiku', 'Haiku'],
@@ -150,7 +150,7 @@ function renderModelPicker() {
     const info = agentInfo(id);
     const extra = agentState.models.get(id) || [];
     const fallback = info.options && info.options.model ? [[info.options.model, info.options.model]] : [];
-    opts = [['', 'Default model'], ...(extra.length ? extra.map((m) => [m.id, m.label]) : fallback)];
+    opts = [['', 'Model'], ...(extra.length ? extra.map((m) => [m.id, m.label]) : fallback)];
     if (id === 'codex' && !agentState.models.has(id)) {
       agentState.models.set(id, []);
       desk.agents.models(id).then((list) => {

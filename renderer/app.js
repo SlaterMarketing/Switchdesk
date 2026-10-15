@@ -956,6 +956,14 @@ function wire() {
   });
   $('#send-btn').addEventListener('click', () => ($('#send-btn').classList.contains('stop') ? stop() : send()));
   $('#input').addEventListener('input', updateSendButton);
+  // The "no choice" entry reads Model / Effort in the chat box, and Default in the open list.
+  for (const [id, name] of [['#model-select', 'Model'], ['#effort-select', 'Effort']]) {
+    const sel = $(id);
+    const label = (text) => sel.querySelector('option[value=""]') && (sel.querySelector('option[value=""]').textContent = text);
+    sel.addEventListener('mousedown', () => label('Default'));
+    sel.addEventListener('keydown', (e) => [' ', 'Enter', 'ArrowDown', 'ArrowUp'].includes(e.key) && label('Default'));
+    for (const ev of ['change', 'blur']) sel.addEventListener(ev, () => label(name));
+  }
   $('#model-select').addEventListener('change', (e) => saveModelChoice(e.target.value));
   $('#effort-select').addEventListener('change', (e) => desk.setSettings({ effort: e.target.value }));
 
