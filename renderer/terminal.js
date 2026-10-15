@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, Terminal, FitAddon */
+/* global $, h, state, desk, toast, Terminal, FitAddon, send, noticeLocalUrl */
 'use strict';
 
 // ------------------------------------------------------------------ terminal panel
@@ -56,6 +56,7 @@ async function newTerminal() {
     t.exited = true;
     xterm.write(`\x1b[31m${String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}\x1b[0m\r\n`);
   }
+  return t;
 }
 
 function focusTerminal(id) {
@@ -108,7 +109,14 @@ function renderTermTabs() {
 function wireTerminal() {
   $('#btn-term-new').addEventListener('click', newTerminal);
   $('#btn-term-hide').addEventListener('click', () => toggleTerminal(false));
-  desk.term.onData(({ id, data }) => terms.find((t) => t.id === id)?.xterm.write(data));
+  desk.term.onData(({ id, data }) => {
+    const t = terms.find((x) => x.id === id);
+    if (!t) return;
+    t.xterm.write(data);
+    watchForErrors(t, data);
+    noticeLocalUrl(data);
+  });
+  $('#btn-term-fix').addEventListener('click', fixWithClaude);
   desk.term.onExit(({ id, code }) => {
     const t = terms.find((x) => x.id === id);
     if (!t) return;
@@ -134,6 +142,42 @@ function wireTerminal() {
     addEventListener('mousemove', move);
     addEventListener('mouseup', up);
   });
+}
+
+// ------------------------------------------------------------------ Fix with Claude
+
+const ERROR_RE = /\b(error|errors|failed|failure|exception|traceback|fatal|panic|ERR!|cannot find|not found|not recognized|undefined reference|segmentation fault)\b/i;
+let fixTimer = null;
+
+// Light up the button when a command prints something that looks like an error.
+function watchForErrors(t, data) {
+  const plain = data.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  if (!ERROR_RE.test(plain)) return;
+  clearTimeout(fixTimer);
+  fixTimer = setTimeout(() => {
+    if (t.id === activeTermId) $('#btn-term-fix').classList.add('alert');
+  }, 500);
+}
+
+function terminalText(t, maxLines = 80) {
+  const sel = t.xterm.getSelection();
+  if (sel && sel.trim()) return sel.trim();
+  const buf = t.xterm.buffer.active;
+  const lines = [];
+  for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? '');
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.slice(-maxLines).join('\n').trim();
+}
+
+function fixWithClaude() {
+  const t = terms.find((x) => x.id === activeTermId);
+  if (!t) return;
+  const out = terminalText(t);
+  if (!out) return toast('The terminal is empty.');
+  $('#btn-term-fix').classList.remove('alert');
+  const prompt = `Something went wrong in my terminal. Here's the output:\n\n\`\`\`\n${out}\n\`\`\`\n\nWork out what caused it and fix it. If it's a problem with the command rather than the code, tell me the right command.`;
+  const tail = out.split('\n').slice(-4).join('\n');
+  send(prompt, undefined, `✨ Fix this terminal error\n${tail}`);
 }
 
 function retheme() {

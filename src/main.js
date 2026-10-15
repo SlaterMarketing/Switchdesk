@@ -14,6 +14,7 @@ const terminal = require('./terminal');
 const config = require('./config');
 const updater = require('./updater');
 const search = require('./search');
+const worktrees = require('./worktrees');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -183,8 +184,13 @@ async function listSessions() {
   return rows.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100);
 }
 
-async function loadSession(id) {
-  const file = path.join(projectDirFor(workspace), id + '.jsonl');
+// A chat's working folder: the open folder, or its own copy (a worktree) for parallel agents.
+function chatCwd(cwd) {
+  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : workspace;
+}
+
+async function loadSession(id, cwd) {
+  const file = path.join(projectDirFor(chatCwd(cwd)), id + '.jsonl');
   const lines = (await fsp.readFile(file, 'utf8')).split('\n');
   const messages = [];
   let lastReply = null; // uuid of the latest assistant message, which Rewind resumes from
@@ -265,11 +271,12 @@ async function rewindFiles(turnIds, apply) {
   const snaps = turnIds.map((id) => turnSnapshots.get(id));
   if (!snaps.length || !snaps[0]) return { available: false, files: [] };
   const first = snaps[0];
-  const relOf = (abs) => path.relative(workspace, abs).split(path.sep).join('/');
+  const relOf = (abs) => path.relative(first.workspace, abs).split(path.sep).join('/');
+  const allowed = (abs) => (first.workspace === workspace ? inWorkspace(abs) : worktrees.isUnder(abs));
   if (first.root && first.before) {
     // A git snapshot covers the whole folder, including later edits.
     const now = await writeTree(first.root);
-    const diffs = (await diffTrees(first.root, first.before, now)).map((c) => ({ ...c, abs: path.join(first.root, c.rel) })).filter((c) => inWorkspace(c.abs));
+    const diffs = (await diffTrees(first.root, first.before, now)).map((c) => ({ ...c, abs: path.join(first.root, c.rel) })).filter((c) => allowed(c.abs) && !relOf(c.abs).startsWith('..'));
     if (apply)
       for (const c of diffs) {
         if (c.status === 'A') await fsp.rm(c.abs, { force: true });
@@ -284,7 +291,7 @@ async function rewindFiles(turnIds, apply) {
   if (snaps.some((s) => !s || !s.result)) return { available: false, files: [] };
   const files = new Set();
   for (const s of [...snaps].reverse()) {
-    const paths = [...s.result.keys()].filter((p) => inWorkspace(p));
+    const paths = [...s.result.keys()].filter((p) => allowed(p));
     paths.forEach((p) => files.add(relOf(p)));
     if (apply) await s.undo(paths);
   }
@@ -296,13 +303,13 @@ function denyPending(chat, message) {
   chat.approvals.clear();
 }
 
-async function openChat(chatId, { sessionId, resumeAt, model, effort, mode }) {
+async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd }) {
   const bin = await cli.findClaude(settings.claudePath);
   if (!bin) throw new Error('Claude Code is not installed. Open Settings → Setup to install it.');
-  const chat = { session: null, effort: effort || '', turn: null, approvals: new Map() };
+  const chat = { session: null, effort: effort || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd) };
   chat.session = new ChatSession({
     bin,
-    cwd: workspace,
+    cwd: chat.cwd,
     sessionId,
     resumeAt,
     model,
@@ -332,7 +339,7 @@ async function openChat(chatId, { sessionId, resumeAt, model, effort, mode }) {
   return chat;
 }
 
-async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt }) {
+async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd }) {
   if (!workspace) throw new Error('Open a folder first.');
   let chat = chats.get(chatId);
   if (chat && chat.session.alive && (resumeAt || (effort || '') !== chat.effort)) {
@@ -343,9 +350,9 @@ async function chatSend(chatId, { content, mode, model, effort, sessionId, resum
     chats.delete(chatId);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode });
+  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd });
   else await chat.session.setModel(model);
-  chat.turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(workspace).begin(), blocks: new Map() };
+  chat.turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(chat.cwd).begin(), blocks: new Map() };
   await chat.session.send(content, mode);
   return { turnId: chat.turn.id };
 }
@@ -421,6 +428,16 @@ function registerIpc() {
     if (win && process.platform !== 'darwin' && win.setTitleBarOverlay) win.setTitleBarOverlay({ color, symbolColor, height: 38 });
   });
   ipcMain.handle('update:install', () => updater.installNow());
+  // Preview pane: screenshots for the chat, and "open in your browser".
+  ipcMain.handle('preview:capture', async (_e, id, rect) => {
+    const wc = require('electron').webContents.fromId(id);
+    if (!wc || wc.getType() !== 'webview') return null;
+    const img = await (rect ? wc.capturePage(rect) : wc.capturePage());
+    let out = img;
+    if (out.getSize().width > 1600) out = out.resize({ width: 1600 });
+    return out.isEmpty() ? null : out.toPNG().toString('base64');
+  });
+  ipcMain.handle('preview:open-external', (_e, url) => /^https?:\/\//.test(url) && shell.openExternal(url));
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('open-external', (_e, url) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(claude\.ai|claude\.com|anthropic\.com|git-scm\.com)\//i.test(url)) shell.openExternal(url);
@@ -452,7 +469,18 @@ function registerIpc() {
   ipcMain.handle('file:reveal', (_e, rel) => shell.showItemInFolder(resolveInWorkspace(rel)));
 
   ipcMain.handle('sessions:list', () => listSessions());
-  ipcMain.handle('sessions:load', (_e, id) => loadSession(id));
+  ipcMain.handle('sessions:load', (_e, id, cwd) => loadSession(id, cwd));
+  // Parallel agents: chats working in their own copy of the project.
+  const ownCopy = (wt) => {
+    if (!worktrees.exists(wt)) throw new Error('This copy no longer exists.');
+    return wt;
+  };
+  ipcMain.handle('worktree:create', (_e, name) => worktrees.create(workspace, name));
+  ipcMain.handle('worktree:changes', (_e, wt) => worktrees.changes(ownCopy(wt)));
+  ipcMain.handle('worktree:diff', (_e, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
+  ipcMain.handle('worktree:merge', (_e, wt) => worktrees.merge(ownCopy(wt), workspace));
+  ipcMain.handle('worktree:remove', (_e, wt) => (worktrees.exists(wt) ? worktrees.remove(wt) : true));
+  ipcMain.handle('worktree:exists', (_e, wt) => worktrees.exists(wt));
 
   ipcMain.handle('chat:send', (_e, chatId, opts) => chatSend(chatId, opts));
   ipcMain.handle('chat:interrupt', (_e, chatId) => chatInterrupt(chatId));
@@ -464,7 +492,7 @@ function registerIpc() {
   ipcMain.handle('changes:undo', async (_e, turnId, absPaths) => {
     const snap = turnSnapshots.get(turnId);
     if (!snap) return false;
-    await snap.undo(absPaths.filter((p) => inWorkspace(p)));
+    await snap.undo(absPaths.filter((p) => inWorkspace(p) || worktrees.isUnder(p)));
     return true;
   });
 
@@ -527,6 +555,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: true, // the preview pane
     },
   });
   win.loadURL('app://desk/renderer/index.html');
@@ -563,12 +592,14 @@ function buildMenu() {
         { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: () => send('menu', 'quick-open') },
         { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: () => send('menu', 'search') },
         { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => send('menu', 'new-chat') },
+        { label: 'New Chat in Its Own Copy', accelerator: 'CmdOrCtrl+Shift+N', click: () => send('menu', 'new-copy-chat') },
         { label: 'Add Selection to Chat', accelerator: 'CmdOrCtrl+L', click: () => send('menu', 'add-selection') },
         { label: 'Edit Selection with Claude', accelerator: 'CmdOrCtrl+K', click: () => send('menu', 'inline-edit') },
         { label: 'Cycle Mode', accelerator: 'CmdOrCtrl+.', click: () => send('menu', 'cycle-mode') },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('menu', 'toggle-sidebar') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('menu', 'toggle-terminal') },
         { label: 'Source Control', accelerator: 'CmdOrCtrl+Shift+G', click: () => send('menu', 'source-control') },
+        { label: 'Preview', accelerator: 'CmdOrCtrl+Shift+V', click: () => send('menu', 'preview') },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => send('menu', 'settings') },
         { type: 'separator' },
         { role: 'reload' },
@@ -590,7 +621,25 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// The preview pane is a <webview>: no preload or Node in it, and links that open new windows stay inside it.
+app.on('web-contents-created', (_e, contents) => {
+  contents.on('will-attach-webview', (ev, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.contextIsolation = true;
+    prefs.sandbox = true;
+    if (!/^(https?:|file:|about:blank)/.test(params.src || '')) ev.preventDefault();
+  });
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) contents.loadURL(url);
+      return { action: 'deny' };
+    });
+  }
+});
+
 app.whenReady().then(() => {
+  worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   loadSettings();
   nativeTheme.themeSource = settings.theme || 'system';
   protocol.handle('app', (req) => {

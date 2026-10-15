@@ -158,7 +158,7 @@ function renderTabs() {
           onclick: () => activateTab(t.id),
           onauxclick: (e) => e.button === 1 && closeTab(t.id),
         },
-        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : null,
+        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : null,
         t.rel.split('/').pop(),
         h('button', { class: 'close', onclick: (e) => (e.stopPropagation(), closeTab(t.id)) }, '×')
       )
@@ -178,6 +178,7 @@ function activateTab(id) {
   state.activeTab = id;
   const t = activeTab();
   const isDiff = t && t.kind === 'diff';
+  $('#preview').classList.toggle('hidden', !(t && t.kind === 'preview'));
   $('#editor').classList.toggle('hidden', isDiff);
   $('#diff-editor').classList.toggle('hidden', !isDiff);
   $('#diff-bar').classList.toggle('hidden', !isDiff);
@@ -188,6 +189,8 @@ function activateTab(id) {
   } else if (isDiff) {
     diffEditor.setModel({ original: t.original, modified: t.modified });
     renderDiffBar(t);
+  } else if (t && t.kind === 'preview') {
+    editor.setModel(null);
   } else {
     editor.setModel(null);
   }
@@ -201,6 +204,7 @@ function closeTab(id) {
   if (t.dirty && !confirm(`${t.rel} has unsaved changes. Close anyway?`)) return;
   state.tabs.splice(i, 1);
   if (t.kind === 'file') t.model.dispose();
+  else if (t.kind === 'preview') $('#preview').classList.add('hidden');
   else {
     t.original.dispose();
     t.modified.dispose();
@@ -384,6 +388,7 @@ async function setFolder(info) {
     state.expanded = new Set(['']);
     for (const t of [...state.tabs]) closeTab(t.id);
     reviews.clear();
+    resetPreview();
     await refreshFiles();
     closeAllChats();
     await restoreWorkspace(info.root);
@@ -413,7 +418,7 @@ async function saveWorkspace() {
   const snapshot = {
     tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
     active: t && t.kind === 'file' ? t.rel : null,
-    chats: chats.filter((c) => c.sessionId).map((c) => ({ sessionId: c.sessionId, title: c.title })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined })),
     activeChat: activeChat()?.sessionId || null,
     savedAt: Date.now(),
   };
@@ -428,7 +433,8 @@ async function restoreWorkspace(root) {
   if (saved) {
     for (const c of saved.chats || []) {
       try {
-        await openSession({ id: c.sessionId, title: c.title || 'Chat' });
+        if (c.worktree && !(await desk.worktree.exists(c.worktree))) continue;
+        await openSession({ id: c.sessionId, title: c.title || 'Chat' }, c.worktree);
       } catch {
         /* transcript deleted */
       }
@@ -806,6 +812,7 @@ function wire() {
   $('#btn-refresh').addEventListener('click', refreshFiles);
   $('#file-filter').addEventListener('input', renderTree);
   $('#btn-new-chat').addEventListener('click', newChat);
+  $('#btn-new-copy').addEventListener('click', newChatInCopy);
   $('#btn-new-chat-side').addEventListener('click', newChat);
   $('#btn-history').addEventListener('click', () => showSidePanel('history'));
   for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => showSidePanel(tab.dataset.panel));
@@ -856,6 +863,8 @@ function wire() {
     else if (cmd === 'source-control') showSidePanel('git');
     else if (cmd === 'search') openSearch();
     else if (cmd === 'settings') openSettings();
+    else if (cmd === 'preview') openPreview();
+    else if (cmd === 'new-copy-chat') newChatInCopy();
   });
 
   let updateVersion = '';

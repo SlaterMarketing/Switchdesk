@@ -123,8 +123,8 @@ function renderReview() {
         h(
           'div',
           { class: 'hunk-bar rv-bar' },
-          h('button', { class: 'hunk-btn undo', title: 'Put this part back how it was', onmousedown: stop, onclick: () => undoHunk(t, n) }, 'Undo'),
-          h('button', { class: 'hunk-btn keep', title: 'Accept this part', onmousedown: stop, onclick: () => keepHunk(t, n) }, 'Keep')
+          h('button', { class: 'hunk-btn undo', title: 'Put this part back how it was', onmousedown: stop, onclick: () => undoReviewHunk(t, n) }, 'Undo'),
+          h('button', { class: 'hunk-btn keep', title: 'Accept this part', onmousedown: stop, onclick: () => keepReviewHunk(t, n) }, 'Keep')
         )
       );
       // The removed lines sit above the new ones; the buttons follow them.
@@ -170,7 +170,7 @@ function revealFirstChange() {
   gotoHunk(0);
 }
 
-function keepHunk(t, n) {
+function keepReviewHunk(t, n) {
   const r = reviews.get(t.rel);
   const hk = reviewHunks[n];
   if (!r || !hk) return;
@@ -181,7 +181,7 @@ function keepHunk(t, n) {
   finishReviewStep(t);
 }
 
-async function undoHunk(t, n) {
+async function undoReviewHunk(t, n) {
   const r = reviews.get(t.rel);
   const hk = reviewHunks[n];
   if (!r || !hk) return;

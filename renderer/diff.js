@@ -8,9 +8,9 @@
 
 function openDiff(change) {
   const source = change.source || 'claude';
-  const id = `d:${source === 'git' ? 'git' : change.turnId}:${change.rel}`;
+  const id = `d:${source === 'git' ? 'git' : source === 'worktree' ? 'wt:' + change.turnId : change.turnId}:${change.rel}`;
   let t = state.tabs.find((x) => x.id === id);
-  if (t && source === 'git') {
+  if (t && (source === 'git' || source === 'worktree')) {
     // Git diffs always show the current state, so rebuild them.
     t.original.setValue(change.before);
     t.modified.setValue(change.after);
@@ -35,6 +35,16 @@ function openDiff(change) {
 
 function renderDiffBar(t) {
   const git = t.change.source === 'git';
+  if (t.change.source === 'worktree') {
+    // Read-only: the copy's changes come into your folder through Merge in the chat.
+    $('#diff-title').textContent = `${t.rel} · in Claude's copy`;
+    $('#diff-hint').textContent = 'Use Merge in the chat to bring this into your folder.';
+    $('#diff-undo').classList.add('hidden');
+    $('#diff-keep').textContent = 'Close';
+    queueHunkWidgets();
+    return;
+  }
+  $('#diff-undo').classList.remove('hidden');
   $('#diff-title').textContent = `${t.rel} · ${git ? 'uncommitted changes' : 'changes from Claude'}`;
   $('#diff-hint').textContent = git ? '' : 'Each change has its own Undo and Keep.';
   $('#diff-undo').textContent = git ? 'Discard file' : 'Undo this file';
@@ -112,7 +122,7 @@ function renderHunkWidgets() {
   ed.changeViewZones((acc) => {
     for (const id of hunkZones) acc.removeZone(id);
     hunkZones = [];
-    if (!t || t.kind !== 'diff' || t.change.undone) return;
+    if (!t || t.kind !== 'diff' || t.change.undone || t.change.source === 'worktree') return;
     const git = t.change.source === 'git';
     for (const c of diffEditor.getLineChanges() || []) {
       const after = c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber : c.modifiedStartLineNumber - 1;

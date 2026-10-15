@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange */
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -34,6 +34,7 @@ function createChat({ title = 'New chat', sessionId = null } = {}) {
     busy: false,
     alwaysAllow: new Set(),
     usage: { context: 0, turns: 0, model: '' },
+    queue: [],
   };
   chats.push(chat);
   $('#messages-host').append(chat.el);
@@ -51,13 +52,17 @@ function switchChat(id) {
   renderChatTabs();
   renderChatMeta();
   setRunning(!!activeChat()?.busy);
+  renderQueue();
+  renderWorktreeBar();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.session === activeChat()?.sessionId);
 }
 
-function closeChatTab(id) {
+async function closeChatTab(id) {
   const chat = chatById(id);
   if (!chat) return;
   if (chat.busy && !confirm('Claude is still working in this chat. Stop it and close the tab?')) return;
+  if (chat.busy) desk.chatClose(chat.id), (chat.busy = false);
+  if (!(await closeWorktreeChat(chat))) return;
   desk.chatClose(chat.id);
   chat.el.remove();
   chats.splice(chats.indexOf(chat), 1);
@@ -83,6 +88,7 @@ function renderChatTabs() {
         'div',
         { class: `chat-tab${c.id === activeChatId ? ' active' : ''}${c.busy ? ' busy' : ''}`, title: c.title, onclick: () => switchChat(c.id), onauxclick: (e) => e.button === 1 && closeChatTab(c.id) },
         c.busy ? h('span', { class: 'spinner' }) : null,
+        c.worktree && !c.worktree.removed ? h('span', { class: 'wt-icon', title: 'Works in its own copy' }, '⑂') : null,
         h('span', { class: 't' }, c.title),
         h('button', { class: 'close', title: 'Close chat', onclick: (e) => (e.stopPropagation(), closeChatTab(c.id)) }, '×')
       )
@@ -175,6 +181,8 @@ function clearChat(chat) {
   chat.title = 'New chat';
   chat.usage = { context: 0, turns: 0, model: '' };
   chat.alwaysAllow = new Set();
+  chat.queue = [];
+  renderQueue();
   chat.el.replaceChildren(emptyState());
   renderChatTabs();
   renderChatMeta();
@@ -199,11 +207,15 @@ async function loadHistory() {
   );
 }
 
-async function openSession(row) {
+async function openSession(row, worktree) {
   const open = chats.find((c) => c.sessionId === row.id);
   if (open) return switchChat(open.id);
-  const msgs = await desk.loadSession(row.id);
-  const chat = isPristine(activeChat()) ? activeChat() : createChat();
+  const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined);
+  const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
+  if (worktree) {
+    chat.worktree = worktree;
+    refreshWorktree(chat);
+  }
   chat.sessionId = row.id;
   chat.title = row.title.slice(0, 60);
   chat.el.replaceChildren();
@@ -233,6 +245,9 @@ const TOOL_ICON = { Read: '📄', Edit: '✎', MultiEdit: '✎', Write: '✎', N
 const isShell = (name) => name === 'Bash' || name === 'PowerShell';
 
 function shortPath(p) {
+  // Files in a chat's own copy show relative to the copy.
+  const copy = /[\\/]worktrees[\\/][^\\/]+[\\/][^\\/]+[\\/](.+)$/.exec(p || '');
+  if (copy) return copy[1].replace(/\\/g, '/');
   return toRel(p) || p;
 }
 
@@ -351,15 +366,19 @@ function startTurn(chat, shown, mode, images, rwText) {
   };
   chat.busy = true;
   renderChatTabs();
-  if (chat.id === activeChatId) setRunning(true);
+  if (chat.id === activeChatId) setRunning(true), renderQueue();
 }
 
 function endTurn(chat) {
+  const stopped = !chat.turn || chat.turn.interrupted;
   if (chat.turn) for (const row of chat.turn.tools.values()) row.el.classList.remove('running');
   chat.turn = null;
   chat.busy = false;
   renderChatTabs();
   if (chat.id === activeChatId) setRunning(false);
+  // Queued messages go next, unless you pressed Stop (then they wait for Send).
+  if (!stopped && chat.queue.length) setTimeout(() => runQueue(chat), 300);
+  else if (chat.id === activeChatId) renderQueue();
 }
 
 let renderQueued = new Map();
@@ -758,6 +777,7 @@ const changeCards = new Map(); // turnId -> card
 // Changes still under review open in the editor with inline Keep/Undo; the rest open as a diff.
 function reviewChange(c) {
   if (c.binary) return;
+  if (c.worktree) return openDiff({ ...c, source: 'worktree' });
   if (reviews.has(c.rel)) return openFile(c.rel).then(revealFirstChange);
   if (!c.deleted && !c.undone && state.fileSet.has(c.rel)) return openFile(c.rel);
   openDiff(c);
@@ -779,7 +799,7 @@ function changesCard(chat, turnId, changes) {
       h('button', { class: 'btn small', onclick: () => undo([c]) }, 'Undo')
     );
     c.row = row;
-    state.changedFiles.add(c.rel);
+    if (!c.worktree) state.changedFiles.add(c.rel);
     return row;
   });
   const undo = async (list) => {
@@ -896,20 +916,25 @@ function setRunning(running) {
   const btn = $('#send-btn');
   btn.classList.toggle('stop', running);
   btn.title = running ? 'Stop' : 'Send (Enter)';
+  const input = $('#input');
+  if (!input.dataset.placeholder) input.dataset.placeholder = input.placeholder;
+  input.placeholder = running ? 'Claude is working. Press Enter to queue a message for when it finishes.' : input.dataset.placeholder;
 }
 
 function buildPrompt(text) {
   const code = state.chips.filter((c) => c.kind !== 'image');
   if (!code.length) return text;
-  const ctx = code.map((c) => `Context from \`${c.rel}\` lines ${c.start}-${c.end}:\n\`\`\`${c.lang}\n${c.text}\n\`\`\``).join('\n\n');
+  const ctx = code.map((c) => (c.kind === 'element' ? c.context : `Context from \`${c.rel}\` lines ${c.start}-${c.end}:\n\`\`\`${c.lang}\n${c.text}\n\`\`\``)).join('\n\n');
   return `${ctx}\n\n${text}`;
 }
 
 async function send(textOverride, modeOverride, display) {
   const chat = activeChat();
-  if (!chat || chat.busy) return;
+  if (!chat) return;
   if (cliState && !(cliState.found && (cliState.auth ? cliState.auth.loggedIn : true))) return showSetup();
   if (!state.folder) return toast('Open a folder first.');
+  if (chat.worktree && chat.worktree.removed) return toast("This chat's copy was deleted. Start a new chat to keep going.");
+  if (chat.making) return toast('Still making the copy. One moment.');
   const input = $('#input');
   const text = (textOverride ?? input.value).trim();
   const images = textOverride ? [] : state.chips.filter((c) => c.kind === 'image');
@@ -917,6 +942,7 @@ async function send(textOverride, modeOverride, display) {
   const mode = modeOverride || state.mode;
   const slash = !textOverride && /^\/[\w:.-]+/.exec(text);
   if (slash && SLASH_LOCAL.has(slash[0].slice(1))) {
+    if (chat.busy) return toast('Wait for Claude to finish, or stop it, before clearing the chat.');
     input.value = '';
     autoGrow();
     if (chat.sessionId || !isPristine(chat)) clearChat(chat);
@@ -927,7 +953,7 @@ async function send(textOverride, modeOverride, display) {
   if (slash) prompt = text;
   else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
   const codeChips = state.chips.filter((c) => c.kind !== 'image');
-  const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${c.rel}:${c.start}-${c.end}`).join('\n')}` : text);
+  const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${chipLabel(c)}`).join('\n')}` : text);
   if (!textOverride) {
     input.value = '';
     autoGrow();
@@ -942,7 +968,18 @@ async function send(textOverride, modeOverride, display) {
     ...(slash ? [] : images).map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
     { type: 'text', text: prompt },
   ];
-  startTurn(chat, shown, mode, images, textOverride ? display || text : text);
+  const item = { content, shown, mode, images, rwText: textOverride ? display || text : text };
+  // While Claude is working, new messages wait their turn.
+  if (chat.busy) {
+    chat.queue.push(item);
+    renderQueue();
+    return;
+  }
+  return dispatch(chat, item);
+}
+
+async function dispatch(chat, { content, shown, mode, images, rwText }) {
+  startTurn(chat, shown, mode, images, rwText);
   const bubble = chat.turn.bubble;
   const resumeAt = chat.sessionId ? chat.resumeAt : null;
   chat.resumeAt = null;
@@ -954,12 +991,50 @@ async function send(textOverride, modeOverride, display) {
       effort: $('#effort-select').value,
       sessionId: chat.sessionId,
       resumeAt,
+      cwd: chat.worktree ? chat.worktree.path : undefined,
     });
     if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {
     appendChat(h('div', { class: 'turn-error' }, String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')), chat);
     endTurn(chat);
   }
+}
+
+// ------------------------------------------------------------------ queued messages
+
+function renderQueue() {
+  const chat = activeChat();
+  const host = $('#queue');
+  const q = chat ? chat.queue : [];
+  host.classList.toggle('hidden', !q.length);
+  host.replaceChildren(
+    ...q.map((item, i) =>
+      h(
+        'div',
+        { class: 'queued' },
+        h('span', { class: 'q-label' }, i === 0 ? (chat.busy ? 'Next' : 'Paused') : 'Queued'),
+        h('span', { class: 'q-text', title: item.shown }, item.shown.split('\n')[0]),
+        !chat.busy && i === 0 ? h('button', { class: 'btn small primary', onclick: () => runQueue(chat) }, 'Send') : null,
+        h('button', { class: 'btn small', title: 'Move back to the chat box to edit', onclick: () => editQueued(chat, i) }, 'Edit'),
+        h('button', { class: 'q-x', title: 'Remove', onclick: () => (chat.queue.splice(i, 1), renderQueue()) }, '×')
+      )
+    )
+  );
+}
+
+function editQueued(chat, i) {
+  const [item] = chat.queue.splice(i, 1);
+  const input = $('#input');
+  input.value = item.rwText + (input.value ? '\n' + input.value : '');
+  autoGrow();
+  input.focus();
+  renderQueue();
+}
+
+function runQueue(chat) {
+  if (chat.busy || !chat.queue.length) return;
+  dispatch(chat, chat.queue.shift());
+  if (chat.id === activeChatId) renderQueue();
 }
 
 function stop() {
@@ -976,6 +1051,13 @@ desk.onChatEvent(({ chatId, ev }) => {
 
 desk.onChatTurnEnd(async ({ chatId, turnId, changes }) => {
   const chat = chatById(chatId);
+  if (chat && chat.worktree) {
+    // Changes made in the chat's own copy: shown in its card, reviewed when merged.
+    for (const c of changes || []) c.worktree = true;
+    if (changes && changes.length) changesCard(chat, turnId, changes);
+    refreshWorktree(chat);
+    return;
+  }
   if (chat && changes && changes.length) changesCard(chat, turnId, changes);
   if (changes && changes.length) addReviews(changes);
   await reloadOpenFiles();
@@ -998,12 +1080,16 @@ desk.onApproval(handleApproval);
 
 // ------------------------------------------------------------------ chips (code context and images)
 
+function chipLabel(c) {
+  return c.kind === 'element' ? `⌖ ${c.label}` : `${c.rel}:${c.start}-${c.end}`;
+}
+
 function renderChips() {
   $('#chips').replaceChildren(
     ...state.chips.map((c, i) =>
       c.kind === 'image'
         ? h('span', { class: 'chip image' }, h('img', { src: `data:${c.mediaType};base64,${c.data}` }), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
-        : h('span', { class: 'chip', title: c.text.slice(0, 500) }, `${c.rel}:${c.start}-${c.end}`, h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
+        : h('span', { class: `chip${c.kind === 'element' ? ' element' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
     )
   );
 }

@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, createChat, setFolder */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -29,6 +29,7 @@ async function init() {
   createEditors();
   wireDiff();
   wireReview();
+  wirePreview();
   createChat();
   const current = await desk.currentFolder();
   if (current) setFolder(current);

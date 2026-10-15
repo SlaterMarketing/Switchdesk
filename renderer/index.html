@@ -54,6 +54,20 @@
             <div id="editor"></div>
             <div id="diff-editor" class="hidden"></div>
             <div id="review-bar" class="hidden"></div>
+            <div id="preview" class="hidden">
+              <div class="preview-bar">
+                <button id="preview-back" class="icon-btn" title="Back">←</button>
+                <button id="preview-fwd" class="icon-btn" title="Forward">→</button>
+                <button id="preview-reload" class="icon-btn" title="Reload">⟳</button>
+                <input id="preview-url" placeholder="localhost:3000" spellcheck="false" />
+                <button id="preview-errors" class="hidden"></button>
+                <button id="preview-pick" class="btn small" title="Click part of the page to attach it to the chat">⌖ Pick element</button>
+                <button id="preview-shot" class="icon-btn" title="Add a screenshot of the page to the chat">📷</button>
+                <button id="preview-external" class="icon-btn" title="Open in your browser">↗</button>
+              </div>
+              <div id="preview-frame"></div>
+              <div id="preview-empty"></div>
+            </div>
             <div id="diff-bar" class="hidden">
               <span id="diff-title"></span>
               <span class="spacer"></span>
@@ -87,6 +101,8 @@
               <div id="term-tabs"></div>
               <button id="btn-term-new" class="icon-btn" title="New terminal">＋</button>
               <span class="spacer"></span>
+              <button id="btn-term-preview" class="term-fix hidden" title="Open this address in the preview tab"></button>
+              <button id="btn-term-fix" class="term-fix" title="Send the terminal output (or your selection) to Claude to fix">✨ Fix with Claude</button>
               <button id="btn-term-hide" class="icon-btn" title="Hide terminal (⌘`)">✕</button>
             </div>
             <div id="term-host"></div>
@@ -97,11 +113,14 @@
         <aside id="chat">
           <div class="chat-header">
             <div id="chat-tabs"></div>
+            <button id="btn-new-copy" class="icon-btn" title="New chat in its own copy, to run agents in parallel (⌘⇧N)">⑂</button>
             <button id="btn-new-chat" class="icon-btn" title="New chat (⌘N)">＋</button>
             <button id="btn-history" class="icon-btn" title="Past chats">🕘</button>
           </div>
+          <div id="worktree-bar" class="hidden"></div>
           <div id="messages-host"></div>
           <div id="composer">
+            <div id="queue" class="hidden"></div>
             <div id="chips"></div>
             <div class="composer-box">
               <textarea id="input" rows="3" placeholder="Ask anything, @ to mention a file, paste a screenshot" spellcheck="false"></textarea>
@@ -162,6 +181,8 @@
     <script src="chat.js"></script>
     <script src="diff.js"></script>
     <script src="review.js"></script>
+    <script src="preview.js"></script>
+    <script src="worktree.js"></script>
     <script src="git.js"></script>
     <script src="search.js"></script>
     <script src="terminal.js"></script>

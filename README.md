@@ -16,6 +16,10 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
 - **Inline review:** Claude's edits show up right in the editor, with added lines in green and removed lines in red. Every change has its own **Keep** and **Undo**, and a bar at the bottom steps through changes and offers **Keep file**, **Undo file** and a side-by-side **Compare**. Changes from several turns stack up until you review them.
 - **Rewind:** hover any message you sent and click **↺ Rewind**. The conversation goes back to just before it, the message returns to the chat box to edit and resend, and the files can go back too. Claude Code forks the conversation, so the original stays in History. Files can be rewound for messages sent since the app opened.
 - **Terminal:** `Ctrl+`` opens a real terminal (PowerShell on Windows) in the project folder. Open several with +.
+- **Fix with Claude:** the button in the terminal bar sends the output (or your selection) to Claude. It lights up when a command prints an error.
+- **Preview** (`Ctrl+Shift+V`): your site in a tab next to the code. **Start dev server** runs your `dev` script, and any `localhost` address the terminal prints opens with one click. Console errors show as **Fix with Claude**. **Pick element** lets you click part of the page to attach it, with a screenshot, to the chat. 📷 attaches a screenshot of the whole page.
+- **Parallel agents** (⑂, `Ctrl+Shift+N`): a chat that works in its own copy of the folder (a git worktree on its own branch), starting from your files as they are now. Run several at once. **Merge into my folder** brings the changes back as normal edits for inline review, combining them with anything you changed meanwhile. **Discard** deletes the copy and its branch.
+- **Queue:** press Enter while Claude is working and the message waits its turn. Queued messages can be edited or removed, and pressing Stop pauses the queue.
 - **Git panel** (`Ctrl+Shift+G`): changed files with diffs against the last commit, discard, commit (with a ✨ button that asks Claude Haiku to write the message), branches, push and pull.
 - **Settings** (`Ctrl+,`): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
 - **Context**
@@ -71,6 +75,7 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 - `src/updater.js` uses electron-updater against GitHub Releases.
 - `src/terminal.js` runs the terminal through node-pty. `src/gitops.js` runs your own git, so it uses your existing credentials.
 - Conversations are Claude Code's own transcripts in `~/.claude/projects/`, so the terminal and the app share history.
+- `src/worktrees.js` makes the copies for parallel agents under the app's data folder and merges with `git merge-file`.
 - Rewind resumes with `--resume <session> --resume-session-at <reply> --fork-session`, and restores files from the turn's git snapshot.
 
 ## Limits

@@ -431,3 +431,44 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .search-box > input, .search-row { min-width: 0; }
 #search-results { overflow-x: hidden; }
 .search-match .txt { min-width: 0; }
+
+/* preview pane */
+#preview { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+#preview.hidden { display: none; }
+.preview-bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex: none; }
+#preview-url { flex: 1; min-width: 80px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 8px; font: 12px var(--mono); outline: none; }
+#preview-url:focus { border-color: var(--accent); }
+#preview-errors { border: 1px solid var(--err); color: var(--err); background: none; border-radius: 6px; font: 11px var(--sans); padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+#preview-errors:hover { background: rgba(248, 81, 73, 0.12); }
+#preview-errors.hidden { display: none; }
+#preview-pick.on { border-color: var(--accent); color: var(--accent); }
+#preview-frame { flex: 1; min-height: 0; position: relative; background: #fff; }
+#preview-frame webview { position: absolute; inset: 0; width: 100%; height: 100%; }
+#preview-empty { position: absolute; inset: 37px 0 0 0; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+#preview-empty.hidden { display: none; }
+#preview-empty h2 { color: var(--text-strong); font-weight: 600; margin: 0 0 6px; }
+#preview-empty .recent { display: block; margin: 8px auto 0; background: none; border: none; color: var(--accent); cursor: pointer; font: 12px var(--mono); }
+.chip.element { color: var(--accent); }
+
+/* own copies (parallel agents) */
+#worktree-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); font-size: 12px; flex: none; }
+#worktree-bar.hidden { display: none; }
+.wt-icon { color: var(--accent); font-weight: 600; }
+.wt-label { color: var(--text-strong); }
+.chat-tab .wt-icon { font-size: 11px; }
+.wt-files { margin-top: 4px; max-height: 260px; overflow: auto; font: 12px var(--mono); }
+
+/* queued messages */
+#queue { display: grid; gap: 4px; margin-bottom: 6px; }
+#queue.hidden { display: none; }
+#queue .queued { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 8px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg-input); font-size: 12px; min-width: 0; }
+#queue .q-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 600; flex: none; }
+#queue .q-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+#queue .q-x { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 14px; padding: 0 4px; }
+#queue .q-x:hover { color: var(--err); }
+
+/* Fix with Claude in the terminal bar */
+.term-fix { border: 1px solid var(--border); background: none; color: var(--text-dim); font: 11px var(--sans); padding: 2px 9px; border-radius: 6px; cursor: pointer; margin-right: 4px; }
+.term-fix:hover { color: var(--text-strong); border-color: var(--accent); }
+.term-fix.alert { color: #fff; background: var(--accent); border-color: var(--accent); animation: fix-pulse 1.6s ease-in-out 3; }
+@keyframes fix-pulse { 50% { box-shadow: 0 0 0 4px rgba(217, 119, 87, 0.3); } }
