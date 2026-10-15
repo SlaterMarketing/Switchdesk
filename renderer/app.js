@@ -441,7 +441,7 @@ async function saveWorkspace() {
   const snapshot = {
     tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
     active: t && t.kind === 'file' ? t.rel : null,
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined })),
     activeChat: activeChat()?.sessionId || null,
     savedAt: Date.now(),
   };
@@ -457,7 +457,8 @@ async function restoreWorkspace(root) {
     for (const c of saved.chats || []) {
       try {
         if (c.worktree && !(await desk.worktree.exists(c.worktree))) continue;
-        await openSession({ id: c.sessionId, title: c.title || 'Chat' }, c.worktree, c.account);
+        if (c.agent && c.agent !== 'claude') reopenAgentChat(c);
+        else await openSession({ id: c.sessionId, title: c.title || 'Chat' }, c.worktree, c.account);
       } catch {
         /* transcript deleted */
       }
@@ -729,19 +730,19 @@ async function showSetup() {
   };
   const step1 = h('div', { class: 'setup-step' });
   const step2 = h('div', { class: 'setup-step' });
-  const finish = h('button', { class: 'btn primary big-btn' }, 'Start using Claude Desk');
+  const finish = h('button', { class: 'btn primary big-btn' }, 'Start using Switchdesk');
   const root = h(
     'div',
     { class: 'setup-backdrop' },
     h(
       'div',
       { class: 'setup-card' },
-      h('h2', {}, 'Set up Claude Desk'),
-      h('p', { class: 'muted' }, 'Two quick steps. Claude Desk runs Claude Code on this computer with your own Claude subscription (Pro, Max, Team or Enterprise).'),
+      h('h2', {}, 'Set up Switchdesk'),
+      h('p', { class: 'muted' }, 'Two quick steps. Switchdesk runs Claude Code on this computer with your own Claude subscription (Pro, Max, Team or Enterprise).'),
       step1,
       step2,
       log,
-      h('div', { class: 'setup-foot' }, finish)
+      h('div', { class: 'setup-foot' }, h('button', { class: 'btn', title: 'Codex, Kimi, Gemini, Qwen or DeepSeek', onclick: () => (close(), openSettings('agents')) }, 'Use another agent instead'), finish)
     )
   );
   document.body.append(root);
@@ -878,7 +879,7 @@ function wire() {
   });
   $('#send-btn').addEventListener('click', () => ($('#send-btn').classList.contains('stop') ? stop() : send()));
   $('#input').addEventListener('input', updateSendButton);
-  $('#model-select').addEventListener('change', (e) => desk.setSettings({ model: e.target.value }));
+  $('#model-select').addEventListener('change', (e) => saveModelChoice(e.target.value));
   $('#effort-select').addEventListener('change', (e) => desk.setSettings({ effort: e.target.value }));
 
   desk.onMenu((cmd) => {
@@ -909,7 +910,7 @@ function wire() {
     } else if (u.state === 'ready') {
       el.textContent = `⬆ Restart to update to ${u.version}`;
       el.className = 'ready';
-      el.title = 'Installs the update and reopens Claude Desk';
+      el.title = 'Installs the update and reopens Switchdesk';
     } else el.className = 'hidden';
   });
   $('#status-update').addEventListener('click', () => {

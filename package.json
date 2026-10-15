@@ -1,8 +1,8 @@
 {
   "name": "claude-desk",
-  "productName": "Claude Desk",
-  "version": "0.7.0",
-  "description": "A personal Cursor-style desktop editor that drives your local Claude Code CLI.",
+  "productName": "Switchdesk",
+  "version": "0.8.0",
+  "description": "A Cursor-style desktop editor that drives the coding agents you already use: Claude Code, Codex and Kimi.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "uk.co.slatermarketing.claudedesk",
-    "productName": "Claude Desk",
+    "productName": "Switchdesk",
     "files": [
       "src/**",
       "renderer/**",
@@ -84,8 +84,8 @@
       "oneClick": true,
       "perMachine": false,
       "include": "build/installer.nsh",
-      "artifactName": "ClaudeDesk-Setup-${version}.${ext}",
-      "shortcutName": "Claude Desk",
+      "artifactName": "Switchdesk-Setup-${version}.${ext}",
+      "shortcutName": "Switchdesk",
       "deleteAppDataOnUninstall": false
     },
     "publish": [

@@ -33,7 +33,7 @@ jobs:
             git tag "$tag"
             git push origin "$tag"
           fi
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Claude Desk $tag"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Switchdesk $tag"
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

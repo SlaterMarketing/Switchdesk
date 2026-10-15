@@ -8,7 +8,8 @@
 
 const SETTINGS_SECTIONS = [
   ['general', 'General'],
-  ['accounts', 'Accounts'],
+  ['agents', 'Agents'],
+  ['accounts', 'Claude accounts'],
   ['instructions', 'Instructions'],
   ['permissions', 'Permissions'],
   ['mcp', 'MCP servers'],
@@ -31,7 +32,7 @@ function openSettings(section = 'general') {
   const show = (id) => {
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp }[id];
     render(body, close).catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
   };
   document.body.append(root);
@@ -59,7 +60,7 @@ async function settingsGeneral(body, close) {
   body.replaceChildren(
     h('h3', {}, 'General'),
     field('Theme', theme),
-    field('Claude Code location', pathInput, 'Leave blank and Claude Desk finds it for you.'),
+    field('Claude Code location', pathInput, 'Leave blank and Switchdesk finds it for you.'),
     h(
       'div',
       { class: 'set-box' },

@@ -300,7 +300,7 @@ body.mac #titlebar { padding-left: 78px; }
 .setup-wait .row { display: flex; gap: 6px; }
 .setup-wait input { flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; outline: none; font-family: var(--mono); }
 .setup-log { font: 11px/1.4 var(--mono); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; color: var(--text-dim); }
-.setup-foot { display: flex; justify-content: flex-end; }
+.setup-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .big-btn { padding: 9px 18px; font-size: 14px; }
 #status-cli:hover { color: var(--text-strong); }
 
@@ -521,3 +521,14 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .acct-signin .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 .acct-signin input { flex: 1; min-width: 0; outline: none; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; }
 .acct-signin p, .acct-signin > div { margin-bottom: 6px; }
+
+/* agents */
+#agent-select { font-weight: 600; }
+.agent-card .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.agent-dot.ok { background: #3fb950; }
+.agent-dot.warn { background: #d29922; }
+.agent-dot.bad { background: #f85149; }
+.agent-key { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
+.agent-key input { flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; outline: none; }
+.agent-key details { display: grid; gap: 6px; }

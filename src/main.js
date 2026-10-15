@@ -16,6 +16,9 @@ const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
+const agents = require('./agents');
+const { CodexSession, codexStatus, codexModels } = require('./codex-session');
+const { AcpSession, acpStatus } = require('./acp-session');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -23,6 +26,11 @@ const IGNORED_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 
 
 let win = null;
 let loginHandle = null;
+
+// The app used to be called Claude Desk. Keep using that data folder if it exists, so settings,
+// extra accounts and parallel-agent copies carry over.
+const legacyData = path.join(app.getPath('appData'), 'Claude Desk');
+if (fs.existsSync(legacyData)) app.setPath('userData', legacyData);
 
 // ---------- settings ----------
 
@@ -125,7 +133,7 @@ async function openFolder(dir) {
   settings.recentFolders = [workspace, ...settings.recentFolders.filter((f) => f !== workspace)].slice(0, 10);
   saveSettings();
   startWatcher();
-  if (win) win.setTitle(`${path.basename(workspace)} — Claude Desk`);
+  if (win) win.setTitle(`${path.basename(workspace)} — Switchdesk`);
   return { root: workspace, name: path.basename(workspace) };
 }
 
@@ -323,18 +331,24 @@ function denyPending(chat, message) {
   chat.approvals.clear();
 }
 
-async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account }) {
-  const bin = await cli.findClaude(settings.claudePath);
-  if (!bin) throw new Error('Claude Code is not installed. Open Settings → Setup to install it.');
-  const chat = { session: null, effort: effort || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd), account };
+async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent }) {
+  const a = agents.AGENTS[agent] ? agents.AGENTS[agent] : agents.AGENTS.claude;
+  agent = agents.AGENTS[agent] ? agent : 'claude';
+  const bin = await agents.findBin(agent, settings);
+  if (!bin) throw new Error(agent === 'claude' ? 'Claude Code is not installed. Open Settings → Setup to install it.' : `${a.label} isn't installed yet. Open Settings → Agents to install it.`);
+  if (a.key && !agents.readKey(settings, agent)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
+  const chat = { session: null, effort: effort || '', model: model || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd), account, agent };
   // Picking up a conversation another account had: give this account the latest transcript.
-  if (sessionId) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
-  chat.session = new ChatSession({
+  if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
+  const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
+  chat.session = new Session({
     bin,
+    args: a.args,
+    label: a.label,
     cwd: chat.cwd,
-    env: accounts.envFor(account),
+    env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model),
     sessionId,
-    resumeAt,
+    resumeAt: agent === 'claude' ? resumeAt : null,
     model,
     effort,
     mode,
@@ -362,23 +376,32 @@ async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd,
   return chat;
 }
 
-async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account }) {
+async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent }) {
   if (!workspace) throw new Error('Open a folder first.');
   if (!accounts.exists(settings, account)) account = folderAccount();
+  agent = agents.AGENTS[agent] ? agent : 'claude';
   let chat = chats.get(chatId);
-  if (chat && chat.session.alive && (resumeAt || (effort || '') !== chat.effort || account !== chat.account)) {
-    // Effort and account are fixed per process: restart it on the same conversation.
+  const restart =
+    chat &&
+    chat.session.alive &&
+    (resumeAt ||
+      agent !== chat.agent ||
+      (agent === 'claude' && ((effort || '') !== chat.effort || account !== chat.account)) ||
+      (agents.AGENTS[agent].kind === 'acp' && (model || '') !== chat.model));
+  if (restart) {
+    // Effort, account and (for ACP agents) model are fixed per process: restart it on the same conversation.
     if (!resumeAt) sessionId = chat.session.sessionId || sessionId;
     chat.closing = true;
     chat.session.dispose();
     chats.delete(chatId);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account });
+  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent });
   else await chat.session.setModel(model);
-  chat.turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(chat.cwd).begin(), blocks: new Map() };
+  const turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(chat.cwd).begin(), blocks: new Map() };
+  chat.turn = turn;
   await chat.session.send(content, mode);
-  return { turnId: chat.turn.id };
+  return { turnId: turn.id };
 }
 
 async function chatInterrupt(chatId) {
@@ -422,6 +445,82 @@ function registerIpc() {
     return settings;
   });
   ipcMain.handle('cli:status', (_e, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount())));
+
+  // Agents: Claude, Codex, Kimi, and API-key models through Gemini CLI and Qwen Code.
+  ipcMain.handle('agents:list', () =>
+    Object.entries(agents.AGENTS).map(([id, a]) => ({
+      id,
+      label: a.label,
+      vendor: a.vendor,
+      kind: a.kind,
+      help: a.help || '',
+      key: a.key || null,
+      hasKey: a.key ? !!agents.readKey(settings, id) : false,
+      options: a.key ? agents.options(settings, id) : {},
+      canLogin: !!a.login,
+    }))
+  );
+  ipcMain.handle('agents:status', async (_e, id) => {
+    const a = agents.AGENTS[id];
+    if (!a) return null;
+    if (id === 'claude') {
+      const s = await cli.cliStatus(settings.claudePath, accounts.envFor(folderAccount()));
+      return { installed: s.found, path: s.path, version: s.version, loggedIn: !!(s.found && (s.auth ? s.auth.loggedIn : true)), detail: s.auth && s.auth.email ? s.auth.email : '' };
+    }
+    const bin = await agents.findBin(id, settings);
+    if (!bin) return { installed: false };
+    const version = await agents.version(bin);
+    if (a.key && !agents.readKey(settings, id)) return { installed: true, path: bin, version, loggedIn: false, detail: `Needs your ${a.key.name}` };
+    try {
+      if (a.kind === 'codex') {
+        const r = await codexStatus(bin, {});
+        return { installed: true, path: bin, version, loggedIn: r.loggedIn, detail: r.loggedIn ? [r.email || (r.method === 'apiKey' ? 'API key' : 'ChatGPT'), r.plan].filter(Boolean).join(' · ') : 'Not signed in' };
+      }
+      const r = await acpStatus(bin, a.args, agents.envFor(settings, id));
+      return { installed: true, path: bin, version: version || r.version, loggedIn: r.loggedIn, detail: r.loggedIn ? (a.key ? 'API key saved' : 'Signed in') : a.key ? 'The key was not accepted' : 'Not signed in' };
+    } catch (err) {
+      return { installed: true, path: bin, version, loggedIn: false, detail: String(err.message || err).slice(0, 200) };
+    }
+  });
+  // API key, base URL and default model for an API-key agent. A key of undefined keeps the saved one.
+  ipcMain.handle('agents:set-key', (_e, id, { key, baseUrl, model } = {}) => {
+    const a = agents.AGENTS[id];
+    if (!a || !a.key) return false;
+    const prev = (settings.apiKeys || {})[id] || {};
+    const sealed = key === undefined ? { key: prev.key, enc: prev.enc } : agents.sealKey(String(key).trim()) || { key: '', enc: false };
+    settings.apiKeys = { ...(settings.apiKeys || {}), [id]: { ...sealed, baseUrl: (baseUrl || '').trim(), model: (model || '').trim() } };
+    saveSettings();
+    return true;
+  });
+  // Install and sign-in commands, which the app runs in its own terminal so you see everything.
+  ipcMain.handle('agents:command', async (_e, id, what) => {
+    const a = agents.AGENTS[id];
+    if (!a) return null;
+    if (what === 'install') return a.install ? a.install() : null;
+    const bin = await agents.findBin(id, settings);
+    if (what === 'login' && a.login) return bin ? agents.commandLine(bin, a.login) : null;
+    return null;
+  });
+  ipcMain.handle('agents:models', async (_e, id) => {
+    if (id !== 'codex') return [];
+    const bin = await agents.findBin('codex', settings);
+    return bin ? codexModels(bin).catch(() => []) : [];
+  });
+  // Codex can use an OpenAI API key instead of a ChatGPT sign-in; Codex stores it itself.
+  ipcMain.handle('agents:codex-key', async (_e, key) => {
+    const bin = await agents.findBin('codex', settings);
+    if (!bin) throw new Error("Codex isn't installed.");
+    const env = await cli.childEnv();
+    return new Promise((resolve) => {
+      const child = require('child_process').spawn(bin, ['login', '--with-api-key'], { env, windowsHide: true, shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin) });
+      let out = '';
+      child.stdout.on('data', (c) => (out += c));
+      child.stderr.on('data', (c) => (out += c));
+      child.on('error', (e) => resolve({ ok: false, out: String(e) }));
+      child.on('close', (code) => resolve({ ok: code === 0, out: out.trim() }));
+      child.stdin.end(String(key).trim() + '\n');
+    });
+  });
 
   // Accounts: several Claude logins side by side, a default per folder, and a pick per chat.
   const accountsInfo = () => ({ accounts: accounts.list(settings), rules: settings.accountRules || {}, defaultAccount: accounts.forFolder(settings, null), folderAccount: folderAccount() });
@@ -617,7 +716,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 560,
-    title: 'Claude Desk',
+    title: 'Switchdesk',
     backgroundColor: '#1e1f22',
     icon: path.join(APP_ROOT, 'build', 'icon.png'),
     // macOS keeps its traffic lights; Windows and Linux get one combined bar: the app draws the
@@ -688,7 +787,7 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        { label: `Claude Desk ${app.getVersion()}`, enabled: false },
+        { label: `Switchdesk ${app.getVersion()}`, enabled: false },
         { label: 'Check for Updates…', click: () => updater.checkNow() },
       ],
     },

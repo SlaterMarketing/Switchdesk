@@ -84,7 +84,7 @@ async function remove(id) {
   if (isMain(id)) throw new Error("The main account can't be removed.");
   const dir = dirFor(id);
   const rel = path.relative(baseDir, dir);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Not a Claude Desk account folder.');
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Not a Switchdesk account folder.');
   await fsp.rm(dir, { recursive: true, force: true });
 }
 

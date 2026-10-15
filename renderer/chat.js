@@ -1,6 +1,6 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
    activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc,
-   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount */
+   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -21,7 +21,7 @@ function emptyState() {
     'div',
     { class: 'empty-chat' },
     h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Runs on your Claude Code login, in ', state.folder ? state.folder.name : 'the open folder', '.')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
   );
 }
 
@@ -31,6 +31,7 @@ function createChat({ title = 'New chat', sessionId = null } = {}) {
     title,
     sessionId,
     account: acct.folderAccount, // which Claude account it runs on (accounts.js)
+    agent: (state.settings && state.settings.lastAgent) || 'claude', // which agent runs it (agents.js)
     el: h('div', { class: 'messages-pane' }, emptyState()),
     turn: null,
     busy: false,
@@ -56,7 +57,7 @@ function switchChat(id) {
   setRunning(!!activeChat()?.busy);
   renderQueue();
   renderWorktreeBar();
-  renderAccountPill();
+  renderAgentPicker();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.session === activeChat()?.sessionId);
 }
 
@@ -218,6 +219,7 @@ async function openSession(row, worktree, account) {
   const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined, account);
   const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
   chat.account = account;
+  chat.agent = 'claude'; // past chats in History are Claude Code transcripts
   if (worktree) {
     chat.worktree = worktree;
     refreshWorktree(chat);
@@ -341,7 +343,8 @@ function userBubble(chat, body, rw) {
   const el = h(
     'div',
     { class: 'msg-user' },
-    h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind'),
+    // Rewind uses Claude Code's conversation forking, so it's Claude only.
+    agentOf(chat) === 'claude' ? h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind') : null,
     ...body
   );
   el.rw = rw;
@@ -412,6 +415,8 @@ function handleEvent(chat, ev) {
         chat.usage.model = ev.model || chat.usage.model;
       } else if (ev.subtype === 'api_retry' && turn) {
         appendChat(h('div', { class: 'notice' }, `API ${ev.error || 'error'}, retrying (attempt ${ev.attempt}/${ev.max_retries})…`), chat);
+      } else if (ev.subtype === 'notice' && turn) {
+        appendChat(h('div', { class: 'notice' }, ev.text), chat);
       } else if (ev.subtype === 'compact_boundary') {
         appendChat(h('div', { class: 'notice' }, 'Conversation compacted to free up context.'), chat);
       }
@@ -474,7 +479,7 @@ function handleEvent(chat, ev) {
       }
       endTurn(chat);
       if (!document.hasFocus()) {
-        new Notification('Claude Desk', { body: `Claude finished: ${chat.title}` });
+        new Notification('Switchdesk', { body: `${agentLabel(chat)} finished: ${chat.title}` });
         desk.flashWindow();
       }
       break;
@@ -607,7 +612,7 @@ function handleApproval(req) {
     card.classList.add('resolved');
     $('.actions', card).replaceChildren(h('span', { class: 'resolution' }, text));
   };
-  const rule = permissionRule(toolName, input);
+  const rule = agentOf(chat) === 'claude' ? permissionRule(toolName, input) : null; // saved rules are Claude Code's
   const alwaysLabel = key.includes(':') ? `Always allow \`${key.split(':')[1]}\`` : `Always allow ${toolName}`;
   card.append(
     h(
@@ -618,7 +623,7 @@ function handleApproval(req) {
         'button',
         {
           class: 'btn small',
-          title: rule ? `Saves "${rule}" to this project's Claude Code settings` : '',
+          title: rule ? `Saves "${rule}" to this project's Claude Code settings` : 'Allows this for the rest of this chat',
           onclick: () => {
             chat.alwaysAllow.add(key);
             if (rule) desk.cfg.rule('local', rule, true);
@@ -757,7 +762,7 @@ function questionCard(chat, input, deny) {
 function notifyAttention(chat) {
   if (chat.id !== activeChatId) renderChatTabs();
   if (!document.hasFocus()) {
-    new Notification('Claude Desk', { body: `Claude is waiting for you: ${chat.title}` });
+    new Notification('Switchdesk', { body: `${agentLabel(chat)} is waiting for you: ${chat.title}` });
     desk.flashWindow();
   }
 }
@@ -903,7 +908,7 @@ async function rewindTo(chat, bubble) {
       h('div', { class: 'rewind-list' }, ...files.files.slice(0, 12).map((f) => h('div', {}, f)), files.files.length > 12 ? h('div', {}, `and ${files.files.length - 12} more`) : null)
     );
   else if (!files.available)
-    content.push(h('p', { class: 'muted small' }, 'Files can only be rewound for messages sent since Claude Desk was opened, so only the conversation will rewind.'));
+    content.push(h('p', { class: 'muted small' }, 'Files can only be rewound for messages sent since Switchdesk was opened, so only the conversation will rewind.'));
   else content.push(h('p', { class: 'muted small' }, 'No files have changed since this message.'));
   const go = h('button', { class: 'btn primary' }, 'Rewind');
   const cancel = h('button', { class: 'btn' }, 'Cancel');
@@ -979,9 +984,11 @@ function buildPrompt(text) {
 async function send(textOverride, modeOverride, display) {
   const chat = activeChat();
   if (!chat) return;
-  if (cliState && !cliState.found) return showSetup();
-  const auth = multiAccount() ? acct.status.get(chatAccount(chat)) : cliState && cliState.auth;
-  if (auth && !auth.loggedIn) return multiAccount() ? signInAccount(chatAccount(chat)) : showSetup();
+  if (agentOf(chat) === 'claude') {
+    if (cliState && !cliState.found) return showSetup();
+    const auth = multiAccount() ? acct.status.get(chatAccount(chat)) : cliState && cliState.auth;
+    if (auth && !auth.loggedIn) return multiAccount() ? signInAccount(chatAccount(chat)) : showSetup();
+  }
   if (!state.folder) return toast('Open a folder first.');
   if (chat.worktree && chat.worktree.removed) return toast("This chat's copy was deleted. Start a new chat to keep going.");
   if (chat.making) return toast('Still making the copy. One moment.');
@@ -1045,6 +1052,7 @@ async function dispatch(chat, { content, shown, mode, images, rwText }) {
       resumeAt,
       cwd: chat.worktree ? chat.worktree.path : undefined,
       account: chatAccount(chat),
+      agent: agentOf(chat),
     });
     if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {

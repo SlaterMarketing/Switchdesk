@@ -155,7 +155,7 @@ async function merge(wt, workspace) {
 }
 
 async function remove(wt) {
-  if (!isUnder(wt.root)) throw new Error('Not a Claude Desk copy.');
+  if (!isUnder(wt.root)) throw new Error('Not a Switchdesk copy.');
   try {
     await git(wt.repo, ['worktree', 'remove', '--force', wt.root]);
   } catch {

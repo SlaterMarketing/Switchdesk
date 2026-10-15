@@ -45,8 +45,10 @@ function renderAccountPill() {
   const btn = $('#account-btn');
   if (!btn) return;
   const chat = activeChat();
-  btn.classList.toggle('hidden', !multiAccount());
-  if (!multiAccount()) return;
+  const isClaude = !chat || !chat.agent || chat.agent === 'claude';
+  btn.classList.toggle('hidden', !multiAccount() || !isClaude);
+  if (!isClaude) return ($('#status-limit').textContent = acct.usage.get(`agent:${chat.agent}`) ? `${chat.agent[0].toUpperCase()}${chat.agent.slice(1)} usage ${acct.usage.get(`agent:${chat.agent}`)}` : '');
+  if (!multiAccount()) return ($('#status-limit').textContent = acct.usage.get(chatAccount(chat)) ? `Usage ${acct.usage.get(chatAccount(chat))}` : '');
   const id = chatAccount(chat);
   btn.textContent = `${accountName(id)} ▾`;
   btn.title = `This chat runs on your ${accountName(id)} Claude account. Click to switch.`;
@@ -56,10 +58,9 @@ function renderAccountPill() {
 
 // Rate-limit use arrives on each chat's events; it belongs to that chat's account.
 function noteAccountUsage(chat, text) {
-  const id = chatAccount(chat);
+  const id = chat.agent && chat.agent !== 'claude' ? `agent:${chat.agent}` : chatAccount(chat);
   acct.usage.set(id, text);
-  if (!multiAccount()) $('#status-limit').textContent = `Usage ${text}`;
-  else if (chatAccount(activeChat()) === id) renderAccountPill();
+  if (chat === activeChat()) renderAccountPill();
 }
 
 function toggleAccountMenu() {
@@ -223,7 +224,7 @@ async function settingsAccounts(body) {
               class: 'btn small danger',
               onclick: async () => {
                 if (chats.some((c) => c.busy && chatAccount(c) === a.id)) return toast(`A chat is still running on ${a.name}. Stop it first.`);
-                if (!confirm(`Remove ${a.name}? Claude Desk signs it out and deletes its chat history and settings on this computer. Your account itself isn't affected.`)) return;
+                if (!confirm(`Remove ${a.name}? Switchdesk signs it out and deletes its chat history and settings on this computer. Your account itself isn't affected.`)) return;
                 setAccounts(await desk.accounts.remove(a.id));
                 for (const c of chats) if (c.account === a.id) c.account = null;
                 renderAccountPill();

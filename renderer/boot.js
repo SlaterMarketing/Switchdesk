@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, wireAccounts */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, wireAccounts, loadAgents, wireAgents */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -26,9 +26,10 @@ async function init() {
   wireGit();
   wireSearch();
   wireAccounts();
+  wireAgents();
   await loadAccounts();
+  await loadAgents();
   setMode(state.settings.mode || 'agent');
-  $('#model-select').value = state.settings.model || '';
   $('#effort-select').value = state.settings.effort || '';
   renderRecent();
   checkCli({ showSetupIfNeeded: true });
