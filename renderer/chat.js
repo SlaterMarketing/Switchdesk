@@ -466,7 +466,10 @@ function handleEvent(chat, ev) {
         }
       }
       endTurn(chat);
-      if (!document.hasFocus()) new Notification('Claude Desk', { body: `Claude finished: ${chat.title}` });
+      if (!document.hasFocus()) {
+        new Notification('Claude Desk', { body: `Claude finished: ${chat.title}` });
+        desk.flashWindow();
+      }
       break;
   }
 }
@@ -746,7 +749,10 @@ function questionCard(chat, input, deny) {
 
 function notifyAttention(chat) {
   if (chat.id !== activeChatId) renderChatTabs();
-  if (!document.hasFocus()) new Notification('Claude Desk', { body: `Claude is waiting for you: ${chat.title}` });
+  if (!document.hasFocus()) {
+    new Notification('Claude Desk', { body: `Claude is waiting for you: ${chat.title}` });
+    desk.flashWindow();
+  }
 }
 
 // ------------------------------------------------------------------ changes card

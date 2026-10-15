@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('desk', {
   answerApproval: call('approval:answer'),
   undoChanges: call('changes:undo'),
   rewindFiles: call('rewind:files'),
+  flashWindow: call('window:flash'),
   worktree: {
     create: call('worktree:create'),
     changes: call('worktree:changes'),

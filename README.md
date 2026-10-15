@@ -30,6 +30,8 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
 - **Slash commands:** type `/` in the chat box for Claude Code's commands, including your own from `.claude/commands` and skills. `/clear` starts a fresh conversation in the tab.
 - **Picks up where you left off:** open files and chat tabs come back when you reopen a folder.
 - **History:** the Chats tab lists your Claude Code conversations for the open folder, including ones started in the terminal. Click one to continue it.
+- **Light/dark switch:** the sun/moon button in the title bar. Settings also has a System option.
+- **Taskbar flash:** when Claude finishes or needs you while the app is in the background, its taskbar button flashes (the Dock icon bounces on macOS) until you come back.
 - **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.
 

@@ -435,6 +435,9 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 #search-results { overflow-x: hidden; }
 .search-match .txt { min-width: 0; }
 
+.theme-btn { display: inline-flex; align-items: center; justify-content: center; }
+.theme-btn:hover { color: var(--text-strong); background: var(--bg-hover); }
+
 /* plans open as documents */
 #editor-host.with-plan #editor { top: 40px; }
 #plan-bar { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); z-index: 4; }

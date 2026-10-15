@@ -428,6 +428,12 @@ function registerIpc() {
     if (win && process.platform !== 'darwin' && win.setTitleBarOverlay) win.setTitleBarOverlay({ color, symbolColor, height: 38 });
   });
   ipcMain.handle('update:install', () => updater.installNow());
+  // Flash the taskbar button (bounce the Dock on macOS) until you come back to the app.
+  ipcMain.handle('window:flash', () => {
+    if (!win || win.isDestroyed() || win.isFocused()) return;
+    if (process.platform === 'darwin') app.dock?.bounce('informational');
+    else win.flashFrame(true);
+  });
   // Preview pane: screenshots for the chat, and "open in your browser".
   ipcMain.handle('preview:capture', async (_e, id, rect) => {
     const wc = require('electron').webContents.fromId(id);
@@ -559,6 +565,7 @@ function createWindow() {
     },
   });
   win.loadURL('app://desk/renderer/index.html');
+  win.on('focus', () => win.flashFrame(false));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
