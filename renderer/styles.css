@@ -363,3 +363,14 @@ body.mac #titlebar { padding-left: 78px; }
 .mode-pill { white-space: nowrap; flex: none; }
 #chat-usage { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #status-update.ready { color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 4px; cursor: pointer; }
+
+/* menus in the title bar (Windows and Linux) */
+body:not(.mac) #titlebar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px); }
+#app-menu { display: flex; gap: 0; margin-right: 6px; }
+body.mac #app-menu { display: none; }
+.menu-btn { background: none; border: none; padding: 4px 8px; border-radius: 5px; cursor: pointer; color: var(--text); font-size: 13px; -webkit-app-region: no-drag; }
+.menu-btn:hover, .menu-btn.open { background: var(--bg-hover); color: var(--text-strong); }
+#folder-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.title-left { min-width: 0; }
+body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right: 6px; }
+.title-center { flex: 0 1 460px; min-width: 200px; }

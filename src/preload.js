@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld('desk', {
     mcpAdd: call('cfg:mcp-add'),
   },
 
+  menuLabels: call('menu:labels'),
+  popupMenu: call('menu:popup'),
+  setTitleBarColors: call('window:titlebar-colors'),
   installUpdate: call('update:install'),
   appVersion: call('app:version'),
   onUpdateStatus: on('update-status'),

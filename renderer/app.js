@@ -72,6 +72,35 @@ function applyTheme() {
   else document.documentElement.setAttribute('data-theme', t);
   if (window.monaco) monaco.editor.setTheme(currentTheme() === 'vs' ? 'desk-light' : 'desk-dark');
   if (typeof retheme === 'function') retheme();
+  if (!isMac) {
+    // Match the window buttons the OS draws over our title bar.
+    const css = getComputedStyle(document.documentElement);
+    desk.setTitleBarColors(css.getPropertyValue('--bg-panel').trim(), css.getPropertyValue('--text').trim());
+  }
+}
+
+// Windows and Linux: File/Edit/View/Window/Help live in our own title bar instead of a separate native bar.
+async function renderAppMenu() {
+  if (isMac) return;
+  const labels = await desk.menuLabels();
+  $('#app-menu').replaceChildren(
+    ...labels.map((label, i) =>
+      h(
+        'button',
+        {
+          class: 'menu-btn',
+          onclick: async (e) => {
+            const b = e.currentTarget;
+            const r = b.getBoundingClientRect();
+            b.classList.add('open');
+            await desk.popupMenu(i, r.left, r.bottom);
+            b.classList.remove('open');
+          },
+        },
+        label
+      )
+    )
+  );
 }
 
 function createEditors() {
@@ -89,7 +118,6 @@ function createEditors() {
   editor = monaco.editor.create($('#editor'), { ...common, model: null });
   diffEditor = monaco.editor.createDiffEditor($('#diff-editor'), { ...common, readOnly: true, renderSideBySide: true, originalEditable: false });
   applyTheme();
-  matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
 
   editor.onDidChangeCursorSelection(() => {
     const p = editor.getPosition();

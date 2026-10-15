@@ -13,6 +13,8 @@ async function init() {
   }
   state.settings = await desk.getSettings();
   applyTheme();
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
+  renderAppMenu();
   wire();
   wireImageInput();
   wireTerminal();

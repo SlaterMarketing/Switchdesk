@@ -374,6 +374,16 @@ function registerIpc() {
   });
   ipcMain.handle('setup:login-code', (_e, code) => loginHandle && loginHandle.sendCode(code));
   ipcMain.handle('setup:login-cancel', () => loginHandle && loginHandle.cancel());
+  // Menus drawn in the app's own title bar (Windows and Linux).
+  ipcMain.handle('menu:labels', () => (Menu.getApplicationMenu()?.items || []).map((i) => i.label.replace(/&/g, '')));
+  ipcMain.handle('menu:popup', (_e, index, x, y) => {
+    const item = Menu.getApplicationMenu()?.items[index];
+    if (!item || !item.submenu) return;
+    return new Promise((resolve) => item.submenu.popup({ window: win, x: Math.round(x), y: Math.round(y), callback: resolve }));
+  });
+  ipcMain.handle('window:titlebar-colors', (_e, color, symbolColor) => {
+    if (win && process.platform !== 'darwin' && win.setTitleBarOverlay) win.setTitleBarOverlay({ color, symbolColor, height: 38 });
+  });
   ipcMain.handle('update:install', () => updater.installNow());
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('open-external', (_e, url) => {
@@ -469,7 +479,10 @@ function createWindow() {
     title: 'Claude Desk',
     backgroundColor: '#1e1f22',
     icon: path.join(APP_ROOT, 'build', 'icon.png'),
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // macOS keeps its traffic lights; Windows and Linux get one combined bar: the app draws the
+    // menus and the OS draws only the minimise/maximise/close buttons on top of it.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin' ? {} : { titleBarOverlay: { color: '#1b1b1b', symbolColor: '#d6d6d6', height: 38 } }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
