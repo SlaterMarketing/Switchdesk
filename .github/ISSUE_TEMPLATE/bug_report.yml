@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in Switchdesk doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options: [Claude Code, Codex, Cursor, Kimi, Gemini, Qwen, DeepSeek, Not agent-related]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Switchdesk version
+      placeholder: "0.9.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 11, Windows 10, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Anything else that helps. Please remove API keys and personal paths first.

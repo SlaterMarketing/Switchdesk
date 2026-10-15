@@ -1,6 +1,38 @@
+<div align="center">
+
+<img src="build/icon.png" width="96" alt="Switchdesk icon">
+
 # Switchdesk
 
-A Cursor-style desktop editor for the coding agents you already use. It works with **Claude Code, Codex, Cursor and Kimi**, and with **Gemini, Qwen and DeepSeek** through your own API key. Every chat runs the agent maker's own, unmodified CLI on your machine, signed in with your own plan or key. Switchdesk never sees your logins.
+**One desk. Every coding agent.**
+
+A free, open-source, Cursor-style desktop editor for **Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek**.<br>
+Each agent runs through its maker's own CLI, signed in with your own plan or API key.
+
+[![Latest release](https://img.shields.io/github/v/release/SlaterMarketing/claude-desk?label=release&color=5eead4&labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/SlaterMarketing/claude-desk/total?color=3b82f6&labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases)
+[![MIT licence](https://img.shields.io/badge/licence-MIT-a78bfa?labelColor=17181c)](LICENSE)
+[![Platform](https://img.shields.io/badge/Windows-installer-6366f1?labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases/latest)
+
+[**Website**](https://switchdesk.dev) · [**Download for Windows**](https://github.com/SlaterMarketing/claude-desk/releases/latest) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/claude-desk/issues/new/choose)
+
+<img src="site/og.png" alt="Switchdesk: one desk, every coding agent" width="760">
+
+</div>
+
+## Supported agents
+
+| Agent | Signs in with | What Switchdesk runs |
+| --- | --- | --- |
+| Claude Code | Your Claude plan (several accounts side by side) | `claude -p --input-format stream-json` |
+| Codex | Your ChatGPT plan or an OpenAI API key | `codex app-server` |
+| Cursor | Your Cursor plan (`agent login`) | `agent acp` |
+| Kimi | Your Kimi Code membership | `kimi acp` |
+| Gemini | Your Gemini API key | `gemini --acp` |
+| Qwen | Your Alibaba Cloud API key | `qwen --acp` |
+| DeepSeek | Your DeepSeek API key, through Qwen Code | `qwen --acp` |
+
+Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the conversation carries on.
 
 Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
 
@@ -105,3 +137,11 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 ## Terms
 
 This app runs the unmodified Claude Code binary, which you sign in to yourself, for your own use. That matches what Anthropic's [legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance) allows. Don't ship it to other people as a product on your subscription: anything you offer to others has to use their own login or API keys.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to run the app and send a change. The website at [switchdesk.dev](https://switchdesk.dev) lives in [`site/`](site).
+
+## Licence
+
+[MIT](LICENSE). Free to use, change and share.
