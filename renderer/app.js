@@ -412,12 +412,14 @@ async function setFolder(info) {
     resetPreview();
     await refreshFiles();
     closeAllChats();
+    await loadAccounts(); // the folder may use a different account
     await restoreWorkspace(info.root);
   } finally {
     restoringWorkspace = false;
   }
   loadHistory();
   refreshGit();
+  checkCli();
 }
 
 // ------------------------------------------------------------------ reopen where you left off
@@ -439,7 +441,7 @@ async function saveWorkspace() {
   const snapshot = {
     tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
     active: t && t.kind === 'file' ? t.rel : null,
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined })),
     activeChat: activeChat()?.sessionId || null,
     savedAt: Date.now(),
   };
@@ -455,7 +457,7 @@ async function restoreWorkspace(root) {
     for (const c of saved.chats || []) {
       try {
         if (c.worktree && !(await desk.worktree.exists(c.worktree))) continue;
-        await openSession({ id: c.sessionId, title: c.title || 'Chat' }, c.worktree);
+        await openSession({ id: c.sessionId, title: c.title || 'Chat' }, c.worktree, c.account);
       } catch {
         /* transcript deleted */
       }
@@ -630,7 +632,7 @@ function modal(content, { onClose } = {}) {
     onClose && onClose();
   };
   backdrop.addEventListener('mousedown', (e) => e.target === backdrop && close());
-  backdrop.addEventListener('keydown', (e) => e.key === 'Escape' && close());
+  backdrop.addEventListener('keydown', (e) => e.key === 'Escape' && (e.preventDefault(), close()));
   $('#modal-root').append(backdrop);
   return close;
 }
@@ -695,6 +697,7 @@ let cliState = null;
 async function checkCli({ showSetupIfNeeded = false } = {}) {
   const s = await desk.cliStatus();
   cliState = s;
+  if (s.found) acct.status.set(acct.folderAccount, s.auth || { loggedIn: true });
   const el = $('#status-cli');
   const signedIn = s.found && (s.auth ? s.auth.loggedIn : true);
   el.replaceChildren();
@@ -703,8 +706,10 @@ async function checkCli({ showSetupIfNeeded = false } = {}) {
     el.append(
       h('span', { class: signedIn ? 'ok' : 'bad' }, '●'),
       ` Claude Code ${s.version.replace(/\s*\(Claude Code\)/, '')}`,
-      signedIn ? ` · ${s.auth && s.auth.authMethod === 'claude.ai' ? 'subscription' : (s.auth && s.auth.authMethod) || 'signed in'}` : ' · not signed in · click to sign in'
+      signedIn ? ` · ${s.auth && s.auth.authMethod === 'claude.ai' ? 'subscription' : (s.auth && s.auth.authMethod) || 'signed in'}` : ' · not signed in · click to sign in',
+      multiAccount() ? ` · ${accountName(acct.folderAccount)}${s.auth && s.auth.email ? ` (${s.auth.email})` : ''}` : ''
     );
+  renderAccountPill();
   el.style.cursor = signedIn ? 'default' : 'pointer';
   $('#cli-check').textContent = '';
   if (showSetupIfNeeded && !signedIn) showSetup();
@@ -829,7 +834,11 @@ function wire() {
   $('#btn-quickopen').addEventListener('click', quickOpen);
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-theme').addEventListener('click', toggleTheme);
-  $('#status-cli').addEventListener('click', () => cliState && !(cliState.found && (cliState.auth ? cliState.auth.loggedIn : true)) && showSetup());
+  $('#status-cli').addEventListener('click', () => {
+    if (!cliState || (cliState.found && (cliState.auth ? cliState.auth.loggedIn : true))) return;
+    if (cliState.found && multiAccount()) signInAccount(acct.folderAccount).then(() => checkCli());
+    else showSetup();
+  });
   $('#btn-sidebar').addEventListener('click', () => $('#workbench').classList.toggle('no-sidebar'));
   $('#btn-refresh').addEventListener('click', refreshFiles);
   $('#file-filter').addEventListener('input', renderTree);

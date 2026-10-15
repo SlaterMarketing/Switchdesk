@@ -17,10 +17,10 @@ function defaultShell() {
   return { file: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), args: ['-l'] };
 }
 
-async function create(id, cwd, cols, rows, { onData, onExit }) {
+async function create(id, cwd, cols, rows, { onData, onExit }, extraEnv = {}) {
   if (!pty) throw new Error('Terminal support failed to load on this system.');
   const { file, args } = defaultShell();
-  const env = await cli.childEnv({ TERM: 'xterm-256color', COLORTERM: 'truecolor' });
+  const env = await cli.childEnv({ ...extraEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' });
   const p = pty.spawn(file, args, { name: 'xterm-256color', cols: cols || 80, rows: rows || 24, cwd: cwd || os.homedir(), env });
   terms.set(id, p);
   p.onData((d) => onData(d));

@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('desk', {
   onSetupLog: on('setup-log'),
   onLoginUrl: on('setup-login-url'),
   onLoginExit: on('setup-login-exit'),
+  accounts: {
+    list: call('accounts:list'),
+    add: call('accounts:add'),
+    rename: call('accounts:rename'),
+    remove: call('accounts:remove'),
+    setRule: call('accounts:set-rule'),
+    setDefault: call('accounts:set-default'),
+  },
 
   pickFolder: call('folder:pick'),
   openFolder: call('folder:open'),

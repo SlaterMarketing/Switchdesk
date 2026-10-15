@@ -67,7 +67,7 @@ async function sync(cwd, action) {
 }
 
 // Asks Claude (Haiku, one shot) for a commit message describing the current changes.
-async function suggestMessage(cwd, bin) {
+async function suggestMessage(cwd, bin, extraEnv = {}) {
   let diff = await git(cwd, ['diff', 'HEAD', '--stat', '--patch', '--no-color']).catch(() => '');
   const untracked = (await git(cwd, ['ls-files', '--others', '--exclude-standard']).catch(() => '')).trim();
   if (untracked) diff += `\n\nNew files:\n${untracked}`;
@@ -76,7 +76,7 @@ async function suggestMessage(cwd, bin) {
     'Write a git commit message for this diff. First line: imperative summary under 72 characters. ' +
     'Then, only if useful, a blank line and up to 3 short bullet points. Reply with the message only, no code fences.\n\n' +
     diff.slice(0, 60000);
-  const env = await cli.childEnv();
+  const env = await cli.childEnv(extraEnv);
   return new Promise((resolve, reject) => {
     const child = spawn(bin, ['-p', '--model', 'haiku', '--tools', '', '--no-session-persistence'], {
       cwd,

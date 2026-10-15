@@ -33,6 +33,7 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
 - **Light/dark switch:** the sun/moon button in the title bar. Settings also has a System option.
 - **Taskbar flash:** when Claude finishes or needs you while the app is in the background, its taskbar button flashes (the Dock icon bounces on macOS) until you come back.
 - **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage.
+- **Several Claude accounts** (Settings → Accounts): stay signed in to a personal and a work account at the same time. Each folder uses your default account unless you tie it to another, and the account button in the chat box switches any chat at any time; the conversation carries on. The terminal, commit messages and the Settings pages follow the folder's account. The button only appears once you've added a second account.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.
 
 ## Install (Windows, no terminal needed)
@@ -78,6 +79,7 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 - `src/terminal.js` runs the terminal through node-pty. `src/gitops.js` runs your own git, so it uses your existing credentials.
 - Conversations are Claude Code's own transcripts in `~/.claude/projects/`, so the terminal and the app share history.
 - `src/worktrees.js` makes the copies for parallel agents under the app's data folder and merges with `git merge-file`.
+- Each extra account is its own Claude Code config folder under the app's data folder, passed to the CLI as `CLAUDE_CONFIG_DIR`, so its sign-in, settings and history stay apart. Switching a chat to another account copies its transcript across before resuming it.
 - Rewind resumes with `--resume <session> --resume-session-at <reply> --fork-session`, and restores files from the turn's git snapshot.
 
 ## Limits

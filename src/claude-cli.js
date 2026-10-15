@@ -79,10 +79,11 @@ function runSimple(bin, args, env) {
   });
 }
 
-async function cliStatus(override) {
+// extraEnv picks the account (see accounts.js).
+async function cliStatus(override, extraEnv = {}) {
   const bin = await findClaude(override);
   if (!bin) return { found: false };
-  const env = await childEnv();
+  const env = await childEnv(extraEnv);
   const ver = await runSimple(bin, ['--version'], env);
   const auth = await runSimple(bin, ['auth', 'status'], env);
   let authInfo = null;
@@ -116,8 +117,8 @@ function installClaude(onLog) {
 
 // Runs `claude auth login`. The CLI opens the browser itself and usually finishes on
 // its own; if it asks for a code instead, the app pipes the pasted code to stdin.
-async function startLogin(bin, { onLog, onUrl, onExit }) {
-  const env = await childEnv();
+async function startLogin(bin, { onLog, onUrl, onExit }, extraEnv = {}) {
+  const env = await childEnv(extraEnv);
   const child = spawn(bin, ['auth', 'login', '--claudeai'], {
     env,
     shell: isWin && bin.endsWith('.cmd'),

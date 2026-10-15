@@ -1,5 +1,6 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc */
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc,
+   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -9,7 +10,7 @@
 const ASK_PREFIX =
   '[Ask mode: answer my question. Do not create, edit or delete files, and do not run commands that change anything.]\n\n';
 
-const chats = []; // { id, title, sessionId, el, turn, busy, alwaysAllow, usage, lastReply, resumeAt }
+const chats = []; // { id, title, sessionId, account, el, turn, busy, alwaysAllow, usage, lastReply, resumeAt }
 let activeChatId = null;
 
 const activeChat = () => chats.find((c) => c.id === activeChatId) || null;
@@ -29,6 +30,7 @@ function createChat({ title = 'New chat', sessionId = null } = {}) {
     id: crypto.randomUUID(),
     title,
     sessionId,
+    account: acct.folderAccount, // which Claude account it runs on (accounts.js)
     el: h('div', { class: 'messages-pane' }, emptyState()),
     turn: null,
     busy: false,
@@ -54,6 +56,7 @@ function switchChat(id) {
   setRunning(!!activeChat()?.busy);
   renderQueue();
   renderWorktreeBar();
+  renderAccountPill();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.session === activeChat()?.sessionId);
 }
 
@@ -207,11 +210,14 @@ async function loadHistory() {
   );
 }
 
-async function openSession(row, worktree) {
+async function openSession(row, worktree, account) {
   const open = chats.find((c) => c.sessionId === row.id);
   if (open) return switchChat(open.id);
-  const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined);
+  // A past chat carries on with the account it last ran on.
+  account = account || row.account || acct.folderAccount;
+  const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined, account);
   const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
+  chat.account = account;
   if (worktree) {
     chat.worktree = worktree;
     refreshWorktree(chat);
@@ -416,7 +422,7 @@ function handleEvent(chat, ev) {
         const parts = [];
         if (w.five_hour) parts.push(`5h ${Math.round(w.five_hour.utilization * 100)}%`);
         if (w.seven_day) parts.push(`7d ${Math.round(w.seven_day.utilization * 100)}%`);
-        $('#status-limit').textContent = 'Usage ' + parts.join(' · ');
+        noteAccountUsage(chat, parts.join(' · '));
       }
       break;
     }
@@ -973,7 +979,9 @@ function buildPrompt(text) {
 async function send(textOverride, modeOverride, display) {
   const chat = activeChat();
   if (!chat) return;
-  if (cliState && !(cliState.found && (cliState.auth ? cliState.auth.loggedIn : true))) return showSetup();
+  if (cliState && !cliState.found) return showSetup();
+  const auth = multiAccount() ? acct.status.get(chatAccount(chat)) : cliState && cliState.auth;
+  if (auth && !auth.loggedIn) return multiAccount() ? signInAccount(chatAccount(chat)) : showSetup();
   if (!state.folder) return toast('Open a folder first.');
   if (chat.worktree && chat.worktree.removed) return toast("This chat's copy was deleted. Start a new chat to keep going.");
   if (chat.making) return toast('Still making the copy. One moment.');
@@ -1036,6 +1044,7 @@ async function dispatch(chat, { content, shown, mode, images, rwText }) {
       sessionId: chat.sessionId,
       resumeAt,
       cwd: chat.worktree ? chat.worktree.path : undefined,
+      account: chatAccount(chat),
     });
     if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {

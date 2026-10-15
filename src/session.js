@@ -16,8 +16,8 @@ const isWin = process.platform === 'win32';
 const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', auto: 'auto' };
 
 class ChatSession {
-  constructor({ bin, cwd, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, env, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit });
     this.child = null;
     this.pending = new Map(); // our control request id -> resolve
     this.alive = false;
@@ -43,7 +43,7 @@ class ChatSession {
     // Rewind: carry on from an earlier reply, as a new conversation so the original stays intact.
     if (this.sessionId && this.resumeAt) args.push('--resume-session-at', this.resumeAt, '--fork-session');
 
-    const env = await cli.childEnv();
+    const env = await cli.childEnv(this.extraEnv); // extraEnv picks the account
     this.child = spawn(this.bin, args, { cwd: this.cwd, env, shell: isWin && this.bin.endsWith('.cmd'), windowsHide: true });
     this.alive = true;
     let buf = '';

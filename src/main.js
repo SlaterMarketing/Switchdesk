@@ -15,6 +15,7 @@ const config = require('./config');
 const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
+const accounts = require('./accounts');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -26,7 +27,7 @@ let loginHandle = null;
 // ---------- settings ----------
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
-let settings = { recentFolders: [], claudePath: '', model: '', effort: '', mode: 'agent', theme: 'system' };
+let settings = { recentFolders: [], claudePath: '', model: '', effort: '', mode: 'agent', theme: 'system', accounts: [], accountRules: {}, defaultAccount: accounts.MAIN };
 
 function loadSettings() {
   try {
@@ -130,8 +131,12 @@ async function openFolder(dir) {
 
 // ---------- sessions (Claude Code's own transcripts) ----------
 
-function projectDirFor(cwd) {
-  return path.join(os.homedir(), '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+// The account the open folder uses, and what the settings page needs to know about it.
+const folderAccount = () => accounts.forFolder(settings, workspace);
+function folderAcct() {
+  const id = folderAccount();
+  const a = accounts.list(settings).find((x) => x.id === id);
+  return { id, name: a ? a.name : '', dir: accounts.dirFor(id), env: accounts.envFor(id), main: accounts.isMain(id) };
 }
 
 function textOf(content) {
@@ -140,9 +145,20 @@ function textOf(content) {
   return '';
 }
 
+// Past chats in the open folder, from every account. A conversation that moved between accounts
+// has a copy under each; the newest one is listed.
 async function listSessions() {
   if (!workspace) return [];
-  const dir = projectDirFor(workspace);
+  const byId = new Map();
+  for (const a of accounts.list(settings)) for (const row of await listSessionsIn(a.id)) {
+    const seen = byId.get(row.id);
+    if (!seen || row.updatedAt > seen.updatedAt) byId.set(row.id, row);
+  }
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100);
+}
+
+async function listSessionsIn(account) {
+  const dir = accounts.projectDir(account, workspace);
   let names;
   try {
     names = (await fsp.readdir(dir)).filter((n) => n.endsWith('.jsonl'));
@@ -176,6 +192,7 @@ async function listSessions() {
         id: name.replace(/\.jsonl$/, ''),
         title: (customTitle || title).replace(/^\[Ask mode:[^\]]*\]\s*/, '').slice(0, 120),
         updatedAt: stat.mtimeMs,
+        account,
       });
     } catch {
       /* unreadable */
@@ -189,8 +206,11 @@ function chatCwd(cwd) {
   return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : workspace;
 }
 
-async function loadSession(id, cwd) {
-  const file = path.join(projectDirFor(chatCwd(cwd)), id + '.jsonl');
+async function loadSession(id, cwd, account) {
+  const dir = chatCwd(cwd);
+  if (!accounts.exists(settings, account)) account = folderAccount();
+  await accounts.ensureTranscript(settings, account, dir, id);
+  const file = path.join(accounts.projectDir(account, dir), id + '.jsonl');
   const lines = (await fsp.readFile(file, 'utf8')).split('\n');
   const messages = [];
   let lastReply = null; // uuid of the latest assistant message, which Rewind resumes from
@@ -303,13 +323,16 @@ function denyPending(chat, message) {
   chat.approvals.clear();
 }
 
-async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd }) {
+async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account }) {
   const bin = await cli.findClaude(settings.claudePath);
   if (!bin) throw new Error('Claude Code is not installed. Open Settings → Setup to install it.');
-  const chat = { session: null, effort: effort || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd) };
+  const chat = { session: null, effort: effort || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd), account };
+  // Picking up a conversation another account had: give this account the latest transcript.
+  if (sessionId) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   chat.session = new ChatSession({
     bin,
     cwd: chat.cwd,
+    env: accounts.envFor(account),
     sessionId,
     resumeAt,
     model,
@@ -339,18 +362,19 @@ async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd 
   return chat;
 }
 
-async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd }) {
+async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account }) {
   if (!workspace) throw new Error('Open a folder first.');
+  if (!accounts.exists(settings, account)) account = folderAccount();
   let chat = chats.get(chatId);
-  if (chat && chat.session.alive && (resumeAt || (effort || '') !== chat.effort)) {
-    // Effort is fixed per process: restart it on the same conversation.
+  if (chat && chat.session.alive && (resumeAt || (effort || '') !== chat.effort || account !== chat.account)) {
+    // Effort and account are fixed per process: restart it on the same conversation.
     if (!resumeAt) sessionId = chat.session.sessionId || sessionId;
     chat.closing = true;
     chat.session.dispose();
     chats.delete(chatId);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd });
+  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account });
   else await chat.session.setModel(model);
   chat.turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(chat.cwd).begin(), blocks: new Map() };
   await chat.session.send(content, mode);
@@ -397,22 +421,65 @@ function registerIpc() {
     if (patch.theme) nativeTheme.themeSource = patch.theme;
     return settings;
   });
-  ipcMain.handle('cli:status', () => cli.cliStatus(settings.claudePath));
+  ipcMain.handle('cli:status', (_e, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount())));
+
+  // Accounts: several Claude logins side by side, a default per folder, and a pick per chat.
+  const accountsInfo = () => ({ accounts: accounts.list(settings), rules: settings.accountRules || {}, defaultAccount: accounts.forFolder(settings, null), folderAccount: folderAccount() });
+  ipcMain.handle('accounts:list', () => accountsInfo());
+  ipcMain.handle('accounts:add', async (_e, name) => {
+    const a = await accounts.create(name);
+    settings.accounts = [...(settings.accounts || []), a];
+    saveSettings();
+    return { ...accountsInfo(), added: a.id };
+  });
+  ipcMain.handle('accounts:rename', (_e, id, name) => {
+    name = String(name || '').trim().slice(0, 40);
+    if (!name) return accountsInfo();
+    if (accounts.isMain(id)) settings.mainAccountName = name;
+    else settings.accounts = (settings.accounts || []).map((a) => (a.id === id ? { ...a, name } : a));
+    saveSettings();
+    return accountsInfo();
+  });
+  ipcMain.handle('accounts:remove', async (_e, id) => {
+    for (const [cid, c] of chats) if (c.account === id) chatClose(cid);
+    await accounts.remove(id);
+    settings.accounts = (settings.accounts || []).filter((a) => a.id !== id);
+    settings.accountRules = Object.fromEntries(Object.entries(settings.accountRules || {}).filter(([, v]) => v !== id));
+    if (settings.defaultAccount === id) settings.defaultAccount = accounts.MAIN;
+    saveSettings();
+    return accountsInfo();
+  });
+  // Ties a folder to an account (null clears the rule).
+  ipcMain.handle('accounts:set-rule', (_e, folder, id) => {
+    const rules = { ...(settings.accountRules || {}) };
+    folder = path.resolve(folder || workspace);
+    if (id && accounts.exists(settings, id)) rules[folder] = id;
+    else delete rules[folder];
+    settings.accountRules = rules;
+    saveSettings();
+    return accountsInfo();
+  });
+  ipcMain.handle('accounts:set-default', (_e, id) => {
+    if (accounts.exists(settings, id)) settings.defaultAccount = id;
+    saveSettings();
+    return accountsInfo();
+  });
 
   // First-run setup: install the CLI and sign in.
   ipcMain.handle('setup:install', () => cli.installClaude((text) => send('setup-log', text)));
-  ipcMain.handle('setup:login', async () => {
+  ipcMain.handle('setup:login', async (_e, account) => {
     const bin = await cli.findClaude(settings.claudePath);
     if (!bin) throw new Error('Install Claude Code first.');
     if (loginHandle) loginHandle.cancel();
+    if (!accounts.exists(settings, account)) account = folderAccount();
     loginHandle = await cli.startLogin(bin, {
       onLog: (text) => send('setup-log', text),
       onUrl: (url) => send('setup-login-url', url),
       onExit: (r) => {
         loginHandle = null;
-        send('setup-login-exit', r);
+        send('setup-login-exit', { ...r, account });
       },
-    });
+    }, accounts.envFor(account));
     return true;
   });
   ipcMain.handle('setup:login-code', (_e, code) => loginHandle && loginHandle.sendCode(code));
@@ -475,7 +542,7 @@ function registerIpc() {
   ipcMain.handle('file:reveal', (_e, rel) => shell.showItemInFolder(resolveInWorkspace(rel)));
 
   ipcMain.handle('sessions:list', () => listSessions());
-  ipcMain.handle('sessions:load', (_e, id, cwd) => loadSession(id, cwd));
+  ipcMain.handle('sessions:load', (_e, id, cwd, account) => loadSession(id, cwd, account));
   // Parallel agents: chats working in their own copy of the project.
   const ownCopy = (wt) => {
     if (!worktrees.exists(wt)) throw new Error('This copy no longer exists.');
@@ -517,24 +584,25 @@ function registerIpc() {
     else await git(workspace, ['checkout', 'HEAD', '--', rel]);
   });
   ipcMain.handle('git:init', () => git(workspace, ['init']));
-  ipcMain.handle('git:suggest', async () => gitops.suggestMessage(workspace, await cli.findClaude(settings.claudePath)));
+  ipcMain.handle('git:suggest', async () => gitops.suggestMessage(workspace, await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount())));
 
   // Terminal
   ipcMain.handle('term:create', (_e, id, cols, rows) =>
-    terminal.create(id, workspace, cols, rows, { onData: (d) => send('term-data', { id, data: d }), onExit: (code) => send('term-exit', { id, code }) })
+    // `claude` typed in the terminal signs in as the folder's account too.
+    terminal.create(id, workspace, cols, rows, { onData: (d) => send('term-data', { id, data: d }), onExit: (code) => send('term-exit', { id, code }) }, accounts.envFor(folderAccount()))
   );
   ipcMain.handle('term:write', (_e, id, data) => terminal.write(id, data));
   ipcMain.handle('term:resize', (_e, id, cols, rows) => terminal.resize(id, cols, rows));
   ipcMain.handle('term:kill', (_e, id) => terminal.kill(id));
 
   // Settings page
-  ipcMain.handle('cfg:memory', () => config.memoryFiles(workspace));
-  ipcMain.handle('cfg:save-memory', (_e, id, content) => config.saveMemory(workspace, id, content));
-  ipcMain.handle('cfg:permissions', () => config.permissions(workspace));
-  ipcMain.handle('cfg:rule', (_e, scope, rule, add) => config.editRule(workspace, scope, rule, add));
-  ipcMain.handle('cfg:mcp-list', async () => config.mcpList(await cli.findClaude(settings.claudePath), workspace || os.homedir()));
-  ipcMain.handle('cfg:mcp-remove', async (_e, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), workspace || os.homedir(), name));
-  ipcMain.handle('cfg:mcp-add', async (_e, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), workspace || os.homedir(), spec));
+  ipcMain.handle('cfg:memory', () => config.memoryFiles(workspace, folderAcct()));
+  ipcMain.handle('cfg:save-memory', (_e, id, content) => config.saveMemory(workspace, id, content, folderAcct()));
+  ipcMain.handle('cfg:permissions', () => config.permissions(workspace, folderAcct()));
+  ipcMain.handle('cfg:rule', (_e, scope, rule, add) => config.editRule(workspace, scope, rule, add, folderAcct()));
+  ipcMain.handle('cfg:mcp-list', async () => config.mcpList(await cli.findClaude(settings.claudePath), workspace || os.homedir(), folderAcct()));
+  ipcMain.handle('cfg:mcp-remove', async (_e, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), workspace || os.homedir(), name, folderAcct()));
+  ipcMain.handle('cfg:mcp-add', async (_e, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), workspace || os.homedir(), spec, folderAcct()));
 }
 
 // ---------- app ----------
@@ -647,6 +715,7 @@ app.on('web-contents-created', (_e, contents) => {
 
 app.whenReady().then(() => {
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
+  accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
   loadSettings();
   nativeTheme.themeSource = settings.theme || 'system';
   protocol.handle('app', (req) => {
