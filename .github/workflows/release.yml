@@ -20,16 +20,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # When started by hand (not by pushing a tag), tag this commit with the version in package.json.
-      - name: Tag the version
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      # Tag the version in package.json (when started by hand) and create its release up front.
+      # electron-builder uploads files in parallel; if the release didn't exist yet, each upload
+      # could create its own copy of it.
+      - name: Create the tag and release
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="v$(node -p "require('./package.json').version")"
           if ! git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
             git tag "$tag"
             git push origin "$tag"
           fi
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Claude Desk $tag"
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
