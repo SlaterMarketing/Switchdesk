@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'"
+    />
+    <title>Claude Desk</title>
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="titlebar">
+        <div class="title-left">
+          <button id="btn-sidebar" class="icon-btn" title="Toggle sidebar (⌘B)">☰</button>
+          <span id="folder-name">No folder open</span>
+        </div>
+        <div class="title-center"><button id="btn-quickopen" class="search-pill">Search files… <kbd>⌘P</kbd></button></div>
+        <div class="title-right">
+          <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <main id="workbench">
+        <aside id="sidebar">
+          <div class="side-tabs">
+            <button class="side-tab active" data-panel="explorer">Explorer</button>
+            <button class="side-tab" data-panel="git">Git <span id="git-count" class="count hidden"></span></button>
+            <button class="side-tab" data-panel="history">Chats</button>
+          </div>
+          <section id="panel-explorer" class="side-panel">
+            <div class="panel-tools">
+              <input id="file-filter" placeholder="Filter files" spellcheck="false" />
+              <button id="btn-refresh" class="icon-btn" title="Refresh">⟳</button>
+            </div>
+            <div id="tree" class="tree"></div>
+          </section>
+          <section id="panel-git" class="side-panel hidden"></section>
+          <section id="panel-history" class="side-panel hidden">
+            <div class="panel-tools"><button id="btn-new-chat-side" class="btn small">New chat</button></div>
+            <div id="history-list"></div>
+          </section>
+        </aside>
+        <div class="resizer" data-resize="sidebar"></div>
+
+        <section id="editor-area">
+          <div id="tabs"></div>
+          <div id="editor-host">
+            <div id="editor"></div>
+            <div id="diff-editor" class="hidden"></div>
+            <div id="diff-bar" class="hidden">
+              <span id="diff-title"></span>
+              <span class="spacer"></span>
+              <span id="diff-hint" class="muted small"></span>
+              <button id="diff-undo" class="btn small danger">Undo this file</button>
+              <button id="diff-keep" class="btn small primary">Keep</button>
+            </div>
+            <div id="welcome">
+              <div class="welcome-inner">
+                <h1>Claude Desk</h1>
+                <p class="muted">A Cursor-style editor driven by your own Claude Code CLI.</p>
+                <button id="btn-open-folder" class="btn primary">Open folder</button>
+                <div id="recent-folders"></div>
+                <div id="cli-check" class="muted small"></div>
+                <div class="shortcuts muted small">
+                  <div><kbd>⌘P</kbd> open file</div>
+                  <div><kbd>⌘L</kbd> add selection to chat</div>
+                  <div><kbd>⌘K</kbd> edit selection with Claude</div>
+                  <div><kbd>⌘.</kbd> cycle Ask / Plan / Agent / Auto</div>
+                  <div><kbd>⌘N</kbd> new chat</div>
+                  <div><kbd>⌘`</kbd> terminal</div>
+                  <div><kbd>⌘⇧G</kbd> source control</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="terminal-resizer" class="hresizer hidden"></div>
+          <div id="terminal-panel" class="hidden">
+            <div class="term-bar">
+              <div id="term-tabs"></div>
+              <button id="btn-term-new" class="icon-btn" title="New terminal">＋</button>
+              <span class="spacer"></span>
+              <button id="btn-term-hide" class="icon-btn" title="Hide terminal (⌘`)">✕</button>
+            </div>
+            <div id="term-host"></div>
+          </div>
+        </section>
+        <div class="resizer" data-resize="chat"></div>
+
+        <aside id="chat">
+          <div class="chat-header">
+            <div id="chat-tabs"></div>
+            <button id="btn-new-chat" class="icon-btn" title="New chat (⌘N)">＋</button>
+            <button id="btn-history" class="icon-btn" title="Past chats">🕘</button>
+          </div>
+          <div id="messages-host"></div>
+          <div id="composer">
+            <div id="chips"></div>
+            <div class="composer-box">
+              <textarea id="input" rows="3" placeholder="Ask anything, @ to mention a file, paste a screenshot" spellcheck="false"></textarea>
+              <div id="mention-popup" class="popup hidden"></div>
+              <div class="composer-row">
+                <div class="mode-wrap">
+                  <button id="mode-btn" class="mode-pill" data-mode="agent">Agent ▾</button>
+                  <div id="mode-menu" class="popup hidden">
+                    <button data-mode="ask"><b>Ask</b><span>Answers questions, never edits</span></button>
+                    <button data-mode="plan"><b>Plan</b><span>Researches, then proposes a plan to approve</span></button>
+                    <button data-mode="agent"><b>Agent</b><span>Edits files, asks before running commands</span></button>
+                    <button data-mode="auto"><b>Auto</b><span>Edits and runs commands with a safety classifier</span></button>
+                  </div>
+                </div>
+                <select id="model-select" title="Model">
+                  <option value="">Default model</option>
+                  <option value="opus">Opus</option>
+                  <option value="sonnet">Sonnet</option>
+                  <option value="haiku">Haiku</option>
+                  <option value="fable">Fable</option>
+                </select>
+                <select id="effort-select" title="Effort">
+                  <option value="">Default effort</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">X-High</option>
+                  <option value="max">Max</option>
+                </select>
+                <span class="spacer"></span>
+                <span id="chat-usage"></span>
+                <button id="send-btn" class="send-btn" title="Send (Enter)">↑</button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <footer id="statusbar">
+        <span id="status-branch" class="hidden" title="Source control"></span>
+        <span id="status-cli">Checking Claude Code…</span>
+        <span class="spacer"></span>
+        <span id="status-update" class="hidden"></span>
+        <span id="status-limit"></span>
+        <span id="status-cursor"></span>
+      </footer>
+    </div>
+
+    <div id="modal-root"></div>
+
+    <script src="../node_modules/marked/lib/marked.umd.js"></script>
+    <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <!-- Monaco's AMD loader goes last: UMD bundles loaded after it register as AMD modules instead of globals. -->
+    <script src="../node_modules/monaco-editor/min/vs/loader.js"></script>
+    <script src="app.js"></script>
+    <script src="chat.js"></script>
+    <script src="diff.js"></script>
+    <script src="git.js"></script>
+    <script src="terminal.js"></script>
+    <script src="settings.js"></script>
+    <script src="boot.js"></script>
+  </body>
+</html>

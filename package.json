@@ -1,0 +1,105 @@
+{
+  "name": "claude-desk",
+  "productName": "Claude Desk",
+  "version": "0.3.0",
+  "description": "A personal Cursor-style desktop editor that drives your local Claude Code CLI.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15 && electron-builder --mac",
+    "dist:win": "npm i --no-save --force @lydell/node-pty-win32-x64@1.2.0-beta.15 && electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "release": "npm version patch && git push --follow-tags"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.15",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.2.6",
+    "electron-updater": "^6.8.9",
+    "marked": "^16.4.1",
+    "monaco-editor": "^0.52.2"
+  },
+  "devDependencies": {
+    "electron": "^44.7.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "uk.co.slatermarketing.claudedesk",
+    "productName": "Claude Desk",
+    "files": [
+      "src/**",
+      "renderer/**",
+      "package.json",
+      "node_modules/**",
+      "!node_modules/monaco-editor/{esm,dev,min-maps}/**",
+      "!node_modules/**/*.map",
+      "!node_modules/marked/{src,man,bin}/**",
+      "build/icon.png"
+    ],
+    "asarUnpack": [
+      "node_modules/@lydell/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png"
+    },
+    "directories": {
+      "buildResources": "build"
+    },
+    "electronLanguages": [
+      "en-US",
+      "en-GB"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "npmRebuild": false,
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "include": "build/installer.nsh",
+      "artifactName": "ClaudeDesk-Setup-${version}.${ext}",
+      "shortcutName": "Claude Desk",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SlaterMarketing",
+        "repo": "claude-desk",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SlaterMarketing/claude-desk.git"
+  },
+  "author": "Will"
+}
