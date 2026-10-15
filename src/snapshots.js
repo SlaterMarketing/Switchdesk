@@ -73,8 +73,9 @@ function isBinary(buf) {
 }
 
 class TurnSnapshot {
-  constructor(workspace) {
+  constructor(workspace, prefix = '') {
     this.workspace = workspace;
+    this.prefix = prefix; // put before each path the app shows, for a workspace's extra folders
     this.root = null; // git root, when in a repo
     this.before = null; // tree hash
     this.files = new Map(); // abs -> { existed, content } for non-git fallback
@@ -137,7 +138,7 @@ class TurnSnapshot {
       const binary = isBinary(c.before) || isBinary(c.after);
       return {
         path: c.path,
-        rel: path.relative(this.workspace, c.path).split(path.sep).join('/'),
+        rel: (this.prefix ? this.prefix + '/' : '') + path.relative(this.workspace, c.path).split(path.sep).join('/'),
         before: binary ? '' : c.before.toString('utf8'),
         after: binary ? '' : c.after.toString('utf8'),
         created: c.created,
@@ -161,4 +162,47 @@ class TurnSnapshot {
   }
 }
 
-module.exports = { TurnSnapshot, git, isGitRepo, writeTree, diffTrees, blob };
+const within = (dir, abs) => {
+  const rel = path.relative(dir, abs);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+// One turn across a workspace with several folders: a snapshot per folder, used like one.
+class MultiSnapshot {
+  constructor(parts) {
+    this.parts = parts; // TurnSnapshots, the main folder first
+    this.workspace = parts[0].workspace;
+  }
+
+  async begin() {
+    await Promise.all(this.parts.map((p) => p.begin()));
+    return this;
+  }
+
+  partFor(abs) {
+    let best = this.parts[0];
+    for (const p of this.parts) if (within(p.workspace, abs) && p.workspace.length >= best.workspace.length) best = p;
+    return best;
+  }
+
+  touch(abs) {
+    this.partFor(abs).touch(abs);
+  }
+
+  // Each folder reports only its own files, so two folders in one git repo don't double up.
+  async changes() {
+    const out = new Map();
+    this.result = new Map();
+    for (const p of this.parts) {
+      for (const c of await p.changes()) if (within(p.workspace, c.path) && !out.has(c.path) && this.partFor(c.path) === p) out.set(c.path, c);
+      for (const [abs, r] of p.result) if (out.has(abs) && !this.result.has(abs)) this.result.set(abs, r);
+    }
+    return [...out.values()];
+  }
+
+  async undo(absPaths) {
+    for (const p of this.parts) await p.undo(absPaths.filter((abs) => this.partFor(abs) === p));
+  }
+}
+
+module.exports = { TurnSnapshot, MultiSnapshot, within, git, isGitRepo, writeTree, diffTrees, blob };

@@ -36,6 +36,7 @@
           <section id="panel-explorer" class="side-panel">
             <div class="panel-tools">
               <input id="file-filter" placeholder="Filter files" spellcheck="false" />
+              <button id="btn-add-folder" class="icon-btn" title="Add a folder to this workspace, so agents here can work across both">⊕</button>
               <button id="btn-refresh" class="icon-btn" title="Refresh">⟳</button>
             </div>
             <div id="tree" class="tree"></div>
@@ -91,6 +92,7 @@
                   <div><kbd>⌘K</kbd> edit selection with Claude</div>
                   <div><kbd>⌘.</kbd> cycle Ask / Plan / Agent / Auto</div>
                   <div><kbd>⌘N</kbd> new chat</div>
+                  <div><kbd>⌘⇧N</kbd> new window</div>
                   <div><kbd>⌘`</kbd> terminal</div>
                   <div><kbd>⌘⇧G</kbd> source control</div>
                   <div><kbd>⌘⇧F</kbd> search in files</div>
@@ -116,7 +118,7 @@
         <aside id="chat">
           <div class="chat-header">
             <div id="chat-tabs"></div>
-            <button id="btn-new-copy" class="icon-btn" title="New chat in its own copy, to run agents in parallel (⌘⇧N)">⑂</button>
+            <button id="btn-new-copy" class="icon-btn" title="New chat in its own copy, to run agents in parallel (⌘⌥N)">⑂</button>
             <button id="btn-new-chat" class="icon-btn" title="New chat (⌘N)">＋</button>
             <button id="btn-history" class="icon-btn" title="Past chats">🕘</button>
           </div>

@@ -94,4 +94,9 @@ function plainCommand(cmd) {
   return m ? m[2] : String(cmd || '');
 }
 
-module.exports = { ClaudeShape, plainCommand };
+// For agents with no way to be given extra folders: say where they are.
+function dirsNote(dirs) {
+  return `This workspace also includes these folders, outside the current directory. Read and change files in them with absolute paths when the task involves them:\n${dirs.map((d) => `- ${d}`).join('\n')}`;
+}
+
+module.exports = { dirsNote, ClaudeShape, plainCommand };

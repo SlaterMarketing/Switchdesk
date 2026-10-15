@@ -58,4 +58,9 @@ function killAll() {
   for (const id of [...terms.keys()]) kill(id);
 }
 
-module.exports = { create, write, resize, kill, killAll };
+// Closes the terminals whose ids start with prefix (one window's).
+function killWhere(prefix) {
+  for (const id of [...terms.keys()]) if (id.startsWith(prefix)) kill(id);
+}
+
+module.exports = { create, write, resize, kill, killAll, killWhere };

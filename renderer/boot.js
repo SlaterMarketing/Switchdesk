@@ -12,8 +12,9 @@ async function init() {
   if (!isMac) {
     // Show Ctrl shortcuts on Windows and Linux.
     for (const el of document.querySelectorAll('kbd, [title]')) {
-      if (el.tagName === 'KBD') el.textContent = el.textContent.replace('⌘', 'Ctrl+');
-      if (el.title) el.title = el.title.replace('⌘', 'Ctrl+');
+      const keys = (t) => t.replace('⌘', 'Ctrl+').replace('⇧', 'Shift+').replace('⌥', 'Alt+');
+      if (el.tagName === 'KBD') el.textContent = keys(el.textContent);
+      if (el.title) el.title = keys(el.title);
     }
   }
   state.settings = await desk.getSettings();
@@ -39,9 +40,9 @@ async function init() {
   wireReview();
   wirePreview();
   createChat();
-  const current = await desk.currentFolder();
-  if (current) setFolder(current);
-  else if ((state.settings.recentFolders || [])[0]) setFolder(await desk.openFolder(state.settings.recentFolders[0]));
+  // This window's folder: the one it had (after a reload), the one it opened with, or none.
+  const start = await desk.startFolder();
+  if (start) setFolder(start);
 }
 
 init();

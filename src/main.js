@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const cli = require('./claude-cli');
 const { ChatSession } = require('./session');
-const { TurnSnapshot, git, writeTree, diffTrees, blob } = require('./snapshots');
+const { TurnSnapshot, MultiSnapshot, git, writeTree, diffTrees, blob } = require('./snapshots');
 const gitops = require('./gitops');
 const terminal = require('./terminal');
 const config = require('./config');
@@ -24,8 +24,10 @@ const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'out', '.venv', 'venv', '__pycache__', '.cache', '.turbo', 'target', '.idea', 'coverage']);
 
-let win = null;
 let loginHandle = null;
+let loginCtx = null; // the window that started the Claude sign-in
+let quitting = false;
+let lastUpdate = null; // the updater's latest news, for windows opened later
 
 // The app used to be called Claude Desk. Keep using that data folder if it exists, so settings,
 // extra accounts and parallel-agent copies carry over.
@@ -49,21 +51,77 @@ function saveSettings() {
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
 }
 
-// ---------- workspace ----------
+// ---------- windows ----------
+//
+// Each window has its own workspace: a main folder, plus any extra folders added to it. Files in an
+// extra folder show up in the app as "⟦name⟧/path", and agents get the folders' absolute paths.
 
-let workspace = null; // absolute path of the open folder
-let watcher = null;
+const contexts = new Map(); // webContents id -> { id, win, workspace, extra, watchers, start }
+const NO_WINDOW = { id: 0, win: null, workspace: null, extra: [], watchers: [] };
+const ctxOf = (e) => contexts.get(e.sender.id) || NO_WINDOW;
+const ctxOfWindow = (bw) => (bw && contexts.get(bw.webContents.id)) || null;
 
-function inWorkspace(p) {
-  if (!workspace) return false;
-  const rel = path.relative(workspace, path.resolve(p));
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+function sendTo(ctx, channel, payload) {
+  if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send(channel, payload);
+}
+function broadcast(channel, payload, except) {
+  for (const c of contexts.values()) if (c !== except) sendTo(c, channel, payload);
 }
 
-function resolveInWorkspace(p) {
-  const abs = path.isAbsolute(p) ? p : path.join(workspace, p);
-  if (!inWorkspace(abs)) throw new Error('Path is outside the open folder: ' + p);
+// The folders open in a window, the main one first. key prefixes an extra folder's paths.
+function roots(ctx) {
+  if (!ctx.workspace) return [];
+  const out = [{ key: '', dir: ctx.workspace, name: path.basename(ctx.workspace) || ctx.workspace }];
+  const used = new Set([out[0].name]);
+  for (const dir of ctx.extra) {
+    const base = path.basename(dir) || dir;
+    let name = base;
+    for (let i = 2; used.has(name); i++) name = `${base} (${i})`;
+    used.add(name);
+    out.push({ key: `⟦${name}⟧`, dir, name });
+  }
+  return out;
+}
+
+const within = (dir, abs) => {
+  const rel = path.relative(dir, abs);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+function rootOf(ctx, abs) {
+  abs = path.resolve(abs);
+  let best = null;
+  for (const r of roots(ctx)) if (within(r.dir, abs) && (!best || r.dir.length > best.dir.length)) best = r;
+  return best;
+}
+
+function inWorkspace(ctx, p) {
+  return !!rootOf(ctx, p);
+}
+
+function resolveInWorkspace(ctx, p) {
+  let abs;
+  const m = /^⟦([^⟧]+)⟧(?:\/(.*))?$/.exec(p);
+  if (m) {
+    const r = roots(ctx).find((x) => x.key === `⟦${m[1]}⟧`);
+    if (!r) throw new Error('That folder is no longer in the workspace: ' + p);
+    abs = path.join(r.dir, m[2] || '');
+  } else abs = path.isAbsolute(p) ? p : path.join(ctx.workspace || '', p);
+  if (!inWorkspace(ctx, abs)) throw new Error('Path is outside the open folders: ' + p);
   return abs;
+}
+
+// The path the app shows for a file: relative to its folder, with the folder's key for extra folders.
+function relOf(ctx, abs) {
+  const r = rootOf(ctx, abs);
+  if (!r) return null;
+  const rel = path.relative(r.dir, abs).split(path.sep).join('/');
+  return r.key ? (rel ? `${r.key}/${rel}` : r.key) : rel;
+}
+
+function folderInfo(ctx) {
+  if (!ctx.workspace) return null;
+  return { root: ctx.workspace, name: path.basename(ctx.workspace), extra: roots(ctx).slice(1).map((r) => ({ key: r.key, dir: r.dir, name: r.name })) };
 }
 
 function gitFiles(root) {
@@ -99,50 +157,122 @@ async function walkFiles(root, limit = 20000) {
   return out;
 }
 
-async function listFiles() {
-  if (!workspace) return [];
-  const files = (await gitFiles(workspace)) || (await walkFiles(workspace));
-  return files.slice(0, 50000).sort();
+async function listFiles(ctx) {
+  const out = [];
+  for (const r of roots(ctx)) {
+    const files = (await gitFiles(r.dir)) || (await walkFiles(r.dir));
+    for (const f of files.slice(0, 50000)) out.push(r.key ? `${r.key}/${f}` : f);
+  }
+  return out.sort();
 }
 
-function startWatcher() {
-  if (watcher) watcher.close();
-  watcher = null;
-  if (!workspace) return;
+function stopWatchers(ctx) {
+  for (const w of ctx.watchers) w.close();
+  ctx.watchers = [];
+}
+
+function startWatchers(ctx) {
+  stopWatchers(ctx);
   let pending = new Set();
   let timer = null;
-  try {
-    watcher = fs.watch(workspace, { recursive: true }, (_evt, file) => {
-      if (!file) return;
-      const rel = file.split(path.sep).join('/');
-      if (rel.split('/').some((seg) => IGNORED_DIRS.has(seg))) return;
-      pending.add(rel);
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        send('fs-changed', [...pending]);
-        pending = new Set();
-      }, 250);
-    });
-  } catch {
-    /* recursive watch unsupported: the renderer still refreshes after each turn */
+  for (const r of roots(ctx)) {
+    try {
+      ctx.watchers.push(
+        fs.watch(r.dir, { recursive: true }, (_evt, file) => {
+          if (!file) return;
+          const rel = file.split(path.sep).join('/');
+          if (rel.split('/').some((seg) => IGNORED_DIRS.has(seg))) return;
+          pending.add(r.key ? `${r.key}/${rel}` : rel);
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            sendTo(ctx, 'fs-changed', [...pending]);
+            pending = new Set();
+          }, 250);
+        })
+      );
+    } catch {
+      /* recursive watch unsupported: the renderer still refreshes after each turn */
+    }
   }
 }
 
-async function openFolder(dir) {
-  workspace = path.resolve(dir);
-  settings.recentFolders = [workspace, ...settings.recentFolders.filter((f) => f !== workspace)].slice(0, 10);
+// The window that already has this folder open, if any.
+function windowWith(dir, except) {
+  for (const c of contexts.values()) if (c !== except && c.workspace && path.resolve(c.workspace) === path.resolve(dir) && c.win && !c.win.isDestroyed()) return c;
+  return null;
+}
+
+function focusWindow(ctx) {
+  if (ctx.win.isMinimized()) ctx.win.restore();
+  ctx.win.focus();
+}
+
+function setTitle(ctx) {
+  if (!ctx.win || ctx.win.isDestroyed()) return;
+  const extra = ctx.extra.length ? ` (+${ctx.extra.length} folder${ctx.extra.length > 1 ? 's' : ''})` : '';
+  ctx.win.setTitle(ctx.workspace ? `${path.basename(ctx.workspace)}${extra} — Switchdesk` : 'Switchdesk');
+}
+
+async function openFolder(ctx, dir) {
+  dir = path.resolve(dir);
+  // Already open in another window: go to it, the way Cursor does.
+  const other = windowWith(dir, ctx);
+  if (other) {
+    focusWindow(other);
+    return { elsewhere: true, root: dir, name: path.basename(dir) };
+  }
+  closeWindowChats(ctx);
+  ctx.workspace = dir;
+  ctx.extra = ((settings.extraFolders || {})[dir] || []).filter((d) => fs.existsSync(d));
+  settings.recentFolders = [dir, ...settings.recentFolders.filter((f) => f !== dir)].slice(0, 10);
+  rememberWindows();
+  startWatchers(ctx);
+  setTitle(ctx);
+  buildMenu();
+  return folderInfo(ctx);
+}
+
+// Adds a folder to the window's workspace, remembered for the next time its main folder opens.
+function addFolder(ctx, dir) {
+  if (!ctx.workspace) throw new Error('Open a folder first.');
+  dir = path.resolve(dir);
+  if (within(ctx.workspace, dir) || within(dir, ctx.workspace)) throw new Error(`${path.basename(dir)} is already part of ${path.basename(ctx.workspace)}.`);
+  if (ctx.extra.some((d) => within(d, dir) || within(dir, d))) throw new Error(`${path.basename(dir)} is already in this workspace.`);
+  ctx.extra = [...ctx.extra, dir];
+  saveExtra(ctx);
+  return folderInfo(ctx);
+}
+
+function removeFolder(ctx, dir) {
+  ctx.extra = ctx.extra.filter((d) => d !== dir);
+  saveExtra(ctx);
+  return folderInfo(ctx);
+}
+
+function saveExtra(ctx) {
+  const all = { ...(settings.extraFolders || {}) };
+  if (ctx.extra.length) all[ctx.workspace] = ctx.extra;
+  else delete all[ctx.workspace];
+  settings.extraFolders = all;
   saveSettings();
-  startWatcher();
-  if (win) win.setTitle(`${path.basename(workspace)} — Switchdesk`);
-  return { root: workspace, name: path.basename(workspace) };
+  startWatchers(ctx);
+  setTitle(ctx);
+  buildMenu();
+}
+
+// The folders open in windows, so the app reopens them all next time.
+function rememberWindows() {
+  if (quitting) return;
+  settings.openWindows = [...contexts.values()].map((c) => c.workspace).filter(Boolean);
+  saveSettings();
 }
 
 // ---------- sessions (Claude Code's own transcripts) ----------
 
 // The account the open folder uses, and what the settings page needs to know about it.
-const folderAccount = () => accounts.forFolder(settings, workspace);
-function folderAcct() {
-  const id = folderAccount();
+const folderAccount = (ctx) => accounts.forFolder(settings, ctx.workspace);
+function folderAcct(ctx) {
+  const id = folderAccount(ctx);
   const a = accounts.list(settings).find((x) => x.id === id);
   return { id, name: a ? a.name : '', dir: accounts.dirFor(id), env: accounts.envFor(id), main: accounts.isMain(id) };
 }
@@ -155,17 +285,17 @@ function textOf(content) {
 
 // Past chats in the open folder, from every account. A conversation that moved between accounts
 // has a copy under each; the newest one is listed.
-async function listSessions() {
-  if (!workspace) return [];
+async function listSessions(ctx) {
+  if (!ctx.workspace) return [];
   const byId = new Map();
-  for (const a of accounts.list(settings)) for (const row of await listSessionsIn(a.id)) {
+  for (const a of accounts.list(settings)) for (const row of await listSessionsIn(a.id, ctx.workspace)) {
     const seen = byId.get(row.id);
     if (!seen || row.updatedAt > seen.updatedAt) byId.set(row.id, row);
   }
   return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100);
 }
 
-async function listSessionsIn(account) {
+async function listSessionsIn(account, workspace) {
   const dir = accounts.projectDir(account, workspace);
   let names;
   try {
@@ -210,13 +340,13 @@ async function listSessionsIn(account) {
 }
 
 // A chat's working folder: the open folder, or its own copy (a worktree) for parallel agents.
-function chatCwd(cwd) {
-  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : workspace;
+function chatCwd(ctx, cwd) {
+  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
 }
 
-async function loadSession(id, cwd, account) {
-  const dir = chatCwd(cwd);
-  if (!accounts.exists(settings, account)) account = folderAccount();
+async function loadSession(ctx, id, cwd, account) {
+  const dir = chatCwd(ctx, cwd);
+  if (!accounts.exists(settings, account)) account = folderAccount(ctx);
   await accounts.ensureTranscript(settings, account, dir, id);
   const file = path.join(accounts.projectDir(account, dir), id + '.jsonl');
   const lines = (await fsp.readFile(file, 'utf8')).split('\n');
@@ -246,24 +376,25 @@ async function loadSession(id, cwd, account) {
 
 // ---------- chats (one persistent Claude Code process each) ----------
 
-const chats = new Map(); // chatId -> { session, effort, turn, approvals: Map(reqId -> resolve) }
+const chats = new Map(); // `${window id}:${chatId}` -> { ctx, session, effort, turn, approvals: Map(reqId -> resolve) }
+const chatKey = (ctx, chatId) => `${ctx.id}:${chatId}`;
 const turnSnapshots = new Map(); // turnId -> TurnSnapshot, kept for Undo
 
 function editTarget(input) {
   return input?.file_path || input?.notebook_path || null;
 }
 
-function touchForSnapshot(turn, filePath) {
+function touchForSnapshot(ctx, turn, filePath) {
   if (!turn || !filePath) return;
   try {
-    turn.snap.touch(resolveInWorkspace(filePath));
+    turn.snap.touch(resolveInWorkspace(ctx, filePath));
   } catch {
     /* outside the workspace */
   }
 }
 
 // Snapshot a file as soon as Claude finishes writing an edit call, before it runs.
-function trackStream(turn, ev) {
+function trackStream(ctx, turn, ev) {
   if (!turn || ev.type !== 'stream_event' || ev.parent_tool_use_id) return;
   const e = ev.event || {};
   if (e.type === 'message_start') turn.blocks.clear();
@@ -271,7 +402,7 @@ function trackStream(turn, ev) {
   else if (e.type === 'content_block_delta' && e.delta?.type === 'input_json_delta' && turn.blocks.has(e.index)) turn.blocks.set(e.index, turn.blocks.get(e.index) + e.delta.partial_json);
   else if (e.type === 'content_block_stop' && turn.blocks.has(e.index)) {
     try {
-      touchForSnapshot(turn, editTarget(JSON.parse(turn.blocks.get(e.index) || '{}')));
+      touchForSnapshot(ctx, turn, editTarget(JSON.parse(turn.blocks.get(e.index) || '{}')));
     } catch {
       /* partial JSON */
     }
@@ -290,21 +421,35 @@ async function finishTurn(chatId, chat) {
     console.error('snapshot diff failed', err);
   }
   turnSnapshots.set(turn.id, turn.snap);
-  send('chat-turn-end', { chatId, turnId: turn.id, changes });
+  sendTo(chat.ctx, 'chat-turn-end', { chatId, turnId: turn.id, changes });
 }
 
 // Rewind: puts the workspace back how it was before the first of these turns (oldest first).
-// Returns the files that differ, and restores them when apply is set.
+// Returns the files that differ, and restores them when apply is set. A turn in a workspace with
+// several folders has a snapshot per folder; each folder is rewound on its own.
 async function rewindFiles(turnIds, apply) {
   const snaps = turnIds.map((id) => turnSnapshots.get(id));
   if (!snaps.length || !snaps[0]) return { available: false, files: [] };
+  const byFolder = new Map(); // folder -> its snapshots, oldest first
+  for (const s of snaps) for (const p of s ? s.parts || [s] : []) byFolder.set(p.workspace, [...(byFolder.get(p.workspace) || []), p]);
+  const files = new Set();
+  for (const list of byFolder.values()) {
+    const r = await rewindFolder(list, false);
+    if (!r) return { available: false, files: [] };
+    r.forEach((f) => files.add(f));
+  }
+  if (apply) for (const list of byFolder.values()) await rewindFolder(list, true);
+  return { available: true, files: [...files] };
+}
+
+async function rewindFolder(snaps, apply) {
   const first = snaps[0];
-  const relOf = (abs) => path.relative(first.workspace, abs).split(path.sep).join('/');
-  const allowed = (abs) => (first.workspace === workspace ? inWorkspace(abs) : worktrees.isUnder(abs));
+  const relOf = (abs) => (first.prefix ? first.prefix + '/' : '') + path.relative(first.workspace, abs).split(path.sep).join('/');
+  const allowed = (abs) => within(first.workspace, abs);
   if (first.root && first.before) {
     // A git snapshot covers the whole folder, including later edits.
     const now = await writeTree(first.root);
-    const diffs = (await diffTrees(first.root, first.before, now)).map((c) => ({ ...c, abs: path.join(first.root, c.rel) })).filter((c) => allowed(c.abs) && !relOf(c.abs).startsWith('..'));
+    const diffs = (await diffTrees(first.root, first.before, now)).map((c) => ({ ...c, abs: path.join(first.root, c.rel) })).filter((c) => allowed(c.abs));
     if (apply)
       for (const c of diffs) {
         if (c.status === 'A') await fsp.rm(c.abs, { force: true });
@@ -313,17 +458,17 @@ async function rewindFiles(turnIds, apply) {
           await fsp.writeFile(c.abs, (await blob(first.root, first.before, c.rel)) || Buffer.alloc(0));
         }
       }
-    return { available: true, files: diffs.map((c) => relOf(c.abs)) };
+    return diffs.map((c) => relOf(c.abs));
   }
   // No git: undo each turn's own edits, newest first.
-  if (snaps.some((s) => !s || !s.result)) return { available: false, files: [] };
+  if (snaps.some((s) => !s.result)) return null;
   const files = new Set();
   for (const s of [...snaps].reverse()) {
     const paths = [...s.result.keys()].filter((p) => allowed(p));
     paths.forEach((p) => files.add(relOf(p)));
     if (apply) await s.undo(paths);
   }
-  return { available: true, files: [...files] };
+  return [...files];
 }
 
 function denyPending(chat, message) {
@@ -331,22 +476,25 @@ function denyPending(chat, message) {
   chat.approvals.clear();
 }
 
-async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent }) {
+async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent }) {
   const a = agents.AGENTS[agent] ? agents.AGENTS[agent] : agents.AGENTS.claude;
   agent = agents.AGENTS[agent] ? agent : 'claude';
   const bin = await agents.findBin(agent, settings);
   if (!bin) throw new Error(agent === 'claude' ? 'Claude Code is not installed. Open Settings → Setup to install it.' : `${a.label} isn't installed yet. Open Settings → Agents to install it.`);
   if (a.key && !agents.readKey(settings, agent)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
-  const chat = { session: null, effort: effort || '', model: model || '', turn: null, approvals: new Map(), cwd: chatCwd(cwd), account, agent };
+  const dirs = [...ctx.extra];
+  const chat = { ctx, session: null, effort: effort || '', model: model || '', turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, dirs };
+  const key = chatKey(ctx, chatId);
   // Picking up a conversation another account had: give this account the latest transcript.
   if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
   chat.session = new Session({
     bin,
-    args: a.args,
+    args: [...(a.args || []), ...(a.dirsArg ? dirs.flatMap((d) => [a.dirsArg, d]) : [])],
     label: a.label,
     authMethod: a.authMethod,
     cwd: chat.cwd,
+    dirs,
     env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model),
     sessionId,
     resumeAt: agent === 'claude' ? resumeAt : null,
@@ -354,59 +502,77 @@ async function openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd,
     effort,
     mode,
     onEvent: (ev) => {
-      trackStream(chat.turn, ev);
-      send('chat-event', { chatId, ev });
+      trackStream(ctx, chat.turn, ev);
+      sendTo(ctx, 'chat-event', { chatId, ev });
       if (ev.type === 'result') finishTurn(chatId, chat);
     },
     onPermission: (req) =>
       new Promise((resolve) => {
-        if (EDIT_TOOLS.has(req.toolName)) touchForSnapshot(chat.turn, editTarget(req.input));
+        if (EDIT_TOOLS.has(req.toolName)) touchForSnapshot(ctx, chat.turn, editTarget(req.input));
         const reqId = crypto.randomUUID();
         chat.approvals.set(reqId, resolve);
-        send('approval-request', { chatId, reqId, toolName: req.toolName, input: req.input, description: req.description });
+        sendTo(ctx, 'approval-request', { chatId, reqId, toolName: req.toolName, input: req.input, description: req.description });
       }),
     onExit: async ({ code, stderr }) => {
       denyPending(chat, 'Claude Code stopped.');
-      if (chats.get(chatId) === chat) chats.delete(chatId);
+      if (chats.get(key) === chat) chats.delete(key);
       if (chat.turn) await finishTurn(chatId, chat);
-      if (!chat.closing) send('chat-exit', { chatId, code, stderr });
+      if (!chat.closing) sendTo(ctx, 'chat-exit', { chatId, code, stderr });
     },
   });
   await chat.session.start();
-  chats.set(chatId, chat);
+  chats.set(key, chat);
   return chat;
 }
 
-async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent }) {
-  if (!workspace) throw new Error('Open a folder first.');
-  if (!accounts.exists(settings, account)) account = folderAccount();
+// "@⟦api⟧/src/x.js" in a message means the extra folder's file: agents get its real path.
+function withRealPaths(ctx, content) {
+  const keyed = roots(ctx).slice(1);
+  if (!keyed.length) return content;
+  const swap = (text) => keyed.reduce((t, r) => t.split(r.key).join(r.dir.split(path.sep).join('/')), text);
+  return content.map((b) => (b.type === 'text' ? { ...b, text: swap(b.text) } : b));
+}
+
+// A snapshot of every folder the chat can change, taken before each turn.
+function beginSnapshot(ctx, chat) {
+  const extra = chat.cwd === ctx.workspace ? roots(ctx).slice(1) : [];
+  if (!extra.length) return new TurnSnapshot(chat.cwd).begin();
+  return new MultiSnapshot([new TurnSnapshot(chat.cwd), ...extra.map((r) => new TurnSnapshot(r.dir, r.key))]).begin();
+}
+
+async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent }) {
+  if (!ctx.workspace) throw new Error('Open a folder first.');
+  if (!accounts.exists(settings, account)) account = folderAccount(ctx);
   agent = agents.AGENTS[agent] ? agent : 'claude';
-  let chat = chats.get(chatId);
+  const key = chatKey(ctx, chatId);
+  let chat = chats.get(key);
   const restart =
     chat &&
     chat.session.alive &&
     (resumeAt ||
       agent !== chat.agent ||
+      chat.dirs.join('\n') !== ctx.extra.join('\n') ||
       (agent === 'claude' && ((effort || '') !== chat.effort || account !== chat.account)) ||
       (agents.AGENTS[agent].kind === 'acp' && (model || '') !== chat.model));
   if (restart) {
-    // Effort, account and (for ACP agents) model are fixed per process: restart it on the same conversation.
+    // Effort, account, the workspace's folders and (for ACP agents) model are fixed per process:
+    // restart it on the same conversation.
     if (!resumeAt) sessionId = chat.session.sessionId || sessionId;
     chat.closing = true;
     chat.session.dispose();
-    chats.delete(chatId);
+    chats.delete(key);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent });
+  if (!chat || !chat.session.alive) chat = await openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent });
   else await chat.session.setModel(model);
-  const turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(chat.cwd).begin(), blocks: new Map() };
+  const turn = { id: crypto.randomUUID(), snap: await beginSnapshot(ctx, chat), blocks: new Map() };
   chat.turn = turn;
-  await chat.session.send(content, mode);
+  await chat.session.send(withRealPaths(ctx, content), mode);
   return { turnId: turn.id };
 }
 
-async function chatInterrupt(chatId) {
-  const chat = chats.get(chatId);
+async function chatInterrupt(ctx, chatId) {
+  const chat = chats.get(chatKey(ctx, chatId));
   if (!chat) return;
   denyPending(chat, 'The user stopped this turn.');
   const r = await chat.session.interrupt();
@@ -414,17 +580,22 @@ async function chatInterrupt(chatId) {
   if (r.error && chat.session.alive) chat.session.dispose();
 }
 
-function chatClose(chatId) {
-  const chat = chats.get(chatId);
+function closeChat(key) {
+  const chat = chats.get(key);
   if (!chat) return;
   chat.closing = true;
   denyPending(chat, 'Chat closed.');
   chat.session.dispose();
-  chats.delete(chatId);
+  chats.delete(key);
 }
 
-function answerApproval(chatId, reqId, decision) {
-  const chat = chats.get(chatId);
+// Ends the chats running in a window, when it closes or opens another folder.
+function closeWindowChats(ctx) {
+  for (const [key, c] of [...chats]) if (c.ctx === ctx) closeChat(key);
+}
+
+function answerApproval(ctx, chatId, reqId, decision) {
+  const chat = chats.get(chatKey(ctx, chatId));
   const resolve = chat && chat.approvals.get(reqId);
   if (!resolve) return;
   chat.approvals.delete(reqId);
@@ -433,22 +604,26 @@ function answerApproval(chatId, reqId, decision) {
 
 // ---------- IPC ----------
 
-function send(channel, payload) {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
-}
-
 function registerIpc() {
-  ipcMain.handle('settings:get', () => settings);
-  ipcMain.handle('settings:set', (_e, patch) => {
+  // Every handler gets the window it was called from.
+  const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => fn(ctxOf(e), ...args));
+  handle('settings:get', (ctx) => settings);
+  handle('settings:set', (ctx, patch) => {
+    if (patch.workspaces) {
+      // Each window saves its own folder's tabs: merge, so windows don't overwrite each other.
+      const all = Object.entries({ ...(settings.workspaces || {}), ...patch.workspaces });
+      patch = { ...patch, workspaces: Object.fromEntries(all.sort((x, y) => (y[1].savedAt || 0) - (x[1].savedAt || 0)).slice(0, 30)) };
+    }
     settings = { ...settings, ...patch };
     saveSettings();
     if (patch.theme) nativeTheme.themeSource = patch.theme;
+    broadcast('settings-changed', settings, ctx); // other windows keep their copy current
     return settings;
   });
-  ipcMain.handle('cli:status', (_e, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount())));
+  handle('cli:status', (ctx, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount(ctx))));
 
   // Agents: Claude, Codex, Kimi, and API-key models through Gemini CLI and Qwen Code.
-  ipcMain.handle('agents:list', () =>
+  handle('agents:list', (ctx) =>
     Object.entries(agents.AGENTS).map(([id, a]) => ({
       id,
       label: a.label,
@@ -461,11 +636,11 @@ function registerIpc() {
       canLogin: !!a.login,
     }))
   );
-  ipcMain.handle('agents:status', async (_e, id) => {
+  handle('agents:status', async (ctx, id) => {
     const a = agents.AGENTS[id];
     if (!a) return null;
     if (id === 'claude') {
-      const s = await cli.cliStatus(settings.claudePath, accounts.envFor(folderAccount()));
+      const s = await cli.cliStatus(settings.claudePath, accounts.envFor(folderAccount(ctx)));
       return { installed: s.found, path: s.path, version: s.version, loggedIn: !!(s.found && (s.auth ? s.auth.loggedIn : true)), detail: s.auth && s.auth.email ? s.auth.email : '' };
     }
     const bin = await agents.findBin(id, settings);
@@ -488,7 +663,7 @@ function registerIpc() {
     }
   });
   // API key, base URL and default model for an API-key agent. A key of undefined keeps the saved one.
-  ipcMain.handle('agents:set-key', (_e, id, { key, baseUrl, model } = {}) => {
+  handle('agents:set-key', (ctx, id, { key, baseUrl, model } = {}) => {
     const a = agents.AGENTS[id];
     if (!a || !a.key) return false;
     const prev = (settings.apiKeys || {})[id] || {};
@@ -498,7 +673,7 @@ function registerIpc() {
     return true;
   });
   // Install and sign-in commands, which the app runs in its own terminal so you see everything.
-  ipcMain.handle('agents:command', async (_e, id, what) => {
+  handle('agents:command', async (ctx, id, what) => {
     const a = agents.AGENTS[id];
     if (!a) return null;
     if (what === 'install') return a.install ? a.install() : null;
@@ -506,13 +681,13 @@ function registerIpc() {
     if (what === 'login' && a.login) return bin ? agents.commandLine(bin, a.login) : null;
     return null;
   });
-  ipcMain.handle('agents:models', async (_e, id) => {
+  handle('agents:models', async (ctx, id) => {
     if (id !== 'codex') return [];
     const bin = await agents.findBin('codex', settings);
     return bin ? codexModels(bin).catch(() => []) : [];
   });
   // Codex can use an OpenAI API key instead of a ChatGPT sign-in; Codex stores it itself.
-  ipcMain.handle('agents:codex-key', async (_e, key) => {
+  handle('agents:codex-key', async (ctx, key) => {
     const bin = await agents.findBin('codex', settings);
     if (!bin) throw new Error("Codex isn't installed.");
     const env = await cli.childEnv();
@@ -528,85 +703,87 @@ function registerIpc() {
   });
 
   // Accounts: several Claude logins side by side, a default per folder, and a pick per chat.
-  const accountsInfo = () => ({ accounts: accounts.list(settings), rules: settings.accountRules || {}, defaultAccount: accounts.forFolder(settings, null), folderAccount: folderAccount() });
-  ipcMain.handle('accounts:list', () => accountsInfo());
-  ipcMain.handle('accounts:add', async (_e, name) => {
+  const accountsInfo = (ctx) => ({ accounts: accounts.list(settings), rules: settings.accountRules || {}, defaultAccount: accounts.forFolder(settings, null), folderAccount: folderAccount(ctx) });
+  handle('accounts:list', (ctx) => accountsInfo(ctx));
+  handle('accounts:add', async (ctx, name) => {
     const a = await accounts.create(name);
     settings.accounts = [...(settings.accounts || []), a];
     saveSettings();
-    return { ...accountsInfo(), added: a.id };
+    return { ...accountsInfo(ctx), added: a.id };
   });
-  ipcMain.handle('accounts:rename', (_e, id, name) => {
+  handle('accounts:rename', (ctx, id, name) => {
     name = String(name || '').trim().slice(0, 40);
-    if (!name) return accountsInfo();
+    if (!name) return accountsInfo(ctx);
     if (accounts.isMain(id)) settings.mainAccountName = name;
     else settings.accounts = (settings.accounts || []).map((a) => (a.id === id ? { ...a, name } : a));
     saveSettings();
-    return accountsInfo();
+    return accountsInfo(ctx);
   });
-  ipcMain.handle('accounts:remove', async (_e, id) => {
-    for (const [cid, c] of chats) if (c.account === id) chatClose(cid);
+  handle('accounts:remove', async (ctx, id) => {
+    for (const [key, c] of [...chats]) if (c.account === id) closeChat(key);
     await accounts.remove(id);
     settings.accounts = (settings.accounts || []).filter((a) => a.id !== id);
     settings.accountRules = Object.fromEntries(Object.entries(settings.accountRules || {}).filter(([, v]) => v !== id));
     if (settings.defaultAccount === id) settings.defaultAccount = accounts.MAIN;
     saveSettings();
-    return accountsInfo();
+    return accountsInfo(ctx);
   });
   // Ties a folder to an account (null clears the rule).
-  ipcMain.handle('accounts:set-rule', (_e, folder, id) => {
+  handle('accounts:set-rule', (ctx, folder, id) => {
     const rules = { ...(settings.accountRules || {}) };
-    folder = path.resolve(folder || workspace);
+    folder = path.resolve(folder || ctx.workspace);
     if (id && accounts.exists(settings, id)) rules[folder] = id;
     else delete rules[folder];
     settings.accountRules = rules;
     saveSettings();
-    return accountsInfo();
+    return accountsInfo(ctx);
   });
-  ipcMain.handle('accounts:set-default', (_e, id) => {
+  handle('accounts:set-default', (ctx, id) => {
     if (accounts.exists(settings, id)) settings.defaultAccount = id;
     saveSettings();
-    return accountsInfo();
+    return accountsInfo(ctx);
   });
 
   // First-run setup: install the CLI and sign in.
-  ipcMain.handle('setup:install', () => cli.installClaude((text) => send('setup-log', text)));
-  ipcMain.handle('setup:login', async (_e, account) => {
+  handle('setup:install', (ctx) => cli.installClaude((text) => sendTo(ctx, 'setup-log', text)));
+  handle('setup:login', async (ctx, account) => {
     const bin = await cli.findClaude(settings.claudePath);
     if (!bin) throw new Error('Install Claude Code first.');
     if (loginHandle) loginHandle.cancel();
-    if (!accounts.exists(settings, account)) account = folderAccount();
+    if (!accounts.exists(settings, account)) account = folderAccount(ctx);
+    loginCtx = ctx;
     loginHandle = await cli.startLogin(bin, {
-      onLog: (text) => send('setup-log', text),
-      onUrl: (url) => send('setup-login-url', url),
+      onLog: (text) => sendTo(ctx, 'setup-log', text),
+      onUrl: (url) => sendTo(ctx, 'setup-login-url', url),
       onExit: (r) => {
         loginHandle = null;
-        send('setup-login-exit', { ...r, account });
+        loginCtx = null;
+        sendTo(ctx, 'setup-login-exit', { ...r, account });
       },
     }, accounts.envFor(account));
     return true;
   });
-  ipcMain.handle('setup:login-code', (_e, code) => loginHandle && loginHandle.sendCode(code));
-  ipcMain.handle('setup:login-cancel', () => loginHandle && loginHandle.cancel());
+  handle('setup:login-code', (ctx, code) => loginHandle && loginHandle.sendCode(code));
+  handle('setup:login-cancel', (ctx) => loginHandle && loginHandle.cancel());
   // Menus drawn in the app's own title bar (Windows and Linux).
-  ipcMain.handle('menu:labels', () => (Menu.getApplicationMenu()?.items || []).map((i) => i.label.replace(/&/g, '')));
-  ipcMain.handle('menu:popup', (_e, index, x, y) => {
+  handle('menu:labels', (ctx) => (Menu.getApplicationMenu()?.items || []).map((i) => i.label.replace(/&/g, '')));
+  handle('menu:popup', (ctx, index, x, y) => {
     const item = Menu.getApplicationMenu()?.items[index];
     if (!item || !item.submenu) return;
-    return new Promise((resolve) => item.submenu.popup({ window: win, x: Math.round(x), y: Math.round(y), callback: resolve }));
+    return new Promise((resolve) => item.submenu.popup({ window: ctx.win, x: Math.round(x), y: Math.round(y), callback: resolve }));
   });
-  ipcMain.handle('window:titlebar-colors', (_e, color, symbolColor) => {
-    if (win && process.platform !== 'darwin' && win.setTitleBarOverlay) win.setTitleBarOverlay({ color, symbolColor, height: 38 });
+  handle('window:titlebar-colors', (ctx, color, symbolColor) => {
+    if (ctx.win && process.platform !== 'darwin' && ctx.win.setTitleBarOverlay) ctx.win.setTitleBarOverlay({ color, symbolColor, height: 38 });
   });
-  ipcMain.handle('update:install', () => updater.installNow());
+  handle('update:install', (ctx) => updater.installNow());
   // Flash the taskbar button (bounce the Dock on macOS) until you come back to the app.
-  ipcMain.handle('window:flash', () => {
-    if (!win || win.isDestroyed() || win.isFocused()) return;
+  handle('window:flash', (ctx) => {
+    if (!ctx.win || ctx.win.isDestroyed() || ctx.win.isFocused()) return;
     if (process.platform === 'darwin') app.dock?.bounce('informational');
-    else win.flashFrame(true);
+    else ctx.win.flashFrame(true);
   });
   // Preview pane: screenshots for the chat, and "open in your browser".
-  ipcMain.handle('preview:capture', async (_e, id, rect) => {
+  handle('preview:capture', async (ctx, id, rect) => {
     const wc = require('electron').webContents.fromId(id);
     if (!wc || wc.getType() !== 'webview') return null;
     const img = await (rect ? wc.capturePage(rect) : wc.capturePage());
@@ -614,99 +791,114 @@ function registerIpc() {
     if (out.getSize().width > 1600) out = out.resize({ width: 1600 });
     return out.isEmpty() ? null : out.toPNG().toString('base64');
   });
-  ipcMain.handle('preview:open-external', (_e, url) => /^https?:\/\//.test(url) && shell.openExternal(url));
-  ipcMain.handle('app:version', () => app.getVersion());
-  ipcMain.handle('open-external', (_e, url) => {
+  handle('preview:open-external', (ctx, url) => /^https?:\/\//.test(url) && shell.openExternal(url));
+  handle('app:version', (ctx) => app.getVersion());
+  handle('open-external', (ctx, url) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(claude\.ai|claude\.com|anthropic\.com|git-scm\.com)\//i.test(url)) shell.openExternal(url);
   });
 
-  ipcMain.handle('folder:pick', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
-    if (r.canceled || !r.filePaths[0]) return null;
-    return openFolder(r.filePaths[0]);
+  handle('folder:pick', async (ctx) => {
+    const dir = await pickDir(ctx);
+    return dir ? openFolder(ctx, dir) : null;
   });
-  ipcMain.handle('folder:open', (_e, dir) => (fs.existsSync(dir) ? openFolder(dir) : null));
-  ipcMain.handle('folder:current', () => (workspace ? { root: workspace, name: path.basename(workspace) } : null));
-  ipcMain.handle('files:list', () => listFiles());
-  ipcMain.handle('files:search', async (_e, query, opts) => (workspace ? search.search(workspace, await listFiles(), query, opts) : { results: [] }));
-  ipcMain.handle('file:read', async (_e, rel) => {
-    const abs = resolveInWorkspace(rel);
+  handle('folder:open', (ctx, dir) => (fs.existsSync(dir) ? openFolder(ctx, dir) : null));
+  handle('folder:current', (ctx) => folderInfo(ctx));
+  // What a window shows when it first loads: its folder, the one it was opened for, or nothing.
+  handle('folder:start', async (ctx) => {
+    if (ctx.workspace) return folderInfo(ctx);
+    const dir = ctx.start;
+    ctx.start = null;
+    return dir && fs.existsSync(dir) ? openFolder(ctx, dir) : null;
+  });
+  // Workspaces: more folders in one window.
+  handle('folder:add', async (ctx, dir) => {
+    dir = dir || (await pickDir(ctx, 'Add Folder to Workspace'));
+    return dir ? addFolder(ctx, dir) : null;
+  });
+  handle('folder:remove', (ctx, dir) => removeFolder(ctx, dir));
+  handle('window:new', (ctx, dir) => newWindow(dir));
+  handle('files:list', (ctx) => listFiles(ctx));
+  handle('files:search', async (ctx, query, opts) => (ctx.workspace ? search.search((rel) => resolveInWorkspace(ctx, rel), await listFiles(ctx), query, { ...opts, group: ctx.id }) : { results: [] }));
+  handle('file:read', async (ctx, rel) => {
+    const abs = resolveInWorkspace(ctx, rel);
     const st = await fsp.stat(abs);
     if (st.size > 10 * 1024 * 1024) return { tooLarge: true };
     const buf = await fsp.readFile(abs);
     if (buf.subarray(0, 8000).includes(0)) return { binary: true };
     return { content: buf.toString('utf8') };
   });
-  ipcMain.handle('file:write', async (_e, rel, content) => {
-    const abs = resolveInWorkspace(rel);
+  handle('file:write', async (ctx, rel, content) => {
+    const abs = resolveInWorkspace(ctx, rel);
     await fsp.mkdir(path.dirname(abs), { recursive: true });
     await fsp.writeFile(abs, content, 'utf8');
     return true;
   });
-  ipcMain.handle('file:reveal', (_e, rel) => shell.showItemInFolder(resolveInWorkspace(rel)));
+  handle('file:reveal', (ctx, rel) => shell.showItemInFolder(resolveInWorkspace(ctx, rel)));
 
-  ipcMain.handle('sessions:list', () => listSessions());
-  ipcMain.handle('sessions:load', (_e, id, cwd, account) => loadSession(id, cwd, account));
+  handle('sessions:list', (ctx) => listSessions(ctx));
+  handle('sessions:load', (ctx, id, cwd, account) => loadSession(ctx, id, cwd, account));
   // Parallel agents: chats working in their own copy of the project.
   const ownCopy = (wt) => {
     if (!worktrees.exists(wt)) throw new Error('This copy no longer exists.');
     return wt;
   };
-  ipcMain.handle('worktree:create', (_e, name) => worktrees.create(workspace, name));
-  ipcMain.handle('worktree:changes', (_e, wt) => worktrees.changes(ownCopy(wt)));
-  ipcMain.handle('worktree:diff', (_e, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
-  ipcMain.handle('worktree:merge', (_e, wt) => worktrees.merge(ownCopy(wt), workspace));
-  ipcMain.handle('worktree:remove', (_e, wt) => (worktrees.exists(wt) ? worktrees.remove(wt) : true));
-  ipcMain.handle('worktree:exists', (_e, wt) => worktrees.exists(wt));
+  handle('worktree:create', (ctx, name) => worktrees.create(ctx.workspace, name));
+  handle('worktree:changes', (ctx, wt) => worktrees.changes(ownCopy(wt)));
+  handle('worktree:diff', (ctx, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
+  handle('worktree:merge', (ctx, wt) => worktrees.merge(ownCopy(wt), ctx.workspace));
+  handle('worktree:remove', (ctx, wt) => (worktrees.exists(wt) ? worktrees.remove(wt) : true));
+  handle('worktree:exists', (ctx, wt) => worktrees.exists(wt));
 
-  ipcMain.handle('chat:send', (_e, chatId, opts) => chatSend(chatId, opts));
-  ipcMain.handle('chat:interrupt', (_e, chatId) => chatInterrupt(chatId));
-  ipcMain.handle('chat:close', (_e, chatId) => chatClose(chatId));
-  ipcMain.handle('chat:set-mode', (_e, chatId, mode) => chats.get(chatId)?.session.setMode(mode));
-  ipcMain.handle('approval:answer', (_e, chatId, reqId, decision) => answerApproval(chatId, reqId, decision));
-  ipcMain.handle('rewind:files', (_e, turnIds) => rewindFiles(turnIds, false));
-  ipcMain.handle('rewind:apply', (_e, turnIds) => rewindFiles(turnIds, true));
-  ipcMain.handle('changes:undo', async (_e, turnId, absPaths) => {
+  handle('chat:send', (ctx, chatId, opts) => chatSend(ctx, chatId, opts));
+  handle('chat:interrupt', (ctx, chatId) => chatInterrupt(ctx, chatId));
+  handle('chat:close', (ctx, chatId) => closeChat(chatKey(ctx, chatId)));
+  handle('chat:set-mode', (ctx, chatId, mode) => chats.get(chatKey(ctx, chatId))?.session.setMode(mode));
+  handle('approval:answer', (ctx, chatId, reqId, decision) => answerApproval(ctx, chatId, reqId, decision));
+  handle('rewind:files', (ctx, turnIds) => rewindFiles(turnIds, false));
+  handle('rewind:apply', (ctx, turnIds) => rewindFiles(turnIds, true));
+  handle('changes:undo', async (ctx, turnId, absPaths) => {
     const snap = turnSnapshots.get(turnId);
     if (!snap) return false;
-    await snap.undo(absPaths.filter((p) => inWorkspace(p) || worktrees.isUnder(p)));
+    await snap.undo(absPaths.filter((p) => inWorkspace(ctx, p) || worktrees.isUnder(p)));
     return true;
   });
 
   // Source control
-  ipcMain.handle('git:status', () => (workspace ? gitops.status(workspace) : { repo: false }));
-  ipcMain.handle('git:head', (_e, rel) => gitops.headContent(workspace, rel));
-  ipcMain.handle('git:commit', (_e, message) => gitops.commitAll(workspace, message));
-  ipcMain.handle('git:checkout', (_e, branch, create) => gitops.checkout(workspace, branch, create));
-  ipcMain.handle('git:sync', (_e, action) => gitops.sync(workspace, action));
-  ipcMain.handle('git:discard', async (_e, rel, wasUntracked) => {
-    const abs = resolveInWorkspace(rel);
+  handle('git:status', (ctx) => (ctx.workspace ? gitops.status(ctx.workspace) : { repo: false }));
+  handle('git:head', (ctx, rel) => gitops.headContent(ctx.workspace, rel));
+  handle('git:commit', (ctx, message) => gitops.commitAll(ctx.workspace, message));
+  handle('git:checkout', (ctx, branch, create) => gitops.checkout(ctx.workspace, branch, create));
+  handle('git:sync', (ctx, action) => gitops.sync(ctx.workspace, action));
+  handle('git:discard', async (ctx, rel, wasUntracked) => {
+    const abs = resolveInWorkspace(ctx, rel);
     if (wasUntracked) {
-      await git(workspace, ['rm', '--cached', '--ignore-unmatch', '-q', '--', rel]).catch(() => {});
+      await git(ctx.workspace, ['rm', '--cached', '--ignore-unmatch', '-q', '--', rel]).catch(() => {});
       await fsp.rm(abs, { force: true });
     }
-    else await git(workspace, ['checkout', 'HEAD', '--', rel]);
+    else await git(ctx.workspace, ['checkout', 'HEAD', '--', rel]);
   });
-  ipcMain.handle('git:init', () => git(workspace, ['init']));
-  ipcMain.handle('git:suggest', async () => gitops.suggestMessage(workspace, await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount())));
+  handle('git:init', (ctx) => git(ctx.workspace, ['init']));
+  handle('git:suggest', async (ctx) => gitops.suggestMessage(ctx.workspace, await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
 
   // Terminal
-  ipcMain.handle('term:create', (_e, id, cols, rows) =>
+  // Terminal ids are per window in the app, so they're prefixed with the window's here.
+  const termId = (ctx, id) => `${ctx.id}:${id}`;
+  handle('term:create', (ctx, id, cols, rows) =>
     // `claude` typed in the terminal signs in as the folder's account too.
-    terminal.create(id, workspace, cols, rows, { onData: (d) => send('term-data', { id, data: d }), onExit: (code) => send('term-exit', { id, code }) }, accounts.envFor(folderAccount()))
+    terminal.create(termId(ctx, id), ctx.workspace, cols, rows, { onData: (d) => sendTo(ctx, 'term-data', { id, data: d }), onExit: (code) => sendTo(ctx, 'term-exit', { id, code }) }, accounts.envFor(folderAccount(ctx)))
   );
-  ipcMain.handle('term:write', (_e, id, data) => terminal.write(id, data));
-  ipcMain.handle('term:resize', (_e, id, cols, rows) => terminal.resize(id, cols, rows));
-  ipcMain.handle('term:kill', (_e, id) => terminal.kill(id));
+  handle('term:write', (ctx, id, data) => terminal.write(termId(ctx, id), data));
+  handle('term:resize', (ctx, id, cols, rows) => terminal.resize(termId(ctx, id), cols, rows));
+  handle('term:kill', (ctx, id) => terminal.kill(termId(ctx, id)));
 
   // Settings page
-  ipcMain.handle('cfg:memory', () => config.memoryFiles(workspace, folderAcct()));
-  ipcMain.handle('cfg:save-memory', (_e, id, content) => config.saveMemory(workspace, id, content, folderAcct()));
-  ipcMain.handle('cfg:permissions', () => config.permissions(workspace, folderAcct()));
-  ipcMain.handle('cfg:rule', (_e, scope, rule, add) => config.editRule(workspace, scope, rule, add, folderAcct()));
-  ipcMain.handle('cfg:mcp-list', async () => config.mcpList(await cli.findClaude(settings.claudePath), workspace || os.homedir(), folderAcct()));
-  ipcMain.handle('cfg:mcp-remove', async (_e, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), workspace || os.homedir(), name, folderAcct()));
-  ipcMain.handle('cfg:mcp-add', async (_e, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), workspace || os.homedir(), spec, folderAcct()));
+  handle('cfg:memory', (ctx) => config.memoryFiles(ctx.workspace, folderAcct(ctx)));
+  handle('cfg:save-memory', (ctx, id, content) => config.saveMemory(ctx.workspace, id, content, folderAcct(ctx)));
+  handle('cfg:permissions', (ctx) => config.permissions(ctx.workspace, folderAcct(ctx)));
+  handle('cfg:rule', (ctx, scope, rule, add) => config.editRule(ctx.workspace, scope, rule, add, folderAcct(ctx)));
+  handle('cfg:mcp-list', async (ctx) => config.mcpList(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), folderAcct(ctx)));
+  handle('cfg:mcp-remove', async (ctx, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), name, folderAcct(ctx)));
+  handle('cfg:mcp-add', async (ctx, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), spec, folderAcct(ctx)));
 }
 
 // ---------- app ----------
@@ -715,10 +907,14 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
-function createWindow() {
-  win = new BrowserWindow({
+// A new window. start is the folder it opens with; null opens an empty window.
+function createWindow(start) {
+  const focused = BrowserWindow.getFocusedWindow();
+  const at = focused && !focused.isMaximized() ? focused.getBounds() : null;
+  const win = new BrowserWindow({
     width: 1440,
     height: 900,
+    ...(at ? { x: at.x + 28, y: at.y + 28, width: at.width, height: at.height } : {}),
     minWidth: 900,
     minHeight: 560,
     title: 'Switchdesk',
@@ -736,8 +932,12 @@ function createWindow() {
       webviewTag: true, // the preview pane
     },
   });
+  const ctx = { id: win.webContents.id, win, workspace: null, extra: [], watchers: [], start: start || null };
+  contexts.set(ctx.id, ctx);
   win.loadURL('app://desk/renderer/index.html');
   win.on('focus', () => win.flashFrame(false));
+  win.on('page-title-updated', (e) => e.preventDefault()); // the title names the window's folder
+  win.webContents.on('did-finish-load', () => lastUpdate && sendTo(ctx, 'update-status', lastUpdate));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -748,18 +948,82 @@ function createWindow() {
       if (/^https?:/.test(url)) shell.openExternal(url);
     }
   });
+  win.on('closed', () => {
+    closeWindowChats(ctx);
+    terminal.killWhere(`${ctx.id}:`);
+    stopWatchers(ctx);
+    if (loginCtx === ctx && loginHandle) loginHandle.cancel();
+    contexts.delete(ctx.id);
+    ctx.win = null;
+    rememberWindows();
+    buildMenu();
+  });
+  buildMenu();
+  return ctx;
+}
+
+// Opens a window, or goes to the one that already has the folder.
+function newWindow(dir) {
+  const open = dir && windowWith(dir);
+  if (open) return focusWindow(open);
+  createWindow(dir || null);
+}
+
+async function pickDir(ctx, title) {
+  const r = await dialog.showOpenDialog(ctx && ctx.win ? ctx.win : undefined, { title, properties: ['openDirectory', 'createDirectory'] });
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+}
+
+// Asks a window's page to do something from the menu.
+const menuCmd = (cmd) => (_item, bw) => {
+  const ctx = ctxOfWindow(bw) || ctxOfWindow(BrowserWindow.getFocusedWindow());
+  if (ctx) sendTo(ctx, 'menu', cmd);
+  else if (cmd === 'open-folder') newWindowWithPicker();
+};
+
+async function newWindowWithPicker() {
+  const dir = await pickDir(null);
+  if (dir) newWindow(dir);
 }
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const recents = (settings.recentFolders || []).filter((f) => fs.existsSync(f));
+  const open = [...contexts.values()].filter((c) => c.win && !c.win.isDestroyed());
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
     {
       label: 'File',
       submenu: [
-        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => send('menu', 'open-folder') },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('menu', 'save') },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => send('menu', 'close-tab') },
+        { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => newWindow(null) },
+        { type: 'separator' },
+        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open-folder') },
+        { label: 'Open Folder in New Window…', click: newWindowWithPicker },
+        {
+          label: 'Open Recent',
+          submenu: recents.length
+            ? [
+                ...recents.map((f) => ({
+                  label: f,
+                  click: (_i, bw) => {
+                    const ctx = ctxOfWindow(bw);
+                    const other = windowWith(f, ctx);
+                    if (other) focusWindow(other);
+                    else if (ctx) sendTo(ctx, 'menu-open-folder', f);
+                    else newWindow(f);
+                  },
+                })),
+                { type: 'separator' },
+                { label: 'Clear Recent', click: () => ((settings.recentFolders = []), saveSettings(), buildMenu()) },
+              ]
+            : [{ label: 'No recent folders', enabled: false }],
+        },
+        { type: 'separator' },
+        { label: 'Add Folder to Workspace…', click: menuCmd('add-folder') },
+        { type: 'separator' },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
+        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: menuCmd('close-tab') },
+        { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: (_i, bw) => bw && bw.close() },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
@@ -768,18 +1032,18 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: () => send('menu', 'quick-open') },
-        { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: () => send('menu', 'search') },
-        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => send('menu', 'new-chat') },
-        { label: 'New Chat in Its Own Copy', accelerator: 'CmdOrCtrl+Shift+N', click: () => send('menu', 'new-copy-chat') },
-        { label: 'Add Selection to Chat', accelerator: 'CmdOrCtrl+L', click: () => send('menu', 'add-selection') },
-        { label: 'Edit Selection with Claude', accelerator: 'CmdOrCtrl+K', click: () => send('menu', 'inline-edit') },
-        { label: 'Cycle Mode', accelerator: 'CmdOrCtrl+.', click: () => send('menu', 'cycle-mode') },
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('menu', 'toggle-sidebar') },
-        { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('menu', 'toggle-terminal') },
-        { label: 'Source Control', accelerator: 'CmdOrCtrl+Shift+G', click: () => send('menu', 'source-control') },
-        { label: 'Preview', accelerator: 'CmdOrCtrl+Shift+V', click: () => send('menu', 'preview') },
-        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => send('menu', 'settings') },
+        { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: menuCmd('quick-open') },
+        { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: menuCmd('search') },
+        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: menuCmd('new-chat') },
+        { label: 'New Chat in Its Own Copy', accelerator: 'CmdOrCtrl+Alt+N', click: menuCmd('new-copy-chat') },
+        { label: 'Add Selection to Chat', accelerator: 'CmdOrCtrl+L', click: menuCmd('add-selection') },
+        { label: 'Edit Selection with Claude', accelerator: 'CmdOrCtrl+K', click: menuCmd('inline-edit') },
+        { label: 'Cycle Mode', accelerator: 'CmdOrCtrl+.', click: menuCmd('cycle-mode') },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: menuCmd('toggle-sidebar') },
+        { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: menuCmd('toggle-terminal') },
+        { label: 'Source Control', accelerator: 'CmdOrCtrl+Shift+G', click: menuCmd('source-control') },
+        { label: 'Preview', accelerator: 'CmdOrCtrl+Shift+V', click: menuCmd('preview') },
+        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: menuCmd('settings') },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -788,7 +1052,26 @@ function buildMenu() {
         { role: 'zoomOut' },
       ],
     },
-    { role: 'windowMenu' },
+    isMac
+      ? { role: 'windowMenu' }
+      : {
+          label: 'Window',
+          submenu: [
+            { role: 'minimize' },
+            { label: 'New Window', click: () => newWindow(null) },
+            ...(open.length > 1
+              ? [
+                  { type: 'separator' },
+                  ...open.map((c) => ({
+                    label: c.workspace ? path.basename(c.workspace) + (c.extra.length ? ` (+${c.extra.length})` : '') : 'Empty window',
+                    type: 'checkbox',
+                    checked: c.win.isFocused(),
+                    click: () => focusWindow(c),
+                  })),
+                ]
+              : []),
+          ],
+        },
     {
       label: 'Help',
       submenu: [
@@ -830,15 +1113,30 @@ app.whenReady().then(() => {
   });
   registerIpc();
   buildMenu();
-  updater.start((status) => send('update-status', status));
-  createWindow();
+  updater.start((status) => {
+    lastUpdate = status;
+    broadcast('update-status', status);
+  });
+  // Reopen every window that was open last time, else the last folder.
+  const last = (settings.openWindows || []).filter((d) => fs.existsSync(d));
+  const starts = last.length ? [...new Set(last)] : [(settings.recentFolders || [])[0] || null];
+  for (const dir of starts) createWindow(dir);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow((settings.recentFolders || [])[0] || null);
   });
 });
 
+// Quitting keeps the list of open windows; closing windows one by one doesn't.
+app.on('before-quit', () => {
+  rememberWindows();
+  quitting = true;
+});
+
 app.on('window-all-closed', () => {
-  for (const id of [...chats.keys()]) chatClose(id);
+  for (const key of [...chats.keys()]) closeChat(key);
   terminal.killAll();
   if (process.platform !== 'darwin') app.quit();
 });
+
+// Rebuild the window list in the menu when focus moves.
+app.on('browser-window-focus', () => process.platform !== 'darwin' && buildMenu());

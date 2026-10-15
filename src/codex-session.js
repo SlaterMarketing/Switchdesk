@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const cli = require('./claude-cli');
 const { RpcPeer } = require('./jsonrpc');
-const { ClaudeShape, plainCommand } = require('./agent-events');
+const { ClaudeShape, plainCommand, dirsNote } = require('./agent-events');
 
 const isWin = process.platform === 'win32';
 
@@ -24,10 +24,10 @@ const MODE = {
 };
 const PLAN_PREFIX = '[Plan mode: research the code, then reply with a step-by-step plan. Do not edit files or run commands that change anything.]\n\n';
 
-function sandboxPolicy(mode, cwd) {
+function sandboxPolicy(mode, cwd, dirs = []) {
   return MODE[mode]?.sandbox === 'read-only'
     ? { type: 'readOnly', networkAccess: false }
-    : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+    : { type: 'workspaceWrite', writableRoots: [cwd, ...dirs], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
 }
 
 function spawnCodex(bin, args, opts) {
@@ -35,8 +35,8 @@ function spawnCodex(bin, args, opts) {
 }
 
 class CodexSession {
-  constructor({ bin, cwd, env, sessionId, model, effort, mode, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, extraEnv: env || {}, sessionId, model, effort, mode, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, onEvent, onPermission, onExit });
     this.alive = false;
     this.items = new Map(); // itemId -> item, for approvals that only name the item
     this.turnId = null;
@@ -63,7 +63,7 @@ class CodexSession {
     await this.rpc.request('initialize', { clientInfo: { name: 'switchdesk', title: 'Switchdesk', version: '1' }, capabilities: { experimentalApi: false, requestAttestation: false } }, 30000);
     this.rpc.notify('initialized');
     const m = MODE[this.mode] || MODE.agent;
-    const common = { cwd: this.cwd, approvalPolicy: m.approval, sandbox: m.sandbox, model: this.model || null };
+    const common = { cwd: this.cwd, approvalPolicy: m.approval, sandbox: m.sandbox, model: this.model || null, ...(this.dirs.length ? { developerInstructions: dirsNote(this.dirs) } : {}) };
     let r;
     if (this.sessionId) {
       try {
@@ -95,7 +95,7 @@ class CodexSession {
         threadId: this.sessionId,
         input,
         approvalPolicy: m.approval,
-        sandboxPolicy: sandboxPolicy(this.mode, this.cwd),
+        sandboxPolicy: sandboxPolicy(this.mode, this.cwd, this.dirs),
         model: this.model || null,
         effort: this.effort || null,
       });

@@ -7,7 +7,7 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_MATCHES = 2000;
 const MAX_LINE = 300;
 
-let current = 0; // a newer search cancels the one running
+const current = new Map(); // group -> id: a newer search from the same window cancels the one running
 
 function buildRegex(query, { regex, caseSensitive, wholeWord }) {
   let src = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -27,9 +27,13 @@ function matchesInclude(rel, include) {
     });
 }
 
-// files: workspace-relative paths (already filtered by .gitignore). Returns [{ rel, matches: [{ line, col, len, text }] }].
+// files: workspace-relative paths (already filtered by .gitignore). root is the folder they're in, or a
+// function from a path to its absolute path. Returns [{ rel, matches: [{ line, col, len, text }] }].
 async function search(root, files, query, opts = {}) {
-  const id = ++current;
+  const group = opts.group || '';
+  const id = (current.get(group) || 0) + 1;
+  current.set(group, id);
+  const absOf = typeof root === 'function' ? root : (rel) => path.join(root, rel);
   if (!query) return { results: [], truncated: false };
   let re;
   try {
@@ -41,12 +45,12 @@ async function search(root, files, query, opts = {}) {
   let count = 0;
   let truncated = false;
   for (let i = 0; i < files.length; i++) {
-    if (id !== current) return { cancelled: true };
+    if (id !== current.get(group)) return { cancelled: true };
     const rel = files[i];
     if (!matchesInclude(rel, opts.include)) continue;
     let buf;
     try {
-      const abs = path.join(root, rel);
+      const abs = absOf(rel);
       const st = await fs.stat(abs);
       if (!st.isFile() || st.size > MAX_FILE_BYTES) continue;
       buf = await fs.readFile(abs);

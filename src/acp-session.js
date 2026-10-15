@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const cli = require('./claude-cli');
 const { RpcPeer } = require('./jsonrpc');
-const { ClaudeShape } = require('./agent-events');
+const { ClaudeShape, dirsNote } = require('./agent-events');
 
 const isWin = process.platform === 'win32';
 const NOT_SIGNED_IN = -32000;
@@ -76,8 +76,8 @@ function diffLines(items) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
+  constructor({ bin, args, cwd, dirs, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -160,6 +160,11 @@ class AcpSession {
       await this.applyMode();
     }
     const prompt = [];
+    // Tell the agent about the workspace's other folders once per run.
+    if (this.dirs.length && !this.toldDirs) {
+      this.toldDirs = true;
+      prompt.push({ type: 'text', text: dirsNote(this.dirs) + '\n\n' });
+    }
     for (const b of content) {
       if (b.type === 'text') prompt.push({ type: 'text', text: (this.mode === 'plan' && !this.hasMode('plan') ? PLAN_PREFIX : '') + b.text });
       else if (b.type === 'image') prompt.push({ type: 'image', data: b.source.data, mimeType: b.source.media_type });

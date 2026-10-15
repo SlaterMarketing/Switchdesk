@@ -28,6 +28,7 @@ const state = {
   files: [],
   fileSet: new Set(),
   expanded: new Set(['']),
+  collapsedRoots: new Set(), // folder rows closed in a workspace with several folders
   tabs: [], // { id, kind: 'file'|'diff', rel, model, viewState, dirty, change }
   activeTab: null,
   changedFiles: new Set(),
@@ -370,7 +371,35 @@ function renderTree() {
       }
       for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) rows.push(fileRow(f, depth));
     };
-    walk(state.tree || buildTree([]), 0);
+    const tree = state.tree || buildTree([]);
+    const extra = (state.folder && state.folder.extra) || [];
+    if (!extra.length) walk(tree, 0);
+    else {
+      // A workspace with several folders: one top-level row per folder, the main one first.
+      const main = { ...tree, dirs: new Map([...tree.dirs].filter(([name]) => !name.startsWith('⟦'))) };
+      const folders = [{ key: '', name: state.folder.name, title: state.folder.root, node: main }, ...extra.map((f) => ({ key: f.key, name: f.name, title: f.dir, dir: f.dir, node: tree.dirs.get(f.key) || { dirs: new Map(), files: [] } }))];
+      for (const f of folders) {
+        const open = !state.collapsedRoots.has(f.key);
+        rows.push(
+          h(
+            'div',
+            {
+              class: 'tree-row dir root',
+              title: f.title,
+              onclick: () => {
+                if (open) state.collapsedRoots.add(f.key);
+                else state.collapsedRoots.delete(f.key);
+                renderTree();
+              },
+            },
+            h('span', { class: 'twisty' }, open ? '▾' : '▸'),
+            h('span', { class: 'name' }, f.name),
+            f.dir ? h('button', { class: 'icon-btn root-remove', title: `Remove ${f.name} from this workspace (the folder itself stays)`, onclick: (e) => (e.stopPropagation(), removeWorkspaceFolder(f.dir)) }, '✕') : null
+          )
+        );
+        if (open) walk(f.node, 1);
+      }
+    }
   }
   host.replaceChildren(...rows);
   highlightTreeActive();
@@ -402,10 +431,12 @@ async function refreshFiles() {
 
 async function setFolder(info) {
   if (!info) return;
+  // The folder is already open in another window, which has come to the front.
+  if (info.elsewhere) return toast(`${info.name} is open in another window.`);
   restoringWorkspace = true;
   try {
     state.folder = info;
-    $('#folder-name').textContent = info.name;
+    showFolderName();
     state.expanded = new Set(['']);
     for (const t of [...state.tabs]) closeTab(t.id);
     reviews.clear();
@@ -420,6 +451,44 @@ async function setFolder(info) {
   loadHistory();
   refreshGit();
   checkCli();
+}
+
+function showFolderName() {
+  const f = state.folder;
+  const extra = (f && f.extra) || [];
+  $('#folder-name').textContent = !f ? 'No folder open' : extra.length ? `${f.name} + ${extra.map((x) => x.name).join(', ')}` : f.name;
+  $('#folder-name').title = !f ? '' : [f.root, ...extra.map((x) => x.dir)].join('\n');
+}
+
+// ------------------------------------------------------------------ workspaces
+//
+// A window can hold more folders than its main one. Their files show as "⟦name⟧/path", every agent
+// in the window can read and change them, and they come back whenever the main folder opens.
+
+async function addWorkspaceFolder(dir) {
+  if (!state.folder) return toast('Open a folder first.');
+  try {
+    const info = await desk.addFolder(dir);
+    if (!info) return;
+    const added = info.extra[info.extra.length - 1];
+    await workspaceFoldersChanged(info);
+    toast(`Added ${added ? added.name : 'the folder'}. Agents in this window can work in it from their next message.`);
+  } catch (e) {
+    toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+  }
+}
+
+async function removeWorkspaceFolder(dir) {
+  const info = await desk.removeFolder(dir);
+  const gone = (state.folder.extra || []).find((x) => x.dir === dir);
+  if (gone) for (const t of state.tabs.filter((x) => x.kind === 'file' && x.rel.startsWith(gone.key + '/'))) closeTab(t.id);
+  await workspaceFoldersChanged(info);
+}
+
+async function workspaceFoldersChanged(info) {
+  state.folder = info;
+  showFolderName();
+  await refreshFiles();
 }
 
 // ------------------------------------------------------------------ reopen where you left off
@@ -479,7 +548,14 @@ async function renderRecent() {
   const recents = state.settings.recentFolders || [];
   host.replaceChildren(
     ...(recents.length ? [h('div', { class: 'muted small', style: 'padding:0 8px 4px' }, 'Recent')] : []),
-    ...recents.map((f) => h('button', { class: 'recent', title: f, onclick: async () => setFolder(await desk.openFolder(f)) }, f))
+    ...recents.map((f) =>
+      h(
+        'div',
+        { class: 'recent-row' },
+        h('button', { class: 'recent', title: f, onclick: async () => setFolder(await desk.openFolder(f)) }, f),
+        h('button', { class: 'icon-btn', title: 'Open in a new window', onclick: () => desk.newWindow(f) }, '⧉')
+      )
+    )
   );
 }
 
@@ -510,9 +586,10 @@ function renderMarkdown(el, text) {
 
 function toRel(p) {
   if (!p || !state.folder) return null;
-  const root = state.folder.root.replace(/\\/g, '/');
   p = p.replace(/\\/g, '/');
-  if (p.startsWith(root + '/')) return p.slice(root.length + 1);
+  // The most specific folder wins, so a file in an extra folder gets that folder's key.
+  const folders = [{ key: '', dir: state.folder.root }, ...(state.folder.extra || [])].map((f) => ({ key: f.key, dir: f.dir.replace(/\\/g, '/') })).sort((a, b) => b.dir.length - a.dir.length);
+  for (const f of folders) if (p.startsWith(f.dir + '/')) return (f.key ? f.key + '/' : '') + p.slice(f.dir.length + 1);
   return p.replace(/^\.\//, '');
 }
 
@@ -884,6 +961,7 @@ function wire() {
 
   desk.onMenu((cmd) => {
     if (cmd === 'open-folder') desk.pickFolder().then(setFolder);
+    else if (cmd === 'add-folder') addWorkspaceFolder();
     else if (cmd === 'save') saveActive();
     else if (cmd === 'close-tab') state.activeTab && closeTab(state.activeTab);
     else if (cmd === 'quick-open') quickOpen();
@@ -899,6 +977,15 @@ function wire() {
     else if (cmd === 'preview') openPreview();
     else if (cmd === 'new-copy-chat') newChatInCopy();
   });
+
+  desk.onOpenFolder(async (dir) => setFolder(await desk.openFolder(dir)));
+  // Another window changed a setting.
+  desk.onSettingsChanged((s) => {
+    state.settings = s;
+    applyTheme();
+    if (!state.folder) renderRecent();
+  });
+  $('#btn-add-folder').addEventListener('click', () => addWorkspaceFolder());
 
   let updateVersion = '';
   desk.onUpdateStatus((u) => {

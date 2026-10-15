@@ -144,6 +144,14 @@ body.mac #titlebar { padding-left: 78px; }
 #recent-folders { margin: 18px 0; text-align: left; }
 #recent-folders .recent { display: block; width: 100%; text-align: left; background: none; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #recent-folders .recent:hover { background: var(--bg-hover); }
+#recent-folders .recent-row { display: flex; align-items: center; gap: 2px; }
+#recent-folders .recent-row .recent { flex: 1; min-width: 0; }
+#recent-folders .recent-row .icon-btn { opacity: 0; }
+#recent-folders .recent-row:hover .icon-btn { opacity: 1; }
+.tree-row.root { margin-top: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.tree-row.root .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.tree-row.root .root-remove { opacity: 0; padding: 0 4px; font-size: 11px; }
+.tree-row.root:hover .root-remove { opacity: 1; }
 .shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; text-align: left; margin-top: 18px; }
 #cli-check { margin-top: 8px; }
 

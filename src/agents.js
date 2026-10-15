@@ -55,6 +55,7 @@ const AGENTS = {
     kind: 'acp',
     bins: ['gemini'],
     args: ['--acp'],
+    dirsArg: '--include-directories', // the workspace's other folders
     install: () => npmInstall('@google/gemini-cli'),
     key: { name: 'Gemini API key', url: 'https://aistudio.google.com/apikey' },
     env: (k, o) => ({ GEMINI_API_KEY: k, ...(o.model ? { GEMINI_MODEL: o.model } : {}) }),
@@ -66,6 +67,7 @@ const AGENTS = {
     kind: 'acp',
     bins: ['qwen'],
     args: ['--acp', '--auth-type', 'openai'],
+    dirsArg: '--include-directories', // the workspace's other folders
     install: () => npmInstall('@qwen-code/qwen-code'),
     key: { name: 'Alibaba Cloud Model Studio API key', url: 'https://modelstudio.console.alibabacloud.com/' },
     defaults: { baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen3-coder-plus' },
@@ -78,6 +80,7 @@ const AGENTS = {
     kind: 'acp',
     bins: ['qwen'],
     args: ['--acp', '--auth-type', 'openai'],
+    dirsArg: '--include-directories', // the workspace's other folders
     install: () => npmInstall('@qwen-code/qwen-code'),
     key: { name: 'DeepSeek API key', url: 'https://platform.deepseek.com/api_keys' },
     defaults: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
