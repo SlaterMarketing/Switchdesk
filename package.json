@@ -1,7 +1,7 @@
 {
   "name": "claude-desk",
   "productName": "Switchdesk",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "A Cursor-style desktop editor that drives the coding agents you already use: Claude Code, Codex and Kimi.",
   "main": "src/main.js",
   "private": true,
@@ -93,7 +93,7 @@
         "provider": "github",
         "owner": "SlaterMarketing",
         "repo": "claude-desk",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ]
   },

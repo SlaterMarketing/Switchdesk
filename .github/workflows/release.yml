@@ -20,9 +20,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Tag the version in package.json (when started by hand) and create its release up front.
-      # electron-builder uploads files in parallel; if the release didn't exist yet, each upload
-      # could create its own copy of it.
+      # Tag the version in package.json (when started by hand) and create its release up front, as
+      # a draft. electron-builder uploads files in parallel; if the release didn't exist yet, each
+      # upload could create its own copy of it. It stays a draft until every file is there, so the
+      # app never sees a release without its latest.yml.
       - name: Create the tag and release
         shell: bash
         env:
@@ -33,7 +34,12 @@ jobs:
             git tag "$tag"
             git push origin "$tag"
           fi
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Switchdesk $tag"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --notes "Switchdesk $tag"
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "v$(node -p "require('./package.json').version")" --draft=false --latest

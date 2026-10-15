@@ -27,7 +27,10 @@ function load() {
   });
   updater.on('error', (err) => {
     notify({ state: 'error', message: String(err && err.message ? err.message : err).split('\n')[0] });
-    if (manualCheck) dialog.showMessageBox({ type: 'warning', message: "Couldn't check for updates.", detail: String(err && err.message ? err.message : err).slice(0, 500) });
+    const text = String(err && err.message ? err.message : err);
+    // A release whose files are still uploading: not worth a scary error.
+    if (manualCheck && /latest\.yml/.test(text) && /404/.test(text)) dialog.showMessageBox({ message: 'A new version is being published right now.', detail: 'Try again in a few minutes. It also installs by itself once it is ready.' });
+    else if (manualCheck) dialog.showMessageBox({ type: 'warning', message: "Couldn't check for updates.", detail: text.split('\n')[0].slice(0, 300) });
     manualCheck = false;
   });
   return updater;
