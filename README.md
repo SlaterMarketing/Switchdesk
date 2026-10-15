@@ -20,6 +20,9 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
   - `@` in the chat box mentions a file.
   - `Ctrl+L` adds the editor selection to the chat.
   - `Ctrl+K` edits the selection in place.
+- **Search in files** (`Ctrl+Shift+F`): every file in the project, with match case, whole word, regex, and a files-to-include filter. Click a result to jump to it.
+- **Slash commands:** type `/` in the chat box for Claude Code's commands, including your own from `.claude/commands` and skills. `/clear` starts a fresh conversation in the tab.
+- **Picks up where you left off:** open files and chat tabs come back when you reopen a folder.
 - **History:** the Chats tab lists your Claude Code conversations for the open folder, including ones started in the terminal. Click one to continue it.
 - **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.

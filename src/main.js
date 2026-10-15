@@ -13,6 +13,7 @@ const gitops = require('./gitops');
 const terminal = require('./terminal');
 const config = require('./config');
 const updater = require('./updater');
+const search = require('./search');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -398,6 +399,7 @@ function registerIpc() {
   ipcMain.handle('folder:open', (_e, dir) => (fs.existsSync(dir) ? openFolder(dir) : null));
   ipcMain.handle('folder:current', () => (workspace ? { root: workspace, name: path.basename(workspace) } : null));
   ipcMain.handle('files:list', () => listFiles());
+  ipcMain.handle('files:search', async (_e, query, opts) => (workspace ? search.search(workspace, await listFiles(), query, opts) : { results: [] }));
   ipcMain.handle('file:read', async (_e, rel) => {
     const abs = resolveInWorkspace(rel);
     const st = await fsp.stat(abs);
@@ -522,6 +524,7 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: () => send('menu', 'quick-open') },
+        { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: () => send('menu', 'search') },
         { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => send('menu', 'new-chat') },
         { label: 'Add Selection to Chat', accelerator: 'CmdOrCtrl+L', click: () => send('menu', 'add-selection') },
         { label: 'Edit Selection with Claude', accelerator: 'CmdOrCtrl+K', click: () => send('menu', 'inline-edit') },

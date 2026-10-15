@@ -1,7 +1,7 @@
 {
   "name": "claude-desk",
   "productName": "Claude Desk",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "A personal Cursor-style desktop editor that drives your local Claude Code CLI.",
   "main": "src/main.js",
   "private": true,

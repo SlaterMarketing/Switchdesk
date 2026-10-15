@@ -19,6 +19,7 @@ async function init() {
   wireImageInput();
   wireTerminal();
   wireGit();
+  wireSearch();
   setMode(state.settings.mode || 'agent');
   $('#model-select').value = state.settings.model || '';
   $('#effort-select').value = state.settings.effort || '';

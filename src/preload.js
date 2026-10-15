@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('desk', {
   openFolder: call('folder:open'),
   currentFolder: call('folder:current'),
   listFiles: call('files:list'),
+  searchFiles: call('files:search'),
   readFile: call('file:read'),
   writeFile: call('file:write'),
   revealFile: call('file:reveal'),

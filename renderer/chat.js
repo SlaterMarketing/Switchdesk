@@ -75,6 +75,7 @@ function closeAllChats() {
 }
 
 function renderChatTabs() {
+  queueSaveWorkspace();
   const strip = $('#chat-tabs');
   strip.replaceChildren(
     ...chats.map((c) =>
@@ -120,6 +121,61 @@ function appendChat(node, chat = activeChat()) {
   chat.el.append(node);
   scrollChat(chat, true);
   return node;
+}
+
+// ------------------------------------------------------------------ slash commands
+//
+// Claude Code lists its commands (built-ins, your .claude/commands, skills and plugins) when a chat
+// starts. The list is remembered so the menu works before the first message too.
+
+const SLASH_DESCRIPTIONS = {
+  clear: 'Start a fresh conversation in this tab',
+  new: 'Start a fresh conversation in this tab',
+  compact: 'Summarise the conversation to free up context',
+  context: 'Show what is using the context window',
+  cost: 'Show token usage for this conversation',
+  usage: 'Show your plan usage',
+  init: 'Write a CLAUDE.md that describes this project',
+  review: 'Review a pull request',
+  'code-review': 'Review the current changes for bugs',
+  'security-review': 'Security review of the pending changes',
+  simplify: 'Clean up the changed code',
+  memory: 'Edit Claude memory files',
+  mcp: 'Show MCP server status',
+  model: 'Show or change the model',
+  agents: 'List subagents',
+  recap: 'Summarise the conversation so far',
+  insights: 'Report on how you use Claude Code',
+};
+// Interactive-only or app-internal commands that do nothing useful here.
+const SLASH_HIDDEN = new Set(['config', 'color', 'heapdump', 'doctor', 'reload-plugins', 'reload-skills', 'focus', 'fast', 'rename', 'import', 'goal', 'design-consent', 'design-revoke']);
+const SLASH_LOCAL = new Set(['clear', 'new']);
+
+function slashCommandList() {
+  const names = new Set(['clear', 'new', 'compact', 'context', 'init', 'review', ...(state.settings.slashCommands || [])]);
+  return [...names]
+    .filter((n) => !n.startsWith('_') && !SLASH_HIDDEN.has(n))
+    .map((name) => ({ name, desc: SLASH_DESCRIPTIONS[name] || '' }));
+}
+
+function rememberSlashCommands(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  const prev = state.settings.slashCommands || [];
+  if (prev.length === list.length && prev.every((x, i) => x === list[i])) return;
+  state.settings.slashCommands = list;
+  desk.setSettings({ slashCommands: list });
+}
+
+// /clear and /new are handled here: the tab's Claude process restarts on a brand-new conversation.
+function clearChat(chat) {
+  desk.chatClose(chat.id);
+  chat.sessionId = null;
+  chat.title = 'New chat';
+  chat.usage = { context: 0, turns: 0, model: '' };
+  chat.alwaysAllow = new Set();
+  chat.el.replaceChildren(emptyState());
+  renderChatTabs();
+  renderChatMeta();
 }
 
 // ------------------------------------------------------------------ history
@@ -305,6 +361,7 @@ function handleEvent(chat, ev) {
     case 'system':
       if (ev.subtype === 'init') {
         chat.sessionId = ev.session_id;
+        rememberSlashCommands(ev.slash_commands);
         chat.usage.model = ev.model || chat.usage.model;
       } else if (ev.subtype === 'api_retry' && turn) {
         appendChat(h('div', { class: 'notice' }, `API ${ev.error || 'error'}, retrying (attempt ${ev.attempt}/${ev.max_retries})…`), chat);
@@ -761,8 +818,17 @@ async function send(textOverride, modeOverride, display) {
   const images = textOverride ? [] : state.chips.filter((c) => c.kind === 'image');
   if (!text && !images.length) return;
   const mode = modeOverride || state.mode;
+  const slash = !textOverride && /^\/[\w:.-]+/.exec(text);
+  if (slash && SLASH_LOCAL.has(slash[0].slice(1))) {
+    input.value = '';
+    autoGrow();
+    if (chat.sessionId || !isPristine(chat)) clearChat(chat);
+    return;
+  }
   let prompt = textOverride ? text : buildPrompt(text || 'See the attached image.');
-  if (mode === 'ask') prompt = ASK_PREFIX + prompt;
+  // Slash commands go to Claude Code exactly as typed, without added context.
+  if (slash) prompt = text;
+  else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
   const codeChips = state.chips.filter((c) => c.kind !== 'image');
   const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${c.rel}:${c.start}-${c.end}`).join('\n')}` : text);
   if (!textOverride) {
@@ -776,7 +842,7 @@ async function send(textOverride, modeOverride, display) {
     renderChatTabs();
   }
   const content = [
-    ...images.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
+    ...(slash ? [] : images).map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
     { type: 'text', text: prompt },
   ];
   startTurn(chat, shown, mode, images);

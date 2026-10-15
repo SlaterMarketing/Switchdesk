@@ -146,6 +146,7 @@ function modelUri(rel) {
 // ------------------------------------------------------------------ tabs
 
 function renderTabs() {
+  queueSaveWorkspace();
   const bar = $('#tabs');
   bar.replaceChildren(
     ...state.tabs.map((t) =>
@@ -376,15 +377,70 @@ async function refreshFiles() {
 
 async function setFolder(info) {
   if (!info) return;
-  state.folder = info;
-  $('#folder-name').textContent = info.name;
-  state.expanded = new Set(['']);
-  for (const t of [...state.tabs]) closeTab(t.id);
-  await refreshFiles();
-  closeAllChats();
-  createChat();
+  restoringWorkspace = true;
+  try {
+    state.folder = info;
+    $('#folder-name').textContent = info.name;
+    state.expanded = new Set(['']);
+    for (const t of [...state.tabs]) closeTab(t.id);
+    await refreshFiles();
+    closeAllChats();
+    await restoreWorkspace(info.root);
+  } finally {
+    restoringWorkspace = false;
+  }
   loadHistory();
   refreshGit();
+}
+
+// ------------------------------------------------------------------ reopen where you left off
+//
+// Open files and chat tabs are remembered per folder, in the app's settings file.
+
+let restoringWorkspace = false;
+let saveWorkspaceTimer = null;
+
+function queueSaveWorkspace() {
+  if (restoringWorkspace || !state.folder) return;
+  clearTimeout(saveWorkspaceTimer);
+  saveWorkspaceTimer = setTimeout(saveWorkspace, 500);
+}
+
+async function saveWorkspace() {
+  if (restoringWorkspace || !state.folder) return;
+  const t = activeTab();
+  const snapshot = {
+    tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
+    active: t && t.kind === 'file' ? t.rel : null,
+    chats: chats.filter((c) => c.sessionId).map((c) => ({ sessionId: c.sessionId, title: c.title })),
+    activeChat: activeChat()?.sessionId || null,
+    savedAt: Date.now(),
+  };
+  const all = { ...(state.settings.workspaces || {}), [state.folder.root]: snapshot };
+  // Keep the 30 most recent folders.
+  const keep = Object.entries(all).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0)).slice(0, 30);
+  state.settings = await desk.setSettings({ workspaces: Object.fromEntries(keep) });
+}
+
+async function restoreWorkspace(root) {
+  const saved = (state.settings.workspaces || {})[root];
+  if (saved) {
+    for (const c of saved.chats || []) {
+      try {
+        await openSession({ id: c.sessionId, title: c.title || 'Chat' });
+      } catch {
+        /* transcript deleted */
+      }
+    }
+  }
+  if (!chats.length) createChat();
+  const active = saved && saved.activeChat && chats.find((c) => c.sessionId === saved.activeChat);
+  if (active) switchChat(active.id);
+  if (saved) {
+    for (const rel of saved.tabs || []) if (state.fileSet.has(rel)) await openFile(rel);
+    const t = saved.active && state.tabs.find((x) => x.kind === 'file' && x.rel === saved.active);
+    if (t) activateTab(t.id);
+  }
 }
 
 async function renderRecent() {
@@ -450,13 +506,26 @@ function addSelectionToChat() {
   $('#input').focus();
 }
 
-let mention = null; // { start, items, index }
+let mention = null; // { kind: 'file'|'slash', start, items, index }
 function updateMention() {
   const input = $('#input');
   const pos = input.selectionStart;
   const before = input.value.slice(0, pos);
-  const m = /(^|\s)@([\w./-]*)$/.exec(before);
   const pop = $('#mention-popup');
+  // "/" at the very start of the message lists slash commands.
+  const slash = /^\/([\w:.-]*)$/.exec(before);
+  if (slash) {
+    const q = slash[1].toLowerCase();
+    const items = slashCommandList()
+      .map((c) => ({ c, score: c.name.toLowerCase().startsWith(q) ? 1000 - c.name.length : fuzzyScore(c.name.toLowerCase(), q) }))
+      .filter((x) => x.score > -1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((x) => x.c);
+    mention = { kind: 'slash', start: 0, items, index: 0 };
+    return renderMention();
+  }
+  const m = /(^|\s)@([\w./-]*)$/.exec(before);
   if (!m || !state.files.length) {
     mention = null;
     pop.classList.add('hidden');
@@ -469,7 +538,7 @@ function updateMention() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 12)
     .map((x) => x.f);
-  mention = { start: pos - m[2].length - 1, items, index: 0 };
+  mention = { kind: 'file', start: pos - m[2].length - 1, items, index: 0 };
   renderMention();
 }
 
@@ -477,14 +546,24 @@ function renderMention() {
   const pop = $('#mention-popup');
   if (!mention || !mention.items.length) return pop.classList.add('hidden');
   pop.classList.remove('hidden');
-  pop.replaceChildren(...mention.items.map((f, i) => h('div', { class: `pop-item${i === mention.index ? ' active' : ''}`, onmousedown: (e) => (e.preventDefault(), pickMention(f)) }, f)));
+  pop.replaceChildren(
+    ...mention.items.map((it, i) =>
+      h(
+        'div',
+        { class: `pop-item${mention.kind === 'slash' ? ' slash' : ''}${i === mention.index ? ' active' : ''}`, onmousedown: (e) => (e.preventDefault(), pickMention(it)) },
+        mention.kind === 'slash' ? [h('b', {}, '/' + it.name), it.desc ? h('span', { class: 'desc' }, it.desc) : null] : it
+      )
+    )
+  );
+  $('.pop-item.active', pop)?.scrollIntoView({ block: 'nearest' });
 }
 
-function pickMention(f) {
+function pickMention(it) {
   const input = $('#input');
   const pos = input.selectionStart;
-  input.value = input.value.slice(0, mention.start) + '@' + f + ' ' + input.value.slice(pos);
-  const caret = mention.start + f.length + 2;
+  const insert = mention.kind === 'slash' ? '/' + it.name + ' ' : '@' + it + ' ';
+  input.value = input.value.slice(0, mention.start) + insert + input.value.slice(pos);
+  const caret = mention.start + insert.length;
   input.setSelectionRange(caret, caret);
   mention = null;
   $('#mention-popup').classList.add('hidden');
@@ -774,6 +853,7 @@ function wire() {
     else if (cmd === 'toggle-sidebar') $('#workbench').classList.toggle('no-sidebar');
     else if (cmd === 'toggle-terminal') toggleTerminal();
     else if (cmd === 'source-control') showSidePanel('git');
+    else if (cmd === 'search') openSearch();
     else if (cmd === 'settings') openSettings();
   });
 
@@ -835,6 +915,7 @@ function showSidePanel(name) {
   $('#panel-explorer').classList.toggle('hidden', name !== 'explorer');
   $('#panel-history').classList.toggle('hidden', name !== 'history');
   $('#panel-git').classList.toggle('hidden', name !== 'git');
+  $('#panel-search').classList.toggle('hidden', name !== 'search');
   if (name === 'history') loadHistory();
   if (name === 'git') refreshGit();
 }
