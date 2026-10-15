@@ -7,8 +7,8 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
 You need Node.js 20 or newer and at least one agent CLI (Claude Code, Codex, Cursor's `agent`, Kimi, Gemini CLI or Qwen Code) installed and signed in.
 
 ```
-git clone https://github.com/SlaterMarketing/claude-desk
-cd claude-desk
+git clone https://github.com/SlaterMarketing/switchdesk
+cd switchdesk
 npm install
 npm start
 ```
@@ -30,6 +30,6 @@ The README's "How it works" section explains how each agent is driven.
 
 ## Reporting a bug
 
-Use the bug report form under [Issues](https://github.com/SlaterMarketing/claude-desk/issues/new/choose). Include your Switchdesk version (shown at the top of the Help menu), your operating system, and which agent you were using.
+Use the bug report form under [Issues](https://github.com/SlaterMarketing/switchdesk/issues/new/choose). Include your Switchdesk version (shown at the top of the Help menu), your operating system, and which agent you were using.
 
 By contributing, you agree that your contributions are licensed under the [MIT licence](LICENSE).

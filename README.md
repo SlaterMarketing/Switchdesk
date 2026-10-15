@@ -9,12 +9,12 @@
 A free, open-source, Cursor-style desktop editor for **Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek**.<br>
 Each agent runs through its maker's own CLI, signed in with your own plan or API key.
 
-[![Latest release](https://img.shields.io/github/v/release/SlaterMarketing/claude-desk?label=release&color=5eead4&labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/SlaterMarketing/claude-desk/total?color=3b82f6&labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases)
+[![Latest release](https://img.shields.io/github/v/release/SlaterMarketing/switchdesk?label=release&color=5eead4&labelColor=17181c)](https://github.com/SlaterMarketing/switchdesk/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/SlaterMarketing/switchdesk/total?color=3b82f6&labelColor=17181c)](https://github.com/SlaterMarketing/switchdesk/releases)
 [![MIT licence](https://img.shields.io/badge/licence-MIT-a78bfa?labelColor=17181c)](LICENSE)
-[![Platform](https://img.shields.io/badge/Windows-installer-6366f1?labelColor=17181c)](https://github.com/SlaterMarketing/claude-desk/releases/latest)
+[![Platform](https://img.shields.io/badge/Windows-installer-6366f1?labelColor=17181c)](https://github.com/SlaterMarketing/switchdesk/releases/latest)
 
-[**Website**](https://switchdesk.dev) · [**Download for Windows**](https://github.com/SlaterMarketing/claude-desk/releases/latest) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/claude-desk/issues/new/choose)
+[**Website**](https://switchdesk.dev) · [**Download for Windows**](https://github.com/SlaterMarketing/switchdesk/releases/latest) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/switchdesk/issues/new/choose)
 
 <img src="site/og.png" alt="Switchdesk: one desk, every coding agent" width="760">
 
@@ -82,7 +82,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 
 ## Install (Windows, no terminal needed)
 
-1. Download **Switchdesk-Setup-x.y.z.exe** from the [latest release](https://github.com/SlaterMarketing/claude-desk/releases/latest) and run it. It installs for your user (no admin rights), adds Desktop and Start Menu shortcuts, and opens the app.
+1. Download **Switchdesk-Setup-x.y.z.exe** from the [latest release](https://github.com/SlaterMarketing/switchdesk/releases/latest) and run it. It installs for your user (no admin rights), adds Desktop and Start Menu shortcuts, and opens the app.
 2. On first launch, a setup screen offers **Install Claude Code** (Anthropic's official installer) and **Sign in with Claude**, which opens your browser. When both are ticked, click **Start using Switchdesk**. If you'd rather start with Codex, Kimi or an API key, choose **Use another agent instead**.
 
 Uninstall it from Windows Settings → Apps like any other app.
