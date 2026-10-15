@@ -35,7 +35,7 @@ Uninstall it from Windows Settings → Apps like any other app.
 
 The app checks this repo's Releases at start-up and every four hours, downloads new versions in the background, and shows **Restart to update** in the status bar. Help → Check for Updates checks straight away. If you ignore the button, the update installs the next time you quit.
 
-To publish a new version: `npm run release`. That bumps the patch version, tags it and pushes, and the GitHub Action in `.github/workflows/release.yml` builds the Windows installer and publishes the release.
+To publish a new version: `npm run release`. That bumps the patch version, tags it and pushes, and the GitHub Action in `.github/workflows/release.yml` builds the Windows installer and publishes the release. You can also bump the version in `package.json`, push, and run the **Release** action by hand from the Actions tab.
 
 ## Requirements (running from source)
 

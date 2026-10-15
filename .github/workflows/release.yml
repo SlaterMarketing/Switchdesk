@@ -14,12 +14,22 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      # When started by hand (not by pushing a tag), tag this commit with the version in package.json.
+      - name: Tag the version
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          if ! git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
+            git tag "$tag"
+            git push origin "$tag"
+          fi
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
