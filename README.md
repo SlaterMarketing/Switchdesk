@@ -13,6 +13,8 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
 - **Chat tabs:** run several conversations side by side, each with its own Claude process. A spinner shows which ones are working, and the usage line shows turns and context size per chat.
 - **Images:** paste a screenshot (`Ctrl+V`) or drag one onto the chat box.
 - **Changes card after each turn:** shows every file the turn changed, including files changed by shell commands, with +/− counts and a diff. You can **Undo** each file or **Undo all**. In the diff, every change has its own **Undo** and **Keep** buttons.
+- **Inline review:** Claude's edits show up right in the editor, with added lines in green and removed lines in red. Every change has its own **Keep** and **Undo**, and a bar at the bottom steps through changes and offers **Keep file**, **Undo file** and a side-by-side **Compare**. Changes from several turns stack up until you review them.
+- **Rewind:** hover any message you sent and click **↺ Rewind**. The conversation goes back to just before it, the message returns to the chat box to edit and resend, and the files can go back too. Claude Code forks the conversation, so the original stays in History. Files can be rewound for messages sent since the app opened.
 - **Terminal:** `Ctrl+`` opens a real terminal (PowerShell on Windows) in the project folder. Open several with +.
 - **Git panel** (`Ctrl+Shift+G`): changed files with diffs against the last commit, discard, commit (with a ✨ button that asks Claude Haiku to write the message), branches, push and pull.
 - **Settings** (`Ctrl+,`): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
@@ -69,6 +71,7 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 - `src/updater.js` uses electron-updater against GitHub Releases.
 - `src/terminal.js` runs the terminal through node-pty. `src/gitops.js` runs your own git, so it uses your existing credentials.
 - Conversations are Claude Code's own transcripts in `~/.claude/projects/`, so the terminal and the app share history.
+- Rewind resumes with `--resume <session> --resume-session-at <reply> --fork-session`, and restores files from the turn's git snapshot.
 
 ## Limits
 

@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const cli = require('./claude-cli');
 const { ChatSession } = require('./session');
-const { TurnSnapshot, git } = require('./snapshots');
+const { TurnSnapshot, git, writeTree, diffTrees, blob } = require('./snapshots');
 const gitops = require('./gitops');
 const terminal = require('./terminal');
 const config = require('./config');
@@ -187,6 +187,7 @@ async function loadSession(id) {
   const file = path.join(projectDirFor(workspace), id + '.jsonl');
   const lines = (await fsp.readFile(file, 'utf8')).split('\n');
   const messages = [];
+  let lastReply = null; // uuid of the latest assistant message, which Rewind resumes from
   for (const line of lines) {
     let ev;
     try {
@@ -197,11 +198,12 @@ async function loadSession(id) {
     if (ev.isSidechain || ev.isMeta) continue;
     if (ev.type === 'user') {
       const t = textOf(ev.message?.content).trim();
-      if (t && !t.startsWith('<')) messages.push({ role: 'user', text: t.replace(/^\[Ask mode:[^\]]*\]\s*/, '') });
+      if (t && !t.startsWith('<')) messages.push({ role: 'user', text: t.replace(/^\[Ask mode:[^\]]*\]\s*/, ''), after: lastReply });
     } else if (ev.type === 'assistant') {
+      if (ev.uuid) lastReply = ev.uuid;
       for (const b of ev.message?.content || []) {
-        if (b.type === 'text' && b.text.trim()) messages.push({ role: 'assistant', text: b.text });
-        else if (b.type === 'tool_use') messages.push({ role: 'tool', name: b.name, input: b.input });
+        if (b.type === 'text' && b.text.trim()) messages.push({ role: 'assistant', text: b.text, uuid: ev.uuid });
+        else if (b.type === 'tool_use') messages.push({ role: 'tool', name: b.name, input: b.input, uuid: ev.uuid });
       }
     }
   }
@@ -257,12 +259,44 @@ async function finishTurn(chatId, chat) {
   send('chat-turn-end', { chatId, turnId: turn.id, changes });
 }
 
+// Rewind: puts the workspace back how it was before the first of these turns (oldest first).
+// Returns the files that differ, and restores them when apply is set.
+async function rewindFiles(turnIds, apply) {
+  const snaps = turnIds.map((id) => turnSnapshots.get(id));
+  if (!snaps.length || !snaps[0]) return { available: false, files: [] };
+  const first = snaps[0];
+  const relOf = (abs) => path.relative(workspace, abs).split(path.sep).join('/');
+  if (first.root && first.before) {
+    // A git snapshot covers the whole folder, including later edits.
+    const now = await writeTree(first.root);
+    const diffs = (await diffTrees(first.root, first.before, now)).map((c) => ({ ...c, abs: path.join(first.root, c.rel) })).filter((c) => inWorkspace(c.abs));
+    if (apply)
+      for (const c of diffs) {
+        if (c.status === 'A') await fsp.rm(c.abs, { force: true });
+        else {
+          await fsp.mkdir(path.dirname(c.abs), { recursive: true });
+          await fsp.writeFile(c.abs, (await blob(first.root, first.before, c.rel)) || Buffer.alloc(0));
+        }
+      }
+    return { available: true, files: diffs.map((c) => relOf(c.abs)) };
+  }
+  // No git: undo each turn's own edits, newest first.
+  if (snaps.some((s) => !s || !s.result)) return { available: false, files: [] };
+  const files = new Set();
+  for (const s of [...snaps].reverse()) {
+    const paths = [...s.result.keys()].filter((p) => inWorkspace(p));
+    paths.forEach((p) => files.add(relOf(p)));
+    if (apply) await s.undo(paths);
+  }
+  return { available: true, files: [...files] };
+}
+
 function denyPending(chat, message) {
   for (const resolve of chat.approvals.values()) resolve({ behavior: 'deny', message });
   chat.approvals.clear();
 }
 
-async function openChat(chatId, { sessionId, model, effort, mode }) {
+async function openChat(chatId, { sessionId, resumeAt, model, effort, mode }) {
   const bin = await cli.findClaude(settings.claudePath);
   if (!bin) throw new Error('Claude Code is not installed. Open Settings → Setup to install it.');
   const chat = { session: null, effort: effort || '', turn: null, approvals: new Map() };
@@ -270,6 +304,7 @@ async function openChat(chatId, { sessionId, model, effort, mode }) {
     bin,
     cwd: workspace,
     sessionId,
+    resumeAt,
     model,
     effort,
     mode,
@@ -297,18 +332,18 @@ async function openChat(chatId, { sessionId, model, effort, mode }) {
   return chat;
 }
 
-async function chatSend(chatId, { content, mode, model, effort, sessionId }) {
+async function chatSend(chatId, { content, mode, model, effort, sessionId, resumeAt }) {
   if (!workspace) throw new Error('Open a folder first.');
   let chat = chats.get(chatId);
-  if (chat && chat.session.alive && (effort || '') !== chat.effort) {
+  if (chat && chat.session.alive && (resumeAt || (effort || '') !== chat.effort)) {
     // Effort is fixed per process: restart it on the same conversation.
-    sessionId = chat.session.sessionId || sessionId;
+    if (!resumeAt) sessionId = chat.session.sessionId || sessionId;
     chat.closing = true;
     chat.session.dispose();
     chats.delete(chatId);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, model, effort, mode });
+  if (!chat || !chat.session.alive) chat = await openChat(chatId, { sessionId, resumeAt, model, effort, mode });
   else await chat.session.setModel(model);
   chat.turn = { id: crypto.randomUUID(), snap: await new TurnSnapshot(workspace).begin(), blocks: new Map() };
   await chat.session.send(content, mode);
@@ -424,6 +459,8 @@ function registerIpc() {
   ipcMain.handle('chat:close', (_e, chatId) => chatClose(chatId));
   ipcMain.handle('chat:set-mode', (_e, chatId, mode) => chats.get(chatId)?.session.setMode(mode));
   ipcMain.handle('approval:answer', (_e, chatId, reqId, decision) => answerApproval(chatId, reqId, decision));
+  ipcMain.handle('rewind:files', (_e, turnIds) => rewindFiles(turnIds, false));
+  ipcMain.handle('rewind:apply', (_e, turnIds) => rewindFiles(turnIds, true));
   ipcMain.handle('changes:undo', async (_e, turnId, absPaths) => {
     const snap = turnSnapshots.get(turnId);
     if (!snap) return false;

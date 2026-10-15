@@ -383,6 +383,7 @@ async function setFolder(info) {
     $('#folder-name').textContent = info.name;
     state.expanded = new Set(['']);
     for (const t of [...state.tabs]) closeTab(t.id);
+    reviews.clear();
     await refreshFiles();
     closeAllChats();
     await restoreWorkspace(info.root);

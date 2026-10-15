@@ -161,4 +161,4 @@ class TurnSnapshot {
   }
 }
 
-module.exports = { TurnSnapshot, git, isGitRepo };
+module.exports = { TurnSnapshot, git, isGitRepo, writeTree, diffTrees, blob };

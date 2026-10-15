@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit */
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -9,7 +9,7 @@
 const ASK_PREFIX =
   '[Ask mode: answer my question. Do not create, edit or delete files, and do not run commands that change anything.]\n\n';
 
-const chats = []; // { id, title, sessionId, el, turn, busy, alwaysAllow, usage }
+const chats = []; // { id, title, sessionId, el, turn, busy, alwaysAllow, usage, lastReply, resumeAt }
 let activeChatId = null;
 
 const activeChat = () => chats.find((c) => c.id === activeChatId) || null;
@@ -170,6 +170,8 @@ function rememberSlashCommands(list) {
 function clearChat(chat) {
   desk.chatClose(chat.id);
   chat.sessionId = null;
+  chat.lastReply = null;
+  chat.resumeAt = null;
   chat.title = 'New chat';
   chat.usage = { context: 0, turns: 0, model: '' };
   chat.alwaysAllow = new Set();
@@ -205,8 +207,11 @@ async function openSession(row) {
   chat.sessionId = row.id;
   chat.title = row.title.slice(0, 60);
   chat.el.replaceChildren();
+  chat.lastReply = null;
+  chat.resumeAt = null;
   for (const m of msgs) {
-    if (m.role === 'user') appendChat(h('div', { class: 'msg-user' }, m.text), chat);
+    if (m.uuid) chat.lastReply = m.uuid;
+    if (m.role === 'user') appendChat(userBubble(chat, [m.text], { text: m.text, after: m.after || null, turnId: null }), chat);
     else if (m.role === 'assistant') {
       const el = h('div', { class: 'msg-text' });
       renderMarkdown(el, m.text);
@@ -309,18 +314,34 @@ function patchStats(structuredPatch) {
 
 // ------------------------------------------------------------------ one turn
 
-function startTurn(chat, shown, mode, images) {
-  appendChat(
-    h(
-      'div',
-      { class: 'msg-user' },
-      h('div', { class: `mode-tag ${mode}` }, MODE_LABEL[mode]),
-      shown,
-      images && images.length ? h('div', { class: 'msg-images' }, ...images.map((im) => h('img', { src: `data:${im.mediaType};base64,${im.data}` }))) : null
+// A sent message. rw holds what Rewind needs: the text to put back, the reply it followed
+// (where the conversation resumes from) and the turn whose file snapshot restores the code.
+function userBubble(chat, body, rw) {
+  const el = h(
+    'div',
+    { class: 'msg-user' },
+    h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind'),
+    ...body
+  );
+  el.rw = rw;
+  return el;
+}
+
+function startTurn(chat, shown, mode, images, rwText) {
+  const bubble = appendChat(
+    userBubble(
+      chat,
+      [
+        h('div', { class: `mode-tag ${mode}` }, MODE_LABEL[mode]),
+        shown,
+        images && images.length ? h('div', { class: 'msg-images' }, ...images.map((im) => h('img', { src: `data:${im.mediaType};base64,${im.data}` }))) : null,
+      ],
+      { text: rwText ?? shown, after: chat.resumeAt || chat.lastReply || null, turnId: null }
     ),
     chat
   );
   chat.turn = {
+    bubble,
     mode,
     blocks: new Map(),
     tools: new Map(),
@@ -383,6 +404,7 @@ function handleEvent(chat, ev) {
       if (turn) handleStream(chat, turn, ev.event || {});
       break;
     case 'assistant': {
+      if (ev.uuid) chat.lastReply = ev.uuid;
       const u = ev.message?.usage;
       if (u) {
         chat.usage.context = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
@@ -733,6 +755,14 @@ function lineDiffStats(a, b) {
 
 const changeCards = new Map(); // turnId -> card
 
+// Changes still under review open in the editor with inline Keep/Undo; the rest open as a diff.
+function reviewChange(c) {
+  if (c.binary) return;
+  if (reviews.has(c.rel)) return openFile(c.rel).then(revealFirstChange);
+  if (!c.deleted && !c.undone && state.fileSet.has(c.rel)) return openFile(c.rel);
+  openDiff(c);
+}
+
 function changesCard(chat, turnId, changes) {
   const card = h('div', { class: 'card changes' }, h('h4', {}, `${changes.length} file${changes.length > 1 ? 's' : ''} changed`));
   const rows = changes.map((c) => {
@@ -742,7 +772,7 @@ function changesCard(chat, turnId, changes) {
     const row = h(
       'div',
       { class: 'file' },
-      h('span', { class: 'name', title: c.rel, onclick: () => !c.binary && openDiff(c) }, label),
+      h('span', { class: 'name', title: c.rel, onclick: () => reviewChange(c) }, label),
       s ? h('span', { class: 'stat-add' }, `+${s.add}`) : null,
       s ? h('span', { class: 'stat-del' }, `−${s.del}`) : null,
       h('span', { class: 'spacer' }),
@@ -756,6 +786,7 @@ function changesCard(chat, turnId, changes) {
     list = list.filter((c) => !c.undone);
     if (!list.length) return;
     await desk.undoChanges(turnId, list.map((c) => c.path));
+    dropReviews(list.map((c) => c.rel));
     for (const c of list) {
       c.undone = true;
       c.row.classList.add('undone');
@@ -773,7 +804,7 @@ function changesCard(chat, turnId, changes) {
     h(
       'div',
       { class: 'actions' },
-      reviewable ? h('button', { class: 'btn small primary', onclick: () => openDiff(reviewable) }, 'Review') : null,
+      reviewable ? h('button', { class: 'btn small primary', onclick: () => reviewChange(changes.find((c) => reviews.has(c.rel)) || reviewable) }, 'Review') : null,
       h('button', { class: 'btn small danger', onclick: () => undo(changes) }, 'Undo all')
     )
   );
@@ -782,6 +813,72 @@ function changesCard(chat, turnId, changes) {
   appendChat(card, chat);
   renderTree();
   return card;
+}
+
+// ------------------------------------------------------------------ rewind
+//
+// Takes the chat back to just before a message: the conversation carries on from the reply before
+// it (Claude Code forks the session, so the original is kept in History), the message goes back in
+// the box to edit, and the files can go back to how they were before it.
+
+async function rewindTo(chat, bubble) {
+  if (chat.busy) return toast('Wait for Claude to finish, or stop it, before rewinding.');
+  const all = [...chat.el.querySelectorAll('.msg-user')];
+  const from = all.slice(all.indexOf(bubble));
+  const turnIds = from.map((b) => b.rw && b.rw.turnId).filter(Boolean);
+  const files = bubble.rw.turnId ? await desk.rewindFiles(turnIds) : { available: false, files: [] };
+  const restore = h('input', { type: 'checkbox', checked: files.files.length > 0 });
+  const later = from.length - 1;
+  const content = [
+    h('h3', {}, 'Rewind to this message?'),
+    h(
+      'p',
+      { class: 'muted' },
+      `The conversation goes back to just before this message${later ? `, along with ${later === 1 ? 'the message' : `the ${later} messages`} after it` : ''}, and the message is put back in the box so you can change it and send again. The original conversation stays in History.`
+    ),
+  ];
+  if (files.files.length)
+    content.push(
+      h('label', { class: 'rewind-files' }, restore, ` Also put back ${files.files.length} file${files.files.length > 1 ? 's' : ''} as they were before this message`),
+      h('div', { class: 'rewind-list' }, ...files.files.slice(0, 12).map((f) => h('div', {}, f)), files.files.length > 12 ? h('div', {}, `and ${files.files.length - 12} more`) : null)
+    );
+  else if (!files.available)
+    content.push(h('p', { class: 'muted small' }, 'Files can only be rewound for messages sent since Claude Desk was opened, so only the conversation will rewind.'));
+  else content.push(h('p', { class: 'muted small' }, 'No files have changed since this message.'));
+  const go = h('button', { class: 'btn primary' }, 'Rewind');
+  const cancel = h('button', { class: 'btn' }, 'Cancel');
+  const close = modal([h('div', { class: 'body' }, ...content), h('div', { class: 'foot' }, cancel, go)]);
+  cancel.addEventListener('click', close);
+  go.focus();
+  go.addEventListener('click', async () => {
+    close();
+    if (restore.checked && files.files.length) {
+      await desk.rewindApply(turnIds);
+      dropReviews(files.files);
+      for (const rel of files.files) state.changedFiles.delete(rel);
+      await reloadOpenFiles(files.files);
+      refreshFiles();
+      refreshGit();
+    }
+    desk.chatClose(chat.id);
+    const after = bubble.rw.after;
+    if (after) chat.resumeAt = after;
+    else chat.sessionId = null; // rewinding the first message starts a fresh conversation
+    chat.lastReply = after;
+    let node = bubble;
+    while (node) {
+      const next = node.nextSibling;
+      node.remove();
+      node = next;
+    }
+    if (!chat.el.children.length) chat.el.append(emptyState());
+    const input = $('#input');
+    input.value = bubble.rw.text || '';
+    autoGrow();
+    input.focus();
+    renderTree();
+    toast(restore.checked && files.files.length ? 'Rewound the conversation and files.' : 'Rewound the conversation.');
+  });
 }
 
 // ------------------------------------------------------------------ composer
@@ -845,15 +942,20 @@ async function send(textOverride, modeOverride, display) {
     ...(slash ? [] : images).map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
     { type: 'text', text: prompt },
   ];
-  startTurn(chat, shown, mode, images);
+  startTurn(chat, shown, mode, images, textOverride ? display || text : text);
+  const bubble = chat.turn.bubble;
+  const resumeAt = chat.sessionId ? chat.resumeAt : null;
+  chat.resumeAt = null;
   try {
-    await desk.chatSend(chat.id, {
+    const r = await desk.chatSend(chat.id, {
       content,
       mode,
       model: $('#model-select').value,
       effort: $('#effort-select').value,
       sessionId: chat.sessionId,
+      resumeAt,
     });
+    if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {
     appendChat(h('div', { class: 'turn-error' }, String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')), chat);
     endTurn(chat);
@@ -875,6 +977,7 @@ desk.onChatEvent(({ chatId, ev }) => {
 desk.onChatTurnEnd(async ({ chatId, turnId, changes }) => {
   const chat = chatById(chatId);
   if (chat && changes && changes.length) changesCard(chat, turnId, changes);
+  if (changes && changes.length) addReviews(changes);
   await reloadOpenFiles();
   refreshFiles();
   refreshGit();

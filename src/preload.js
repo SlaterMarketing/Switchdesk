@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('desk', {
   chatSetMode: call('chat:set-mode'),
   answerApproval: call('approval:answer'),
   undoChanges: call('changes:undo'),
+  rewindFiles: call('rewind:files'),
+  rewindApply: call('rewind:apply'),
   onChatEvent: on('chat-event'),
   onChatTurnEnd: on('chat-turn-end'),
   onChatExit: on('chat-exit'),

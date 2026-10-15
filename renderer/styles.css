@@ -164,6 +164,15 @@ body.mac #titlebar { padding-left: 78px; }
 .msg-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .msg-images img { max-width: 140px; max-height: 100px; border-radius: 6px; border: 1px solid var(--border); }
 .msg-user { align-self: stretch; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 11px; white-space: pre-wrap; word-break: break-word; color: var(--text-strong); }
+.msg-user { position: relative; }
+.msg-user .rewind-btn { position: absolute; top: 5px; right: 6px; opacity: 0; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text-dim); font: 11px var(--sans); padding: 1px 7px; border-radius: 5px; cursor: pointer; }
+.msg-user:hover .rewind-btn { opacity: 1; }
+.msg-user .rewind-btn:hover { color: var(--text-strong); border-color: var(--accent); }
+.modal h3 { margin: 0; font-size: 15px; color: var(--text-strong); font-weight: 600; }
+.modal .body p { margin: 0; line-height: 1.5; }
+.modal .rewind-files { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text); }
+.modal .rewind-files input { padding: 0; margin: 0; }
+.rewind-list { font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: var(--text-dim); margin: -4px 0 0 22px; max-height: 180px; overflow: auto; }
 .msg-user .mode-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 2px; }
 .msg-text { word-break: break-word; }
 .msg-text p { margin: 0 0 8px; }
@@ -298,6 +307,23 @@ body.mac #titlebar { padding-left: 78px; }
 .hunk-btn.undo:hover { border-color: var(--err); color: var(--err); }
 .hunk-btn.keep { border-color: var(--ok); color: var(--ok); }
 .hunk-btn.keep:hover { background: rgba(63, 185, 80, 0.15); }
+
+/* Keep/Undo buttons live in view zones, which Monaco layers under the text; lift them so they can be clicked. */
+.monaco-editor .view-zones { z-index: 2; }
+
+/* inline review in the editor */
+.rv-add { background: rgba(63, 185, 80, 0.14); }
+.rv-add-gutter { border-left: 3px solid var(--ok); margin-left: 3px; }
+.rv-zone { pointer-events: auto; }
+.rv-del { background: rgba(248, 81, 73, 0.13); box-shadow: inset 3px 0 0 var(--err); font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; color: var(--text-dim); text-decoration: line-through; text-decoration-color: rgba(248, 81, 73, 0.5); }
+.rv-del-line { white-space: pre; overflow: hidden; padding-left: 6px; }
+.rv-bar { height: 24px; }
+#review-bar { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); white-space: nowrap; font-size: 12px; max-width: calc(100% - 32px); overflow-x: auto; }
+#review-bar .rv-count { color: var(--text-strong); margin-right: 4px; }
+#review-bar .rv-nav { border: 1px solid var(--border); background: none; color: var(--text); border-radius: 5px; width: 24px; height: 22px; cursor: pointer; }
+#review-bar .rv-nav:hover { background: var(--bg-hover); }
+#review-bar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+#review-bar.hidden { display: none; }
 
 /* terminal */
 .hresizer { cursor: row-resize; background: var(--border); }
