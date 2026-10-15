@@ -66,7 +66,7 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border);
 .muted { color: var(--text-dim); }
 .small { font-size: 12px; }
 
-#app { display: grid; grid-template-rows: 38px 1fr 24px; height: 100vh; }
+#app { display: grid; grid-template-rows: 38px minmax(0, 1fr) 24px; height: 100vh; overflow: hidden; }
 
 /* title bar */
 #titlebar { display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--bg-panel); border-bottom: 1px solid var(--border); -webkit-app-region: drag; }
@@ -88,7 +88,10 @@ body.mac #titlebar { padding-left: 78px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 
 /* layout */
-#workbench { display: grid; grid-template-columns: var(--sidebar-w) 4px 1fr 4px var(--chat-w); min-height: 0; }
+/* One row that always fits the window; long file lists scroll inside their panel instead of stretching the columns. */
+#workbench { display: grid; grid-template-columns: var(--sidebar-w) 4px 1fr 4px var(--chat-w); grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
+#workbench > * { min-height: 0; }
+#sidebar, #chat { overflow: hidden; }
 #workbench.no-sidebar { grid-template-columns: 0 0 1fr 4px var(--chat-w); }
 #workbench.no-sidebar #sidebar, #workbench.no-sidebar .resizer[data-resize=sidebar] { visibility: hidden; overflow: hidden; border: 0; min-width: 0; }
 .resizer { cursor: col-resize; background: transparent; }

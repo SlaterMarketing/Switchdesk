@@ -3,6 +3,11 @@
 
 // Runs last, once every renderer script has loaded.
 
+// The window never scrolls as a whole; only panels inside it do. Undo any scroll a focus() causes.
+for (const el of [document.scrollingElement, document.body, document.getElementById('app')])
+  el.addEventListener('scroll', () => el.scrollTop && (el.scrollTop = 0));
+addEventListener('scroll', () => scrollY && scrollTo(0, 0));
+
 async function init() {
   if (!isMac) {
     // Show Ctrl shortcuts on Windows and Linux.
