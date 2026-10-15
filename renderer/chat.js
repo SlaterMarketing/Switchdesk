@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat */
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -444,7 +444,7 @@ function handleEvent(chat, ev) {
         const r = ev.tool_use_result;
         if (r && r.structuredPatch && EDIT_TOOLS.has(row.name)) {
           const s = patchStats(r.structuredPatch);
-          $('.label', row.el).append(' ', h('span', { class: 'stat-add' }, `+${s.add}`), ' ', h('span', { class: 'stat-del' }, `−${s.del}`));
+          if (s.add || s.del) $('.label', row.el).append(' ', h('span', { class: 'stat-add' }, `+${s.add}`), ' ', h('span', { class: 'stat-del' }, `−${s.del}`));
         } else if (row.name !== 'TodoWrite' && row.name !== 'Read') {
           const text = resultText(b.content);
           if (text) $('.out', row.el).textContent = (isShell(row.name) ? `$ ${row.input.command}\n` : '') + text.slice(0, 20000);
@@ -651,47 +651,41 @@ function planCard(chat, input, allow, deny) {
   const plan = input.plan || '';
   const body = h('div', { class: 'msg-text plan-body' });
   renderMarkdown(body, plan);
-  const editBox = h('textarea', { class: 'plan-edit hidden' });
-  editBox.value = plan;
-  const feedback = h('textarea', { rows: 2, placeholder: 'What should change? (for Keep planning)', class: 'hidden' });
-  const card = h('div', { class: 'card plan' }, h('h4', {}, 'Plan ready for review'), body, editBox, feedback);
+  const card = h('div', { class: 'card plan' }, h('h4', {}, 'Plan ready for review'), body);
+  let decided = false;
   const done = (text) => {
+    decided = true;
     card.classList.add('resolved');
-    $('.actions', card).replaceChildren(h('span', { class: 'resolution' }, text));
+    $('.actions', card).replaceChildren(h('button', { class: 'btn small', onclick: () => doc.open() }, 'Open plan'), h('span', { class: 'resolution' }, text));
+    doc.resolve(text);
   };
+  const build = () => {
+    if (decided) return;
+    const edited = doc.text();
+    if (edited !== plan) renderMarkdown(body, edited);
+    if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
+    allow({ ...input, plan: edited });
+    desk.chatSetMode(chat.id, 'agent');
+    setMode('agent');
+    done(edited !== plan ? 'Approved with your edits. Building it now.' : 'Approved. Building it now.');
+  };
+  const keepPlanning = (feedback) => {
+    if (decided) return;
+    const edited = doc.text();
+    const changed = edited !== plan ? `\n\nThey edited the plan to:\n\n${edited}` : '';
+    deny(`The user wants to keep planning.${feedback ? ' Their feedback: ' + feedback : ''}${changed} Revise the plan and present it again.`);
+    done('Sent back for revision.');
+  };
+  // The plan opens as its own editable tab, like Cursor.
+  const doc = openPlanDoc(plan, { onBuild: build, onKeep: keepPlanning });
+  const feedback = h('textarea', { rows: 2, placeholder: 'What should change? (for Keep planning)', class: 'hidden' });
   card.append(
+    feedback,
     h(
       'div',
       { class: 'actions' },
-      h(
-        'button',
-        {
-          class: 'btn small primary',
-          onclick: () => {
-            const edited = editBox.classList.contains('hidden') ? plan : editBox.value;
-            if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
-            allow({ ...input, plan: edited });
-            desk.chatSetMode(chat.id, 'agent');
-            setMode('agent');
-            done('Approved. Building it now.');
-          },
-        },
-        'Build it'
-      ),
-      h(
-        'button',
-        {
-          class: 'btn small',
-          onclick: (e) => {
-            const showing = !editBox.classList.contains('hidden');
-            if (showing) renderMarkdown(body, editBox.value);
-            editBox.classList.toggle('hidden');
-            body.classList.toggle('hidden');
-            e.target.textContent = showing ? 'Edit plan' : 'Preview';
-          },
-        },
-        'Edit plan'
-      ),
+      h('button', { class: 'btn small primary', onclick: build }, 'Build it'),
+      h('button', { class: 'btn small', title: 'Edit the plan in the editor', onclick: () => doc.open() }, 'Open in editor'),
       h(
         'button',
         {
@@ -702,8 +696,7 @@ function planCard(chat, input, allow, deny) {
               feedback.focus();
               return;
             }
-            deny(`The user wants to keep planning.${feedback.value ? ' Their feedback: ' + feedback.value : ''} Revise the plan and present it again.`);
-            done('Sent back for revision.');
+            keepPlanning(feedback.value.trim());
           },
         },
         'Keep planning'

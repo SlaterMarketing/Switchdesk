@@ -158,7 +158,7 @@ function renderTabs() {
           onclick: () => activateTab(t.id),
           onauxclick: (e) => e.button === 1 && closeTab(t.id),
         },
-        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : null,
+        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : t.kind === 'plan' ? h('span', { class: 'badge' }, '◆') : null,
         t.rel.split('/').pop(),
         h('button', { class: 'close', onclick: (e) => (e.stopPropagation(), closeTab(t.id)) }, '×')
       )
@@ -174,7 +174,7 @@ function activeTab() {
 
 function activateTab(id) {
   const prev = activeTab();
-  if (prev && prev.kind === 'file') prev.viewState = editor.saveViewState();
+  if (prev && (prev.kind === 'file' || prev.kind === 'plan')) prev.viewState = editor.saveViewState();
   state.activeTab = id;
   const t = activeTab();
   const isDiff = t && t.kind === 'diff';
@@ -182,7 +182,8 @@ function activateTab(id) {
   $('#editor').classList.toggle('hidden', isDiff);
   $('#diff-editor').classList.toggle('hidden', !isDiff);
   $('#diff-bar').classList.toggle('hidden', !isDiff);
-  if (t && t.kind === 'file') {
+  showPlan(t);
+  if (t && (t.kind === 'file' || t.kind === 'plan')) {
     editor.setModel(t.model);
     if (t.viewState) editor.restoreViewState(t.viewState);
     editor.focus();
@@ -203,7 +204,7 @@ function closeTab(id) {
   const t = state.tabs[i];
   if (t.dirty && !confirm(`${t.rel} has unsaved changes. Close anyway?`)) return;
   state.tabs.splice(i, 1);
-  if (t.kind === 'file') t.model.dispose();
+  if (t.kind === 'file' || t.kind === 'plan') t.model.dispose();
   else if (t.kind === 'preview') $('#preview').classList.add('hidden');
   else {
     t.original.dispose();
@@ -215,6 +216,7 @@ function closeTab(id) {
     if (next) activateTab(next.id);
     else {
       editor.setModel(null);
+      showPlan(null);
       $('#diff-editor').classList.add('hidden');
       $('#diff-bar').classList.add('hidden');
       $('#editor').classList.remove('hidden');

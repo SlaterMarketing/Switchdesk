@@ -435,6 +435,14 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 #search-results { overflow-x: hidden; }
 .search-match .txt { min-width: 0; }
 
+/* plans open as documents */
+#editor-host.with-plan #editor { top: 40px; }
+#plan-bar { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); z-index: 4; }
+#plan-bar.hidden, #plan-preview.hidden { display: none; }
+#plan-bar .plan-tag { color: var(--plan); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+#plan-preview { position: absolute; inset: 40px 0 0 0; overflow: auto; padding: 24px max(32px, calc(50% - 380px)); background: var(--bg); z-index: 3; font-size: 14px; line-height: 1.6; }
+.modal textarea.plan-feedback { width: 100%; box-sizing: border-box; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px; font: inherit; resize: vertical; outline: none; }
+
 /* preview pane */
 #preview { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
 #preview.hidden { display: none; }

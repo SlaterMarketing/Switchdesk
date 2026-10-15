@@ -7,7 +7,7 @@ A personal, Cursor-style desktop editor that drives **your own Claude Code CLI**
 - **Editor:** a Monaco (VS Code) editor with tabs, a file explorer, quick open (`Ctrl+P`) and save (`Ctrl+S`). The theme follows your system, or pick one in Settings.
 - **Chat panel** with four modes. Cycle them with `Ctrl+.` or `Shift+Tab` in the chat box.
   - **Ask:** answers questions and never edits files. Any action that would change something is refused automatically.
-  - **Plan:** researches first, then shows the plan as a card. Choose **Build it**, **Edit plan** (change the plan before approving it), or **Keep planning** (send feedback).
+  - **Plan:** researches first, then opens the plan in its own editor tab as a Markdown document you can edit freely (with a formatted **Preview**). Choose **Build it** (your edited version is what gets built) or **Keep planning** (send feedback). The chat card has the same buttons.
   - **Agent:** edits files without asking. Before Claude runs a shell command, you get an Allow / Always allow / Deny card.
   - **Auto:** Claude Code's auto mode. A safety classifier approves actions, and anything it won't approve comes to you as a card.
 - **Chat tabs:** run several conversations side by side, each with its own Claude process. A spinner shows which ones are working, and the usage line shows turns and context size per chat.
