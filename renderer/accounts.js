@@ -1,10 +1,10 @@
-/* global $, h, state, desk, toast, modal, chats, activeChat, appendChat, openSettings, checkCli, queueSaveWorkspace */
+/* global $, h, state, desk, toast, modal, chats, activeChat, appendChat, openSettings, checkCli, queueSaveWorkspace, renderAgentButton */
 'use strict';
 
 // ------------------------------------------------------------------ Claude accounts
 //
 // Several Claude logins side by side, say a personal one and one from work. Each folder has an
-// account it uses by default, and the pill in the chat box switches a chat to another account at
+// account it uses by default, and the agent menu in the chat box switches a chat to another account at
 // any time; the conversation carries on where it was.
 
 const acct = { accounts: [], rules: {}, defaultAccount: 'default', folderAccount: 'default', status: new Map(), usage: new Map() };
@@ -39,21 +39,16 @@ function accountDetail(auth) {
   return who + plan;
 }
 
-// ---------- the pill in the chat box
+// ---------- usage in the status bar (the account itself is picked in the agent menu, agents.js)
 
 function renderAccountPill() {
-  const btn = $('#account-btn');
-  if (!btn) return;
   const chat = activeChat();
   const isClaude = !chat || !chat.agent || chat.agent === 'claude';
-  btn.classList.toggle('hidden', !multiAccount() || !isClaude);
+  renderAgentButton();
   if (!isClaude) return ($('#status-limit').textContent = acct.usage.get(`agent:${chat.agent}`) ? `${chat.agent[0].toUpperCase()}${chat.agent.slice(1)} usage ${acct.usage.get(`agent:${chat.agent}`)}` : '');
-  if (!multiAccount()) return ($('#status-limit').textContent = acct.usage.get(chatAccount(chat)) ? `Usage ${acct.usage.get(chatAccount(chat))}` : '');
   const id = chatAccount(chat);
-  btn.textContent = `${accountName(id)} ▾`;
-  btn.title = `This chat runs on your ${accountName(id)} Claude account. Click to switch.`;
   const usage = acct.usage.get(id);
-  $('#status-limit').textContent = usage ? `${accountName(id)} usage ${usage}` : '';
+  $('#status-limit').textContent = usage ? `${multiAccount() ? accountName(id) + ' usage' : 'Usage'} ${usage}` : '';
 }
 
 // Rate-limit use arrives on each chat's events; it belongs to that chat's account.
@@ -61,51 +56,6 @@ function noteAccountUsage(chat, text) {
   const id = chat.agent && chat.agent !== 'claude' ? `agent:${chat.agent}` : chatAccount(chat);
   acct.usage.set(id, text);
   if (chat === activeChat()) renderAccountPill();
-}
-
-function toggleAccountMenu() {
-  const old = $('#account-menu');
-  if (old) return old.remove();
-  const chat = activeChat();
-  const current = chatAccount(chat);
-  const folder = state.folder;
-  const ruled = folder && acct.rules[folder.root] === current;
-  const menu = h(
-    'div',
-    { id: 'account-menu', class: 'popup' },
-    h('div', { class: 'menu-head' }, 'Run this chat on'),
-    ...acct.accounts.map((a) => {
-      const row = h('button', { class: a.id === current ? 'active' : '', onclick: () => (menu.remove(), switchChatAccount(chat, a.id)) }, h('b', {}, a.name), h('span', { class: 'acct-detail' }, accountDetail(acct.status.get(a.id))));
-      accountStatus(a.id).then((auth) => ($('.acct-detail', row).textContent = accountDetail(auth)));
-      return row;
-    }),
-    h('div', { class: 'menu-sep' }),
-    folder
-      ? h(
-          'button',
-          {
-            class: ruled ? 'checked' : '',
-            title: ruled ? 'Stop tying this folder to an account' : `New chats in ${folder.name} use ${accountName(current)}`,
-            onclick: async () => {
-              menu.remove();
-              setAccounts(await desk.accounts.setRule(folder.root, ruled ? null : current));
-              toast(ruled ? `${folder.name} now uses your default account (${accountName(acct.folderAccount)}).` : `New chats in ${folder.name} will use ${accountName(current)}.`);
-              checkCli();
-            },
-          },
-          h('b', {}, `${ruled ? '✓ ' : ''}Always use ${accountName(current)} in ${folder.name}`)
-        )
-      : null,
-    h('button', { onclick: () => (menu.remove(), openSettings('accounts')) }, h('b', {}, 'Manage accounts…'))
-  );
-  $('#account-wrap').append(menu);
-  const away = (e) => {
-    if (!menu.contains(e.target) && e.target !== $('#account-btn')) {
-      menu.remove();
-      removeEventListener('mousedown', away, true);
-    }
-  };
-  addEventListener('mousedown', away, true);
 }
 
 async function switchChatAccount(chat, id) {
@@ -273,6 +223,3 @@ async function settingsAccounts(body) {
   );
 }
 
-function wireAccounts() {
-  $('#account-btn').addEventListener('click', toggleAccountMenu);
-}

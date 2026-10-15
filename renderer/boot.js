@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, wireAccounts, loadAgents, wireAgents */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -26,7 +26,6 @@ async function init() {
   wireTerminal();
   wireGit();
   wireSearch();
-  wireAccounts();
   wireAgents();
   await loadAccounts();
   await loadAgents();

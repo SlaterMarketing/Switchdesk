@@ -131,7 +131,7 @@
               <textarea id="input" rows="3" placeholder="Ask anything, @ to mention a file, paste a screenshot" spellcheck="false"></textarea>
               <div id="mention-popup" class="popup hidden"></div>
               <div class="composer-row">
-                <select id="agent-select" title="Agent"><option value="claude">Claude</option></select>
+                <div id="agent-wrap" class="mode-wrap"><button id="agent-btn" class="agent-btn" title="Agent">Claude</button></div>
                 <div class="mode-wrap">
                   <button id="mode-btn" class="mode-pill" data-mode="agent">Agent ▾</button>
                   <div id="mode-menu" class="popup hidden">
@@ -150,9 +150,6 @@
                   <option value="xhigh">X-High</option>
                   <option value="max">Max</option>
                 </select>
-                <div id="account-wrap" class="mode-wrap">
-                  <button id="account-btn" class="mode-pill account-pill hidden" title="Claude account">Main account ▾</button>
-                </div>
                 <span class="spacer"></span>
                 <span id="chat-usage"></span>
                 <button id="send-btn" class="send-btn" title="Send (Enter)">↑</button>

@@ -1,4 +1,5 @@
-/* global $, h, state, desk, toast, chats, activeChat, createChat, isPristine, appendChat, renderChatTabs, renderAccountPill, openSettings, field, newTerminal, toggleTerminal, queueSaveWorkspace */
+/* global $, h, state, desk, toast, chats, activeChat, createChat, isPristine, appendChat, renderChatTabs, renderAccountPill, openSettings, field, newTerminal, toggleTerminal, queueSaveWorkspace,
+   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli */
 'use strict';
 
 // ------------------------------------------------------------------ agents
@@ -23,6 +24,8 @@ const agentLabel = (chat) => agentInfo(agentOf(chat)).label;
 async function loadAgents() {
   agentState.list = await desk.agents.list();
   renderAgentPicker();
+  // Find out which agents are ready, so the menu lists only those.
+  for (const a of agentState.list) if (a.id !== 'claude') agentStatus(a.id).then(refreshAgentMenu);
 }
 
 async function agentStatus(id, fresh) {
@@ -35,12 +38,107 @@ async function agentStatus(id, fresh) {
 // ---------- the picker and the controls that depend on it
 
 function renderAgentPicker() {
-  const sel = $('#agent-select');
-  if (!sel || !agentState.list.length) return;
-  const current = agentOf(activeChat());
-  sel.replaceChildren(...agentState.list.map((a) => h('option', { value: a.id, selected: a.id === current }, a.label)));
-  sel.title = `This chat runs on ${agentInfo(current).label}${agentInfo(current).vendor ? ` (${agentInfo(current).vendor})` : ''}`;
+  renderAgentButton();
   renderModelPicker();
+}
+
+// The button names the agent, and for Claude with several accounts, the account too.
+function renderAgentButton() {
+  const btn = $('#agent-btn');
+  if (!btn) return;
+  const chat = activeChat();
+  const id = agentOf(chat);
+  const info = agentInfo(id);
+  const account = id === 'claude' && multiAccount() ? accountName(chatAccount(chat)) : '';
+  btn.textContent = account ? `${info.label} · ${account}` : info.label;
+  btn.title = `This chat runs on ${info.label}${account ? ` (${account} account)` : info.vendor ? ` (${info.vendor})` : ''}. Click to change.`;
+}
+
+// ---------- the agent menu: every Claude account and every other agent that's ready to use
+
+function toggleAgentMenu() {
+  const old = $('#agent-menu');
+  if (old) return old.remove();
+  const menu = h('div', { id: 'agent-menu', class: 'popup' });
+  $('#agent-wrap').append(menu);
+  fillAgentMenu(menu);
+  const away = (e) => {
+    if (!menu.isConnected) return removeEventListener('mousedown', away, true);
+    if (!menu.contains(e.target) && e.target !== $('#agent-btn')) {
+      menu.remove();
+      removeEventListener('mousedown', away, true);
+    }
+  };
+  addEventListener('mousedown', away, true);
+}
+
+function refreshAgentMenu() {
+  const menu = $('#agent-menu');
+  if (menu) fillAgentMenu(menu);
+}
+
+function fillAgentMenu(menu) {
+  const chat = activeChat();
+  const current = agentOf(chat);
+  const currentAccount = chatAccount(chat);
+  const close = () => menu.remove();
+  const row = (active, title, vendor, detail, onclick) => h('button', { class: active ? 'active' : '', onclick: () => (close(), onclick()) }, h('b', {}, title), vendor ? h('span', { class: 'agent-vendor' }, vendor) : null, h('span', { class: 'acct-detail' }, detail));
+  const rows = [];
+  // Claude: one row per account that's signed in (or still being checked).
+  for (const a of acct.accounts) {
+    const auth = acct.status.get(a.id);
+    if (!acct.status.has(a.id)) accountStatus(a.id).then(refreshAgentMenu);
+    else if (!auth || !auth.loggedIn) continue;
+    rows.push(row(current === 'claude' && currentAccount === a.id, multiAccount() ? `Claude · ${a.name}` : 'Claude', 'Anthropic', accountDetail(auth), () => chooseAgent('claude', a.id)));
+  }
+  // Other agents: only the ones installed and signed in, or with a key.
+  let checking = 0;
+  let hidden = 0;
+  for (const a of agentState.list) {
+    if (a.id === 'claude') continue;
+    if (!agentState.status.has(a.id)) {
+      checking++;
+      continue;
+    }
+    const s = agentState.status.get(a.id);
+    if (!s || !s.installed || !s.loggedIn) {
+      hidden++;
+      continue;
+    }
+    rows.push(row(current === a.id, a.label, a.vendor, s.detail || 'Ready', () => chooseAgent(a.id)));
+  }
+  const folder = state.folder;
+  const ruled = folder && current === 'claude' && acct.rules[folder.root] === currentAccount;
+  const items = [
+    h('div', { class: 'menu-head' }, 'Run this chat on'),
+    ...rows,
+    checking ? h('div', { class: 'menu-note' }, 'Checking your other agents…') : null,
+    h('div', { class: 'menu-sep' }),
+    folder && current === 'claude' && multiAccount()
+      ? h(
+          'button',
+          {
+            title: ruled ? 'Stop tying this folder to an account' : `New chats in ${folder.name} use ${accountName(currentAccount)}`,
+            onclick: async () => {
+              close();
+              setAccounts(await desk.accounts.setRule(folder.root, ruled ? null : currentAccount));
+              toast(ruled ? `${folder.name} now uses your default account (${accountName(acct.folderAccount)}).` : `New chats in ${folder.name} will use ${accountName(currentAccount)}.`);
+              checkCli();
+            },
+          },
+          h('b', {}, `${ruled ? '✓ ' : ''}Always use ${accountName(currentAccount)} in ${folder.name}`)
+        )
+      : null,
+    h('button', { onclick: () => (close(), openSettings('agents')) }, h('b', {}, hidden ? `Set up more agents (${hidden} more)…` : 'Agent settings…')),
+    h('button', { onclick: () => (close(), openSettings('accounts')) }, h('b', {}, 'Add or manage Claude accounts…')),
+  ];
+  menu.replaceChildren(...items.filter(Boolean));
+}
+
+async function chooseAgent(id, account) {
+  if (agentOf(activeChat()) !== id) await pickAgent(id);
+  if (account) await switchChatAccount(activeChat(), account);
+  renderAgentButton();
 }
 
 function renderModelPicker() {
@@ -197,7 +295,7 @@ function codexKeyForm(rerender) {
 }
 
 function wireAgents() {
-  $('#agent-select').addEventListener('change', (e) => pickAgent(e.target.value));
+  $('#agent-btn').addEventListener('click', toggleAgentMenu);
 }
 
 // Reopens a saved non-Claude chat. Its history lives in that agent's own files, so the tab starts
