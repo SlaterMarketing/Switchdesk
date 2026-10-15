@@ -90,7 +90,7 @@ body.mac #titlebar { padding-left: 78px; }
 /* layout */
 #workbench { display: grid; grid-template-columns: var(--sidebar-w) 4px 1fr 4px var(--chat-w); min-height: 0; }
 #workbench.no-sidebar { grid-template-columns: 0 0 1fr 4px var(--chat-w); }
-#workbench.no-sidebar #sidebar { display: none; }
+#workbench.no-sidebar #sidebar, #workbench.no-sidebar .resizer[data-resize=sidebar] { visibility: hidden; overflow: hidden; border: 0; min-width: 0; }
 .resizer { cursor: col-resize; background: transparent; }
 .resizer:hover, .resizer.dragging { background: var(--accent-soft); }
 
