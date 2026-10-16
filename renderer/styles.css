@@ -570,3 +570,8 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 #status-complete { cursor: pointer; }
 #status-complete.dim { opacity: 0.6; }
 .device-code { font: 600 22px var(--mono); letter-spacing: 3px; color: var(--text-strong); }
+
+/* Code intelligence */
+#status-problems { cursor: pointer; }
+#status-problems .err { color: #ef4444; }
+#status-problems .warn { color: #f59e0b; }

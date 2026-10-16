@@ -38,6 +38,9 @@ function paletteCommands() {
     ['Settings: MCP Servers', '', () => openSettings('mcp')],
     ['Usage and Limits', '', () => openSettings('usage')],
     ['Settings: Autocomplete', '', () => openSettings('autocomplete')],
+    ['Settings: Code Intelligence', '', () => openSettings('intel')],
+    ['Restart Language Servers', '', () => desk.lsp.restart().then(() => toast('Language servers restarted. They start again as you open files.'))],
+    ['Go to Next Problem', 'F8', () => (editor.focus(), editor.trigger('palette', 'editor.action.marker.nextInFiles', null))],
     ['Check for Updates', '', () => desk.checkUpdates()],
     ...MODES.map((m) => [`Mode: ${MODE_LABEL[m]}`, '', () => setMode(m)]),
   ];

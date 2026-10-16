@@ -3,12 +3,13 @@
 // request to DeepSeek or Qwen with the user's saved API key.
 'use strict';
 
-const { spawn, execFile } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const cli = require('./claude-cli');
+const { Lsp } = require('./lsp-client');
 
 const isWin = process.platform === 'win32';
 const PKG = '@github/copilot-language-server';
@@ -42,83 +43,6 @@ async function findServer(override) {
   return p && fs.existsSync(p) ? p : null;
 }
 
-// ---------- a small LSP client (Content-Length framed JSON-RPC over stdio)
-
-class Lsp {
-  constructor(script, env) {
-    // Electron runs it as plain Node, so the user doesn't need a particular Node version.
-    this.proc = spawn(process.execPath, [script, '--stdio'], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    this.buf = Buffer.alloc(0);
-    this.next = 1;
-    this.pending = new Map();
-    this.onNote = () => {};
-    this.closed = false;
-    this.proc.stdout.on('data', (d) => this.read(d));
-    this.proc.stderr.on('data', () => {});
-    this.proc.on('exit', () => {
-      this.closed = true;
-      for (const p of this.pending.values()) p.reject(new Error('The Copilot language server stopped.'));
-      this.pending.clear();
-    });
-    this.proc.on('error', () => {});
-    this.proc.stdin.on('error', () => {});
-  }
-  read(d) {
-    this.buf = Buffer.concat([this.buf, d]);
-    for (;;) {
-      const sep = this.buf.indexOf('\r\n\r\n');
-      if (sep < 0) return;
-      const m = /Content-Length: *(\d+)/i.exec(this.buf.slice(0, sep).toString());
-      if (!m) return (this.buf = this.buf.slice(sep + 4));
-      const len = Number(m[1]);
-      if (this.buf.length < sep + 4 + len) return;
-      let msg;
-      try {
-        msg = JSON.parse(this.buf.slice(sep + 4, sep + 4 + len).toString());
-      } catch {}
-      this.buf = this.buf.slice(sep + 4 + len);
-      if (msg) this.dispatch(msg);
-    }
-  }
-  dispatch(msg) {
-    if (msg.id != null && !msg.method) {
-      const p = this.pending.get(msg.id);
-      if (!p) return;
-      this.pending.delete(msg.id);
-      clearTimeout(p.timer);
-      return msg.error ? p.reject(Object.assign(new Error(msg.error.message || 'Copilot error'), { code: msg.error.code })) : p.resolve(msg.result);
-    }
-    if (msg.method && msg.id != null) {
-      // Requests from the server: settings and UI requests get empty answers.
-      const result = msg.method === 'workspace/configuration' ? (msg.params.items || []).map(() => ({})) : null;
-      return this.write({ jsonrpc: '2.0', id: msg.id, result });
-    }
-    if (msg.method) this.onNote(msg.method, msg.params);
-  }
-  write(m) {
-    if (this.closed) return;
-    const s = JSON.stringify(m);
-    this.proc.stdin.write(`Content-Length: ${Buffer.byteLength(s)}\r\n\r\n${s}`);
-  }
-  request(method, params, timeout = 30000) {
-    if (this.closed) return Promise.reject(new Error('The Copilot language server stopped.'));
-    const id = this.next++;
-    return new Promise((resolve, reject) => {
-      const timer = timeout ? setTimeout(() => (this.pending.delete(id), reject(new Error(`${method} timed out`))), timeout) : null;
-      this.pending.set(id, { resolve, reject, timer });
-      this.write({ jsonrpc: '2.0', id, method, params });
-    });
-  }
-  notify(method, params) {
-    this.write({ jsonrpc: '2.0', method, params });
-  }
-  kill() {
-    try {
-      this.proc.kill();
-    } catch {}
-  }
-}
-
 // ---------- the Copilot engine
 
 const copilot = {
@@ -141,7 +65,9 @@ async function startCopilot(settings, version) {
   copilot.starting = (async () => {
     const script = await findServer((settings.agentPaths || {})['copilot-language-server']);
     if (!script) throw Object.assign(new Error('The Copilot language server is not installed.'), { notInstalled: true });
-    const lsp = new Lsp(script, await cli.childEnv());
+    // Electron runs it as plain Node, so the user doesn't need a particular Node version.
+    const lsp = new Lsp(process.execPath, [script, '--stdio'], { ...(await cli.childEnv()), ELECTRON_RUN_AS_NODE: '1' }, 'The Copilot language server');
+    lsp.onRequest = (method, p) => (method === 'workspace/configuration' ? ((p && p.items) || []).map(() => ({})) : null);
     lsp.onNote = (method, p) => {
       if (method === 'didChangeStatus' && p) {
         if (p.kind === 'Error' && /not signed/i.test(p.message || '')) setStatus({ signedIn: false, message: p.message });

@@ -37,6 +37,7 @@ async function init() {
   await loadMonaco();
   createEditors();
   wireAutocomplete();
+  wireIntel();
   wireDiff();
   wireReview();
   wirePreview();

@@ -19,6 +19,7 @@ const accounts = require('./accounts');
 const usage = require('./usage');
 const webpage = require('./webpage');
 const autocomplete = require('./autocomplete');
+const { LangServers } = require('./langservers');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
@@ -60,6 +61,7 @@ function saveSettings() {
 // Each window has its own workspace: a main folder, plus any extra folders added to it. Files in an
 // extra folder show up in the app as "⟦name⟧/path", and agents get the folders' absolute paths.
 
+let langServers = null; // set once IPC is wired; stopped on quit
 const contexts = new Map(); // webContents id -> { id, win, workspace, extra, watchers, start }
 const NO_WINDOW = { id: 0, win: null, workspace: null, extra: [], watchers: [] };
 const ctxOf = (e) => contexts.get(e.sender.id) || NO_WINDOW;
@@ -926,6 +928,62 @@ function registerIpc() {
   handle('term:kill', (ctx, id) => terminal.kill(termId(ctx, id)));
 
   // Settings page
+  // ---------- code intelligence (language servers)
+  const langs = new LangServers({
+    find: agents.findCommand,
+    env: () => cli.childEnv(),
+    version: app.getVersion(),
+    onDiagnostics: (file, diagnostics) => {
+      for (const ctx of contexts.values()) if (inWorkspace(ctx, file)) sendTo(ctx, 'lsp-diagnostics', { rel: relOf(ctx, file), diagnostics });
+    },
+  });
+  langServers = langs;
+  const langOpts = () => [settings.langServerPaths || {}, settings.langServersOff || []];
+  const fileIn = (ctx, rel) => {
+    try {
+      return resolveInWorkspace(ctx, rel);
+    } catch {
+      return null;
+    }
+  };
+  // Locations come back as file URIs: turn them into the window's paths, or say they're outside.
+  const toPlaces = (ctx, r) =>
+    (Array.isArray(r) ? r : r ? [r] : [])
+      .map((l) => {
+        const uri = l.targetUri || l.uri;
+        const range = l.targetSelectionRange || l.targetRange || l.range;
+        let file;
+        try {
+          file = require('url').fileURLToPath(uri);
+        } catch {
+          return null;
+        }
+        return { rel: inWorkspace(ctx, file) ? relOf(ctx, file) : null, file, range };
+      })
+      .filter(Boolean);
+  handle('lsp:status', () => langs.status(...langOpts()));
+  handle('lsp:open', async (ctx, rel, languageId, text) => {
+    const file = fileIn(ctx, rel);
+    if (!file) return null;
+    const root = rootOf(ctx, file).dir;
+    return langs.open({ file, languageId, text, root }, ...langOpts()).catch((e) => ({ error: String(e.message || e).replace(/^Request initialize failed with message: /, '') }));
+  });
+  handle('lsp:change', (ctx, rel, text) => {
+    const file = fileIn(ctx, rel);
+    if (file) langs.change(file, text);
+  });
+  handle('lsp:close', (ctx, rel) => {
+    const file = fileIn(ctx, rel);
+    if (file) langs.close(file);
+  });
+  handle('lsp:request', async (ctx, rel, method, params) => {
+    const file = fileIn(ctx, rel);
+    if (!file) return null;
+    const r = await langs.request(file, method, params);
+    return /definition|references|implementation/i.test(method) ? toPlaces(ctx, r) : r;
+  });
+  handle('lsp:restart', () => langs.stopAll());
+
   // ---------- tab autocomplete
   let copilotMissingAt = 0; // don't look for the language server on every keystroke when it isn't there
   const copilotUsable = async () => {
@@ -1247,6 +1305,7 @@ app.whenReady().then(() => {
 
 // Quitting keeps the list of open windows; closing windows one by one doesn't.
 app.on('before-quit', () => {
+  if (langServers) langServers.stopAll();
   if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();
   rememberWindows();
   quitting = true;

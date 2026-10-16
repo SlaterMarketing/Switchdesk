@@ -95,6 +95,15 @@ contextBridge.exposeInMainWorld('desk', {
     diff: call('git:diff'),
   },
   fetchPage: call('web:fetch'),
+  lsp: {
+    status: call('lsp:status'),
+    open: call('lsp:open'),
+    change: call('lsp:change'),
+    close: call('lsp:close'),
+    request: call('lsp:request'),
+    restart: call('lsp:restart'),
+    onDiagnostics: on('lsp-diagnostics'),
+  },
   complete: {
     status: call('complete:status'),
     request: call('complete:request'),
