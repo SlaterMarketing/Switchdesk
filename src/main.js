@@ -18,6 +18,8 @@ const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const usage = require('./usage');
 const codebase = require('./codebase');
+const debug = require('./debugger');
+const isWin = process.platform === 'win32';
 const webpage = require('./webpage');
 const { extract } = require('./extract');
 const { listCommands } = require('./commands');
@@ -909,7 +911,12 @@ function registerIpc() {
   handle('chat:send', (ctx, chatId, opts) => chatSend(ctx, chatId, opts));
   handle('chat:interrupt', (ctx, chatId) => chatInterrupt(ctx, chatId));
   handle('chat:close', (ctx, chatId) => closeChat(chatKey(ctx, chatId)));
-  handle('chat:set-mode', (ctx, chatId, mode) => chats.get(chatKey(ctx, chatId))?.session.setMode(mode));
+  handle('chat:set-mode', (ctx, chatId, mode) => {
+    const chat = chats.get(chatKey(ctx, chatId));
+    if (!chat) return;
+    chat.mode = mode; // a plan approved mid-turn: the rest of the turn follows the new mode's rules
+    return chat.session.setMode(mode);
+  });
   handle('approval:answer', (ctx, chatId, reqId, decision) => answerApproval(ctx, chatId, reqId, decision));
   handle('rewind:files', (ctx, turnIds) => rewindFiles(turnIds, false));
   handle('rewind:apply', (ctx, turnIds) => rewindFiles(turnIds, true));
@@ -1166,6 +1173,57 @@ function registerIpc() {
   handle('codebase:put', (ctx, entries) => ctx.workspace && indexOf(ctx).put(entries || []));
   handle('codebase:search', (ctx, query, vector, k) => (ctx.workspace ? indexOf(ctx).search(String(query || ''), vector, k) : []));
 
+  // Run and debug a file (see debugger.js). One debug session per window.
+  const pythonFor = async (dir) => {
+    // The project's own virtual environment first, so its packages (and debugpy) are the ones used.
+    for (const v of ['.venv', 'venv', 'env']) {
+      const p = isWin ? path.join(dir, v, 'Scripts', 'python.exe') : path.join(dir, v, 'bin', 'python');
+      if (fs.existsSync(p)) return p;
+    }
+    return agents.findCommand(isWin ? ['py', 'python', 'python3'] : ['python3', 'python']);
+  };
+  const absBreakpoints = (ctx, bps) => Object.fromEntries(Object.entries(bps || {}).map(([rel, lines]) => [resolveInWorkspace(ctx, rel), lines]));
+  handle('debug:start', async (ctx, { rel, args, breakpoints, exceptions }) => {
+    if (ctx.debug) ctx.debug.stop();
+    const abs = resolveInWorkspace(ctx, rel);
+    const kind = debug.kindOf(abs);
+    if (!kind) throw new Error('Switchdesk can debug JavaScript, TypeScript and Python files.');
+    const cwd = (rootOf(ctx, abs) || { dir: path.dirname(abs) }).dir;
+    const env = await cli.childEnv();
+    const bin = kind === 'node' ? await agents.findCommand(['node']) : await pythonFor(cwd);
+    if (!bin) return { missing: kind === 'node' ? 'node' : 'python' };
+    const onEvent = (e) => {
+      if (e.frames) for (const f of e.frames) f.rel = f.file ? relOf(ctx, f.file) : null;
+      if (e.type === 'terminated' && ctx.debug === session) ctx.debug = null;
+      sendTo(ctx, 'debug-event', e);
+    };
+    const Session = kind === 'node' ? debug.NodeDebug : debug.PythonDebug;
+    const session = new Session({ program: abs, args: args || [], cwd, env: { ...env, PYTHONUNBUFFERED: '1' }, node: bin, python: bin, onEvent });
+    if (exceptions) session.pauseOnExceptions = exceptions;
+    if (exceptions && kind === 'python') session.exceptionFilters = exceptions === 'all' ? ['raised', 'uncaught'] : exceptions === 'none' ? [] : ['uncaught'];
+    ctx.debug = session;
+    try {
+      await session.start(absBreakpoints(ctx, breakpoints));
+    } catch (e) {
+      session.stop();
+      if (ctx.debug === session) ctx.debug = null;
+      if (e.message === 'NO_DEBUGPY') return { missing: 'debugpy', python: bin };
+      throw e;
+    }
+    return { kind, bin };
+  });
+  handle('debug:breakpoints', (ctx, rel, lines) => ctx.debug && ctx.debug.setBreakpoints(resolveInWorkspace(ctx, rel), lines));
+  handle('debug:exceptions', (ctx, mode) => ctx.debug && ctx.debug.setExceptions(mode));
+  handle('debug:cmd', (ctx, cmd) => {
+    const d = ctx.debug;
+    if (!d) return;
+    const fn = { continue: 'cont', next: 'next', stepIn: 'stepIn', stepOut: 'stepOut', pause: 'pause', stop: 'stop' }[cmd];
+    return fn && Promise.resolve(d[fn]()).catch(() => {});
+  });
+  handle('debug:scopes', (ctx, frameId) => (ctx.debug ? ctx.debug.scopes(frameId) : []));
+  handle('debug:variables', (ctx, ref) => (ctx.debug ? ctx.debug.variables(ref) : []));
+  handle('debug:evaluate', (ctx, expr, frameId) => (ctx.debug ? ctx.debug.evaluate(expr, frameId) : { error: 'Nothing is running. Start debugging first.' }));
+
   // Your custom slash commands, for agents that don't read them themselves.
   handle('commands:list', (ctx) => listCommands(roots(ctx).map((r) => r.dir)));
   // Documents attached to a chat from outside the workspace: Word, PDF, Excel, PowerPoint, text.
@@ -1253,6 +1311,7 @@ function createWindow(start) {
   win.on('closed', () => {
     closeWindowChats(ctx);
     terminal.killWhere(`${ctx.id}:`);
+    if (ctx.debug) ctx.debug.stop();
     stopWatchers(ctx);
     if (loginCtx === ctx && loginHandle) loginHandle.cancel();
     contexts.delete(ctx.id);

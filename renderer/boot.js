@@ -44,6 +44,7 @@ async function init() {
   wireConflicts();
   wireBlame();
   wireSplit();
+  wireDebug();
   wireDiff();
   wireReview();
   wirePreview();

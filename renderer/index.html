@@ -31,6 +31,7 @@
             <button class="side-tab active" data-panel="explorer">Explorer</button>
             <button class="side-tab" data-panel="search" title="Search in files (⌘⇧F)">Search</button>
             <button class="side-tab" data-panel="git">Git <span id="git-count" class="count hidden"></span></button>
+            <button class="side-tab" data-panel="debug" title="Run and debug (F5)">Debug</button>
             <button class="side-tab" data-panel="history">Chats</button>
           </div>
           <section id="panel-explorer" class="side-panel">
@@ -43,6 +44,7 @@
           </section>
           <section id="panel-search" class="side-panel hidden"></section>
           <section id="panel-git" class="side-panel hidden"></section>
+          <section id="panel-debug" class="side-panel hidden"></section>
           <section id="panel-history" class="side-panel hidden">
             <div class="panel-tools"><button id="btn-new-chat-side" class="btn small">New chat</button></div>
             <div id="history-list"></div>
@@ -209,6 +211,7 @@
     <script src="conflicts.js"></script>
     <script src="blame.js"></script>
     <script src="split.js"></script>
+    <script src="debug.js"></script>
     <script src="boot.js"></script>
   </body>
 </html>

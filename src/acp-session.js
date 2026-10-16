@@ -4,7 +4,9 @@
 // Spec: https://agentclientprotocol.com
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const os = require('os');
+const { fileURLToPath } = require('url');
 const cli = require('./claude-cli');
 const { RpcPeer } = require('./jsonrpc');
 const { ClaudeShape, appNote, dirsNote, stripAppNotes, chatTitle } = require('./agent-events');
@@ -73,6 +75,41 @@ function diffLines(items) {
     for (const [l, n] of had) for (let i = 0; i < n; i++) lines.push('-' + l);
   }
   return lines.length ? lines.join('\n') : null;
+}
+
+// The plan an agent saved while planning. Cursor's Create Plan says "Plan saved to file:///…plan.md";
+// Gemini's plan approval names the file in its title. Only Markdown files are read.
+function planFileIn(text) {
+  const m = /(file:\/\/\/?[^\s"'`<>)]+\.md)\b/i.exec(text || '') || /((?:[A-Za-z]:[\\/]|\/)[^\s"'`<>|]*?[\\/]plans?[\\/][^\s"'`<>|]+\.md)\b/i.exec(text || '');
+  if (!m) return null;
+  try {
+    return m[1].startsWith('file:') ? fileURLToPath(m[1].replace(/^file:\/\/(?!\/)/, 'file:///')) : m[1];
+  } catch {
+    return null;
+  }
+}
+
+function readPlan(file) {
+  try {
+    if (!file || !/\.md$/i.test(file) || fs.statSync(file).size > 1e6) return null;
+    let text = fs.readFileSync(file, 'utf8');
+    // Cursor's plans start with front matter (name, overview, to-dos): keep the name and overview.
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+    if (fm) {
+      const field = (k) => {
+        const r = new RegExp(`^${k}:\\s*(.*)$`, 'm').exec(fm[1]);
+        return r ? r[1].trim().replace(/^["']|["']$/g, '') : '';
+      };
+      text = text.slice(fm[0].length).trimStart();
+      const name = field('name');
+      const overview = field('overview');
+      if (overview && !text.includes(overview)) text = `${overview}\n\n${text}`;
+      if (name && !/^#\s/.test(text)) text = `# ${name}\n\n${text}`;
+    }
+    return text.trim() ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 class AcpSession {
@@ -282,12 +319,30 @@ class AcpSession {
     const raw = tc.rawOutput;
     const text = contentText(tc.content) || (typeof raw === 'string' ? raw : raw && (raw.output || raw.stdout) ? String(raw.output || raw.stdout) : '');
     this.shape.toolResult(id, text, { isError: tc.status === 'failed', diff: diffLines(tc.content) });
+    // A plan saved to a file (Cursor's Create Plan) opens as the plan to review.
+    if (tc.status !== 'failed' && this.mode === 'plan' && tc.kind !== 'edit' && /plan/i.test(`${tc.title || ''} ${text}`)) {
+      const file = planFileIn(text) || planFileIn(tc.title);
+      const plan = (t && t.rawInput && typeof t.rawInput.plan === 'string' && t.rawInput.plan) || readPlan(file);
+      if (plan) this.shape.emit({ type: 'system', subtype: 'plan', text: plan, path: file || null });
+    }
   }
 
   async request(method, p) {
     if (method === 'session/request_permission') {
       const tc = { ...(this.tools.get(p.toolCall && p.toolCall.toolCallId) || {}), ...(p.toolCall || {}) };
       const t = toolFor(tc);
+      // Asking to leave plan mode (Gemini, Copilot): the same plan review as Claude's ExitPlanMode.
+      if (tc.kind === 'switch_mode' || /plan approval|exit.?plan|approve.*plan/i.test(tc.title || '')) {
+        const file = planFileIn(tc.title) || ((tc.locations || [])[0] || {}).path || planFileIn(contentText(tc.content));
+        const plan = readPlan(file) || contentText(tc.content) || tc.title || 'The agent has a plan ready.';
+        if (tc.toolCallId) this.shape.tool(tc.toolCallId, 'ExitPlanMode', { plan });
+        const decision = await this.onPermission({ toolName: 'ExitPlanMode', input: { plan, path: file || undefined } });
+        const options = p.options || [];
+        const pick = (kinds) => options.find((o) => kinds.includes(o.kind));
+        const opt = decision.behavior === 'allow' ? pick(['allow_once']) || pick(['allow_always']) : pick(['reject_once']) || pick(['reject_always']);
+        if (decision.behavior === 'allow') this.mode = 'agent';
+        return opt ? { outcome: { outcome: 'selected', optionId: opt.optionId } } : { outcome: { outcome: 'cancelled' } };
+      }
       const input = { ...t.input };
       if (t.name === 'Edit') {
         const d = (tc.content || []).find((c) => c.type === 'diff');
@@ -427,4 +482,4 @@ function acpHistory(bin, args, extraEnv, cwd, authMethod, sessionId) {
   });
 }
 
-module.exports = { AcpSession, acpStatus, acpSessions, acpHistory };
+module.exports = { AcpSession, acpStatus, acpSessions, acpHistory, planFileIn, readPlan };

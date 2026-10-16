@@ -513,6 +513,8 @@ function handleEvent(chat, ev) {
         if (chat === activeChat()) renderModelPicker();
       } else if (ev.subtype === 'api_retry' && turn) {
         appendChat(h('div', { class: 'notice' }, `API ${ev.error || 'error'}, retrying (attempt ${ev.attempt}/${ev.max_retries})…`), chat);
+      } else if (ev.subtype === 'plan' && turn) {
+        turn.planDoc = { text: ev.text, path: ev.path }; // a plan the agent saved to a file (Cursor)
       } else if (ev.subtype === 'notice' && turn) {
         appendChat(h('div', { class: 'notice' }, ev.text), chat);
       } else if (ev.subtype === 'compact_boundary') {
@@ -580,6 +582,7 @@ function handleEvent(chat, ev) {
         }
       }
       if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
+      if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
       if (!document.hasFocus()) {
         new Notification('Switchdesk', { body: `${agentLabel(chat)} finished: ${chat.title}` });
@@ -597,12 +600,15 @@ function handleStream(chat, turn, e) {
     const cb = e.content_block || {};
     if (cb.type === 'text') {
       const el = appendChat(h('div', { class: 'msg-text' }), chat);
-      turn.blocks.set(e.index, { kind: 'text', el, text: cb.text || '' });
+      const b = { kind: 'text', el, text: cb.text || '' };
+      turn.blocks.set(e.index, b);
+      (turn.replyTexts ||= []).push(b); // the reply since the last tool: the plan, in Plan mode
     } else if (cb.type === 'thinking') {
       const body = h('div', { class: 'body' });
       const el = appendChat(h('details', { class: 'thinking' }, h('summary', {}, 'Thinking…'), body), chat);
       turn.blocks.set(e.index, { kind: 'thinking', el, body, text: '' });
     } else if (cb.type === 'tool_use') {
+      turn.replyTexts = [];
       if (HIDDEN_TOOLS.has(cb.name)) return;
       const row = toolRow(cb.name, {});
       turn.tools.set(cb.id, row);
@@ -642,6 +648,7 @@ function handleAssistant(chat, turn, msg) {
   const streamed = msg.id && turn.streamedMsgIds.has(msg.id);
   for (const b of msg.content || []) {
     if (b.type === 'tool_use') {
+      turn.replyTexts = [];
       if (HIDDEN_TOOLS.has(b.name)) continue;
       let row = turn.tools.get(b.id);
       if (!row) {
@@ -652,6 +659,7 @@ function handleAssistant(chat, turn, msg) {
     } else if (b.type === 'text' && !streamed && b.text.trim()) {
       const el = appendChat(h('div', { class: 'msg-text' }), chat);
       renderMarkdown(el, b.text);
+      (turn.replyTexts ||= []).push({ text: b.text });
     }
   }
 }
@@ -774,9 +782,24 @@ function handleApproval(req) {
   notifyAttention(chat);
 }
 
-function planCard(chat, input, allow, deny) {
-  const turn = chat.turn;
+// Agents other than Claude finish a Plan mode turn with the plan as their reply (or, for Cursor, a
+// plan file). It opens the same way: as a document to edit, then Build it or Keep planning.
+function offerPlan(chat, turn) {
+  const reply = (turn.replyTexts || []).map((b) => b.text).join('\n\n').trim();
+  const doc = turn.planDoc;
+  // A short reply is a question or an answer, not a plan.
+  if (!doc && (reply.length < 200 || !/^\s*(#{1,4}\s|\d+[.)]\s|[-*]\s)/m.test(reply))) return;
+  const plan = doc ? doc.text : reply;
+  const where = doc && doc.path ? ` (it's also saved at ${doc.path})` : '';
+  planCard(chat, { plan }, (input) => send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat), (message) => send(message, 'plan', 'Keep planning', chat), turn);
+}
+
+function planCard(chat, input, allow, deny, turnArg) {
+  const turn = turnArg || chat.turn;
+  if (turn) turn.planShown = true;
   const plan = input.plan || '';
+  // Leaving plan mode by approval (Gemini, Copilot) can't carry edits or feedback, so those follow as messages.
+  const followUp = !turnArg && agentOf(chat) !== 'claude';
   const body = h('div', { class: 'msg-text plan-body' });
   renderMarkdown(body, plan);
   const card = h('div', { class: 'card plan' }, h('h4', {}, 'Plan ready for review'), body);
@@ -793,6 +816,7 @@ function planCard(chat, input, allow, deny) {
     if (edited !== plan) renderMarkdown(body, edited);
     if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
     allow({ ...input, plan: edited });
+    if (followUp && edited !== plan) send(`I edited the plan before approving it. Follow this version:\n\n${edited}`, 'agent', 'Use my edits to the plan', chat);
     desk.chatSetMode(chat.id, 'agent');
     setMode('agent');
     done(edited !== plan ? 'Approved with your edits. Building it now.' : 'Approved. Building it now.');
@@ -801,7 +825,9 @@ function planCard(chat, input, allow, deny) {
     if (decided) return;
     const edited = doc.text();
     const changed = edited !== plan ? `\n\nThey edited the plan to:\n\n${edited}` : '';
-    deny(`The user wants to keep planning.${feedback ? ' Their feedback: ' + feedback : ''}${changed} Revise the plan and present it again.`);
+    const why = `The user wants to keep planning.${feedback ? ' Their feedback: ' + feedback : ''}${changed} Revise the plan and present it again.`;
+    deny(why);
+    if (followUp) send(why, 'plan', feedback ? `Keep planning: ${feedback}` : 'Keep planning', chat);
     done('Sent back for revision.');
   };
   // The plan opens as its own editable tab, like Cursor.
@@ -1098,8 +1124,8 @@ function buildPrompt(text) {
   return `${ctx}\n\n${text}`;
 }
 
-async function send(textOverride, modeOverride, display) {
-  const chat = activeChat();
+async function send(textOverride, modeOverride, display, target) {
+  const chat = target || activeChat();
   if (!chat) return;
   if (agentOf(chat) === 'claude') {
     if (cliState && !cliState.found) return showSetup();

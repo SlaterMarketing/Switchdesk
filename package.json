@@ -1,7 +1,7 @@
 {
   "name": "claude-desk",
   "productName": "Switchdesk",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "A Cursor-style desktop editor that drives the coding agents you already use: Claude Code, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek.",
   "main": "src/main.js",
   "private": true,

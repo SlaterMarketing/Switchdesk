@@ -107,6 +107,16 @@ contextBridge.exposeInMainWorld('desk', {
   fetchPage: call('web:fetch'),
   attach: { pick: call('attach:pick'), read: call('attach:read') },
   commands: call('commands:list'),
+  debug: {
+    start: call('debug:start'),
+    breakpoints: call('debug:breakpoints'),
+    exceptions: call('debug:exceptions'),
+    cmd: call('debug:cmd'),
+    scopes: call('debug:scopes'),
+    variables: call('debug:variables'),
+    evaluate: call('debug:evaluate'),
+    onEvent: on('debug-event'),
+  },
   codebase: {
     status: call('codebase:status'),
     download: call('codebase:download'),

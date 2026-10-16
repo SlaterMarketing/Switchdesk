@@ -1,6 +1,6 @@
 /* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy,
    addSelectionToChat, inlineEdit, toggleTerminal, newTerminal, showSidePanel, openSearch, openSettings, openPreview, toggleTheme, loadHistory,
-   agentState, acct, multiAccount, chooseAgent, agentOf, activeChat, chatAccount, isMac */
+   agentState, acct, multiAccount, chooseAgent, agentOf, activeChat, chatAccount, isMac, debugCmd, restartDebugging, toggleBreakpoint, activeTab, editor */
 'use strict';
 
 // ------------------------------------------------------------------ command palette
@@ -48,6 +48,11 @@ function paletteCommands() {
     ['Git: Write Pull Request', '', () => (showSidePanel('git'), pullRequest())],
     ['Git: Abort Merge', '', () => desk.git.abort().then(refreshGit)],
     ['Toggle Line Blame', '', toggleBlame],
+    ['Debug: Start Debugging', 'F5', () => (showSidePanel('debug'), debugCmd('continue'))],
+    ['Debug: Stop', '⇧F5', () => debugCmd('stop')],
+    ['Debug: Restart', '⌘F5', restartDebugging],
+    ['Debug: Toggle Breakpoint', 'F9', () => { const t = activeTab(); const p = editor.getPosition(); if (t && t.kind === 'file' && p) toggleBreakpoint(t.rel, p.lineNumber); }],
+    ['Debug: Open Run and Debug', '', () => showSidePanel('debug')],
     ['Settings: Codebase Search', '', () => openSettings('codebase')],
     ['Update Codebase Index', '', () => (codebaseOn() ? (indexCodebase(), toast('Updating the codebase index.')) : openSettings('codebase'))],
     ['Restart Language Servers', '', () => desk.lsp.restart().then(() => toast('Language servers restarted. They start again as you open files.'))],

@@ -630,3 +630,35 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .ctx-menu button { text-align: left; background: none; border: none; color: var(--text); font: 12px var(--sans); padding: 5px 10px; border-radius: 5px; cursor: pointer; }
 .ctx-menu button:hover { background: var(--bg-hover); }
 .ctx-menu .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+
+/* run and debug */
+.monaco-editor .bp-glyph { cursor: pointer; }
+.monaco-editor .bp-glyph::before { content: ''; display: block; width: 10px; height: 10px; margin: 4px 0 0 5px; border-radius: 50%; background: var(--err); }
+.monaco-editor .bp-glyph.hint::before { background: rgba(248, 81, 73, 0.35); }
+.monaco-editor .debug-line { background: rgba(210, 153, 34, 0.18); }
+.monaco-editor .debug-arrow::before { content: '➜'; display: block; color: var(--warn); font-size: 13px; margin-left: 3px; }
+#panel-debug { overflow-y: auto; }
+.dbg-head { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.dbg-tools { display: flex; gap: 2px; }
+.dbg-btn { font-size: 14px; width: 28px; }
+.dbg-btn:disabled { opacity: 0.35; cursor: default; }
+.dbg-args, .dbg-exc { width: 100%; box-sizing: border-box; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+.dbg-section .dbg-args { margin: 4px 10px; width: calc(100% - 20px); }
+.dbg-exception { margin: 0 10px 6px; padding: 6px 8px; border-radius: 6px; background: rgba(248, 81, 73, 0.12); color: var(--err); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.dbg-frame, .dbg-var { display: flex; align-items: center; gap: 6px; padding: 2px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.dbg-frame:hover, .dbg-var:hover { background: var(--bg-hover); }
+.dbg-frame.active { background: var(--accent-soft); }
+.dbg-frame.internal { opacity: 0.6; }
+.dbg-frame .name, .dbg-var .name { color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; }
+.dbg-var { font-family: var(--mono); }
+.dbg-var .val { overflow: hidden; text-overflow: ellipsis; color: var(--ask); }
+.dbg-var .val.t-string, .dbg-var .val.t-str { color: #ce9178; }
+.dbg-var .val.t-number, .dbg-var .val.t-int, .dbg-var .val.t-float { color: #b5cea8; }
+.dbg-var .val.err { color: var(--err); }
+.dbg-var .twisty { width: 10px; flex: none; color: var(--text-dim); }
+.bp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); flex: none; }
+.dbg-console { margin: 4px 10px; max-height: 220px; min-height: 40px; overflow-y: auto; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.dbg-console .c-stderr { color: var(--err); }
+.dbg-console .c-console { color: var(--text-dim); }
+.dbg-console .c-eval { color: var(--ask); }
+.dbg-console .c-result { color: var(--text-strong); }

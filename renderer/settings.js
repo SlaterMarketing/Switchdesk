@@ -165,7 +165,7 @@ async function settingsPermissions(body) {
   };
   body.replaceChildren(
     h('h3', {}, 'Permissions'),
-    h('p', { class: 'muted small' }, 'These rules apply to every agent the same way: Claude, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek. When an agent asks to run a command or change a file, Switchdesk checks them first and only asks you if they don’t decide. Ask and Plan modes stay read-only whatever you set here.'),
+    h('p', { class: 'muted small' }, 'These rules apply to every agent the same way: Claude, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek. When an agent asks to run a command or change a file, Switchdesk checks them first and only asks you if they don’t decide. Ask and Plan modes stay read-only: edits there always ask, while commands that only look (ls, git log, Get-ChildItem) run without asking.'),
     h(
       'div',
       { class: 'set-box' },

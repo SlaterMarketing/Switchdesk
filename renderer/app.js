@@ -1112,6 +1112,8 @@ function showSidePanel(name) {
   $('#panel-history').classList.toggle('hidden', name !== 'history');
   $('#panel-git').classList.toggle('hidden', name !== 'git');
   $('#panel-search').classList.toggle('hidden', name !== 'search');
+  $('#panel-debug').classList.toggle('hidden', name !== 'debug');
   if (name === 'history') loadHistory();
+  if (name === 'debug') renderDebug();
   if (name === 'git') refreshGit();
 }
