@@ -244,7 +244,7 @@ td code { color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, tra
 .footnote { margin-top: 16px; color: var(--faint); font-size: 14px; max-width: 60em; }
 
 /* Modes */
-.modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.modes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .mode { padding: 26px 24px 28px; border-right: 1px solid var(--line); display: grid; gap: 10px; align-content: start; background: var(--panel); }
 .mode:last-child { border-right: 0; }
 .mode h3 { font-size: 26px; font-weight: 700; display: flex; align-items: baseline; gap: 10px; }
@@ -308,9 +308,9 @@ footer .legal { max-width: 46em; }
   .hero-top, .oss { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .app { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); }
   .side { display: none; }
-  .modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .mode:nth-child(2) { border-right: 0; }
-  .mode:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .modes { grid-template-columns: minmax(0, 1fr); }
+  .mode { border-right: 0; border-bottom: 1px solid var(--line); }
+  .mode:last-child { border-bottom: 0; }
   .group { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .trust { grid-template-columns: minmax(0, 1fr); }
   .trust > div { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -474,13 +474,14 @@ footer .legal { max-width: 46em; }
   <section id="modes">
     <div class="wrap">
       <div class="sec-head">
-        <span class="eyebrow">Four modes</span>
+        <span class="eyebrow">Five modes</span>
         <h2>Decide how much it can touch.</h2>
       </div>
       <div class="modes">
         <div class="mode"><h3>Ask <small>READ ONLY</small></h3><p>Answers questions about your code and never edits a file. Commands that only look, like <code>ls</code> or <code>git log</code>, run without asking.</p></div>
         <div class="mode"><h3>Plan <small>THINK FIRST</small></h3><p>Researches, then opens the plan as a document in its own tab, with every agent. Edit it, then choose <b>Build it</b> or <b>Keep planning</b>.</p></div>
         <div class="mode"><h3>Agent <small>HANDS ON</small></h3><p>Edits files without asking. Commands run by your rules, and anything else gets an Allow, Always allow or Deny card.</p></div>
+        <div class="mode"><h3>Debug <small>FIND THE CAUSE</small></h3><p>Adds temporary logging, asks you to reproduce the bug, then fixes the cause from the logs and cleans up. Works with every agent.</p></div>
         <div class="mode"><h3>Auto <small>CLAUDE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
       </div>
       <p class="modes-note">Cycle modes with <kbd>Ctrl</kbd> <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>Tab</kbd> in the chat box.</p>
@@ -511,7 +512,7 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>One set of permissions</h4><p>Allowed and blocked commands, and Always allow, apply to all eight agents, so you never approve the same thing twice.</p></div>
             <div class="feat"><h4>Commands that travel</h4><p>A slash command you wrote for Claude, Codex, Cursor or Copilot works with every agent, plus <code>/init</code>, <code>/review</code> and <code>/compact</code>.</p></div>
             <div class="feat"><h4>History from every agent</h4><p>Past chats from Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek, each tagged with its agent, including ones started in your terminal.</p></div>
-            <div class="feat"><h4>Several Claude accounts</h4><p>Stay signed in to personal and work accounts at once, and tie each folder to the right one.</p></div>
+            <div class="feat"><h4>Several accounts per agent</h4><p>A work and a personal sign-in for Claude, Codex, Copilot, Cursor or Kimi, or a second API key for the rest. Switch any chat between them.</p></div>
           </div>
         </div>
         <div class="group">
@@ -540,6 +541,8 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>Run and debug</h4><p>Breakpoints, the call stack, variables, watches and a console for Node and Python. <b>✨ Ask the agent</b> hands it the stop.</p></div>
             <div class="feat"><h4>Split and compare</h4><p>Two files side by side with <kbd>Ctrl</kbd> <kbd>\</kbd>, and a diff of any two files, or a file and your clipboard.</p></div>
             <div class="feat"><h4>Search by meaning</h4><p>Search for "where do we retry failed payments" and find the code that does it, whatever it's called.</p></div>
+            <div class="feat"><h4>Run tests in the editor</h4><p>Run test buttons above Vitest, Jest, Mocha, node --test, pytest and unittest tests, with ✓ or ✗ on each line.</p></div>
+            <div class="feat"><h4>Fix with the agent</h4><p>The lightbulb on any error, warning or failed test hands it to the chat. <b>Fix all</b> does the whole file.</p></div>
             <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, regex search in files, and light or dark themes.</p></div>
           </div>
         </div>
@@ -548,7 +551,9 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
             <div class="feat"><h4>Live preview</h4><p>Your site in a tab beside the code. Pick an element on the page and attach it, with a screenshot, to the chat.</p></div>
-            <div class="feat"><h4>Usage at a glance</h4><p>Tokens and turns for each agent and account by day, week and month, plus each plan's limits and when they reset.</p></div>
+            <div class="feat"><h4>Plan limits at a glance</h4><p>A status bar meter shows how much of the 5-hour and weekly limits you've used, and Usage breaks it down by agent and account.</p></div>
+            <div class="feat"><h4>Your shortcuts</h4><p>Change any keyboard shortcut by pressing the new keys. The menus and the command palette show your choice.</p></div>
+            <div class="feat"><h4>Picks up where you left off</h4><p>Reopen a folder and your files, chats, place in each file, split editor and half-written message come back.</p></div>
             <div class="feat"><h4>Updates itself</h4><p>On Windows and Linux, new versions download in the background and install with one click. On a Mac, the status bar tells you when one is out.</p></div>
           </div>
         </div>
