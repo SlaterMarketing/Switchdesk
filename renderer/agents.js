@@ -207,7 +207,7 @@ async function pickAgent(id) {
 
 // The conversation so far, as text another agent can pick up from: what you asked, what the agent
 // said and did, and the files it changed. The most recent part is kept when it's long.
-function handoffNote(from) {
+function handoffNote(from, intro) {
   const who = agentLabel(from);
   const lines = [];
   for (const el of from.el.querySelectorAll('.msg-user, .msg-text, .tool .head .label, .card.changes .name')) {
@@ -220,7 +220,8 @@ function handoffNote(from) {
   if (!lines.length) return '';
   let text = lines.join('\n\n');
   if (text.length > 16000) text = `${lines[0]}\n\n[…earlier messages left out…]\n\n${text.slice(-14000)}`;
-  return `<switchdesk-context>\nThis conversation started with ${who}, and you're taking it over. Here it is so far, so you can carry on. The files are as ${who} left them.\n\n${text}\n</switchdesk-context>\n\n`;
+  intro = intro || `This conversation started with ${who}, and you're taking it over. Here it is so far, so you can carry on. The files are as ${who} left them.`;
+  return `<switchdesk-context>\n${intro}\n\n${text}\n</switchdesk-context>\n\n`;
 }
 
 // ---------- Settings → Agents

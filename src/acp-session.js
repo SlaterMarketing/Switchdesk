@@ -235,8 +235,14 @@ class AcpSession {
   }
 
   notification(method, p) {
-    if (method !== 'session/update' || this.replaying) return;
+    if (method !== 'session/update') return;
     const u = p.update || {};
+    // The agent's own slash commands (its built-ins and the custom ones it reads itself).
+    if (u.sessionUpdate === 'available_commands_update') {
+      const commands = (u.availableCommands || []).filter((c) => c && c.name).map((c) => ({ name: String(c.name).replace(/^\//, ''), desc: c.description || '', hint: (c.input && c.input.hint) || '' }));
+      return this.shape.emit({ type: 'system', subtype: 'commands', commands });
+    }
+    if (this.replaying) return;
     const s = this.shape;
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':

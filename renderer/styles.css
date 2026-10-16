@@ -586,3 +586,10 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .perm-toggle.danger b { color: #ef4444; }
 .set-sub { margin-top: 18px; }
 #status-perms { color: #f59e0b; cursor: pointer; }
+
+/* codebase search */
+.meaning-hit { cursor: pointer; padding: 2px 0 4px; }
+.meaning-hit:hover { background: var(--bg-hover); }
+.meaning-snippet { font-family: var(--mono); font-size: 11px; color: var(--text-dim); padding: 0 10px 0 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status-index { color: var(--text-dim); }
+.set-box .error { color: var(--err); }

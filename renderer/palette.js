@@ -40,6 +40,8 @@ function paletteCommands() {
     ['Attach Files to Chat…', '', () => pickAttachments()],
     ['Settings: Autocomplete', '', () => openSettings('autocomplete')],
     ['Settings: Code Intelligence', '', () => openSettings('intel')],
+    ['Settings: Codebase Search', '', () => openSettings('codebase')],
+    ['Update Codebase Index', '', () => (codebaseOn() ? (indexCodebase(), toast('Updating the codebase index.')) : openSettings('codebase'))],
     ['Restart Language Servers', '', () => desk.lsp.restart().then(() => toast('Language servers restarted. They start again as you open files.'))],
     ['Go to Next Problem', 'F8', () => (editor.focus(), editor.trigger('palette', 'editor.action.marker.nextInFiles', null))],
     ['Check for Updates', '', () => desk.checkUpdates()],

@@ -442,6 +442,7 @@ async function setFolder(info) {
     reviews.clear();
     resetPreview();
     await refreshFiles();
+    queueCodebaseIndex(3000);
     closeAllChats();
     await loadAccounts(); // the folder may use a different account
     await restoreWorkspace(info.root);
@@ -489,6 +490,7 @@ async function workspaceFoldersChanged(info) {
   state.folder = info;
   showFolderName();
   await refreshFiles();
+  queueCodebaseIndex(2000);
 }
 
 // ------------------------------------------------------------------ reopen where you left off
@@ -659,6 +661,7 @@ function updateMention() {
 }
 
 const MENTION_EXTRAS = [
+  { id: 'codebase', name: 'codebase', icon: '≈', desc: 'The parts of the project your message is about' },
   { id: 'changes', name: 'changes', icon: '±', desc: 'Your uncommitted changes (git diff)' },
   { id: 'terminal', name: 'terminal', icon: '›_', desc: 'Recent output from the terminal' },
   { id: 'web', name: 'web', icon: '🌐', desc: 'A web page. Type or paste its address' },

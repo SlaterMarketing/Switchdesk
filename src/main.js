@@ -17,8 +17,10 @@ const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const usage = require('./usage');
+const codebase = require('./codebase');
 const webpage = require('./webpage');
 const { extract } = require('./extract');
+const { listCommands } = require('./commands');
 const permissions = require('./permissions');
 const autocomplete = require('./autocomplete');
 const { LangServers } = require('./langservers');
@@ -63,6 +65,7 @@ function saveSettings() {
 // Each window has its own workspace: a main folder, plus any extra folders added to it. Files in an
 // extra folder show up in the app as "⟦name⟧/path", and agents get the folders' absolute paths.
 
+const codeIndexes = new Set();
 let langServers = null; // set once IPC is wired; stopped on quit
 const contexts = new Map(); // webContents id -> { id, win, workspace, extra, watchers, start }
 const NO_WINDOW = { id: 0, win: null, workspace: null, extra: [], watchers: [] };
@@ -1082,6 +1085,31 @@ function registerIpc() {
     if (untracked.trim()) diff += `\n\nNew files, not yet tracked:\n${untracked.trim()}`;
     return diff.trim();
   });
+  // Codebase search by meaning: main keeps the index, the window runs the model.
+  const indexOf = (ctx) => {
+    const key = roots(ctx).map((r) => r.dir).join('|');
+    if (!ctx.codebase || ctx.codebase.key !== key) {
+      if (ctx.codebase) codeIndexes.delete(ctx.codebase);
+      ctx.codebase = new codebase.Index(roots(ctx));
+      ctx.codebase.key = key;
+      codeIndexes.add(ctx.codebase);
+    }
+    return ctx.codebase;
+  };
+  const codeStatus = (ctx) => ({ model: codebase.modelReady(), ...(ctx.workspace ? indexOf(ctx).status() : { files: 0, chunks: 0, embedded: 0 }) });
+  handle('codebase:status', (ctx) => codeStatus(ctx));
+  handle('codebase:download', (ctx) => codebase.downloadModel((u) => net.fetch(u), (p) => sendTo(ctx, 'codebase-progress', p)).then(() => codeStatus(ctx)));
+  handle('codebase:scan', async (ctx) => {
+    if (!ctx.workspace) return codeStatus(ctx);
+    await indexOf(ctx).scan(() => listFiles(ctx));
+    return codeStatus(ctx);
+  });
+  handle('codebase:pending', (ctx, n) => (ctx.workspace ? indexOf(ctx).pending(Math.min(n || 32, 256)) : []));
+  handle('codebase:put', (ctx, entries) => ctx.workspace && indexOf(ctx).put(entries || []));
+  handle('codebase:search', (ctx, query, vector, k) => (ctx.workspace ? indexOf(ctx).search(String(query || ''), vector, k) : []));
+
+  // Your custom slash commands, for agents that don't read them themselves.
+  handle('commands:list', (ctx) => listCommands(roots(ctx).map((r) => r.dir)));
   // Documents attached to a chat from outside the workspace: Word, PDF, Excel, PowerPoint, text.
   handle('attach:pick', async (ctx) => {
     const r = await dialog.showOpenDialog(ctx.win, {
@@ -1321,10 +1349,17 @@ app.whenReady().then(() => {
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
   usage.setBaseDir(app.getPath('userData'));
+  codebase.setBaseDir(app.getPath('userData'));
   loadSettings();
   nativeTheme.themeSource = settings.theme || 'system';
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
+    // The search model and its runtime, downloaded into userData (see codebase.js).
+    if (pathname.startsWith('/models/')) {
+      const file = path.normalize(path.join(codebase.modelsDir(), decodeURIComponent(pathname.slice(8))));
+      if (!file.startsWith(codebase.modelsDir())) return new Response('Forbidden', { status: 403 });
+      return net.fetch(pathToFileURL(file).toString());
+    }
     const file = path.normalize(path.join(APP_ROOT, decodeURIComponent(pathname)));
     if (!file.startsWith(APP_ROOT)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString());
@@ -1346,6 +1381,7 @@ app.whenReady().then(() => {
 
 // Quitting keeps the list of open windows; closing windows one by one doesn't.
 app.on('before-quit', () => {
+  for (const ix of codeIndexes) ix.saveNow().catch(() => {});
   if (langServers) langServers.stopAll();
   if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();
   rememberWindows();

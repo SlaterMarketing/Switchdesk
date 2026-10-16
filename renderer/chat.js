@@ -161,7 +161,52 @@ const SLASH_DESCRIPTIONS = {
 const SLASH_HIDDEN = new Set(['config', 'color', 'heapdump', 'doctor', 'reload-plugins', 'reload-skills', 'focus', 'fast', 'rename', 'import', 'goal', 'design-consent', 'design-revoke']);
 const SLASH_LOCAL = new Set(['clear', 'new']);
 
+// Other agents: Switchdesk's own few, the agent's (which it handles itself), and your Markdown
+// command files from .claude/commands, .codex/prompts, .cursor/commands and .github/prompts, which
+// Switchdesk expands into the message.
+const SD_PROMPTS = {
+  init: "Look through this project and write an AGENTS.md file at its root that tells coding agents what they need to know to work in it: what the project is, how to install, build, test and run it, how the code is laid out, and the conventions it follows. Keep it short and specific to this project. If AGENTS.md already exists, improve it rather than starting again.",
+  review: "Review the uncommitted changes in this project (look at git status and git diff) as a careful senior reviewer. Look for bugs, missed edge cases, security problems and anything that doesn't fit the rest of the code. List what you find, most serious first, with the file and line. Don't change any files.",
+  compact: "Summarise this conversation so it can carry on in a fresh session with less context: what I asked for, what's been decided, what has been done (which files changed and why), what's left to do, and anything else that matters. Be thorough but concise. Don't change any files.",
+};
+const SD_DESCRIPTIONS = {
+  init: 'Write an AGENTS.md that describes this project',
+  review: 'Review the uncommitted changes for bugs',
+  compact: 'Summarise the conversation and carry on in a fresh one',
+};
+const agentCommands = new Map(); // agent id -> [{ name, desc }] it handles itself
+let fileCommands = [];
+let fileCommandsAt = 0;
+
+async function loadFileCommands(fresh) {
+  if (!state.folder || (!fresh && Date.now() - fileCommandsAt < 10000)) return fileCommands;
+  fileCommandsAt = Date.now();
+  fileCommands = await desk.commands().catch(() => fileCommands);
+  return fileCommands;
+}
+
+function expandCommand(body, args) {
+  const parts = (args.match(/"[^"]*"|\S+/g) || []).map((a) => a.replace(/^"|"$/g, ''));
+  let used = false;
+  let out = body.replace(/\$ARGUMENTS|\$(\d)/g, (m, n) => {
+    used = true;
+    return n ? parts[n - 1] || '' : args;
+  });
+  if (!used && args) out += `\n\n${args}`;
+  return out;
+}
+
 function slashCommandList() {
+  const chat = activeChat();
+  if (chat && agentOf(chat) !== 'claude') {
+    const had = fileCommands;
+    loadFileCommands().then((list) => list !== had && mention && mention.kind === 'slash' && updateMention());
+    const out = new Map([['clear', SLASH_DESCRIPTIONS.clear], ['new', SLASH_DESCRIPTIONS.new]]);
+    for (const c of agentCommands.get(agentOf(chat)) || []) if (!out.has(c.name)) out.set(c.name, c.desc);
+    for (const c of fileCommands) if (!out.has(c.name)) out.set(c.name, c.desc ? `${c.desc} · ${c.from}` : c.from);
+    for (const n of Object.keys(SD_PROMPTS)) if (!out.has(n)) out.set(n, SD_DESCRIPTIONS[n]);
+    return [...out].map(([name, desc]) => ({ name, desc }));
+  }
   const names = new Set(['clear', 'new', 'compact', 'context', 'init', 'review', ...(state.settings.slashCommands || [])]);
   return [...names]
     .filter((n) => !n.startsWith('_') && !SLASH_HIDDEN.has(n))
@@ -177,11 +222,25 @@ function rememberSlashCommands(list) {
 }
 
 // /clear and /new are handled here: the tab's Claude process restarts on a brand-new conversation.
+// /compact for agents that can't: the summary they just wrote starts a fresh conversation.
+function compactInto(chat, turn) {
+  const texts = [];
+  for (let n = turn.bubble.nextSibling; n; n = n.nextSibling) if (n.classList && n.classList.contains('msg-text')) texts.push(n.innerText.trim());
+  const summary = texts.join('\n\n').trim();
+  if (!summary) return;
+  desk.chatClose(chat.id);
+  chat.sessionId = null;
+  chat.usage.context = 0;
+  chat.handoff = `<switchdesk-context>\nThis conversation was compacted to free up context. Here is the summary of it so far; carry on from here. The files are as they are now.\n\n${summary}\n</switchdesk-context>\n\n`;
+  appendChat(h('div', { class: 'notice' }, `Conversation compacted. ${agentLabel(chat)} carries on from this summary with your next message.`), chat);
+}
+
 function clearChat(chat) {
   desk.chatClose(chat.id);
   chat.sessionId = null;
   chat.lastReply = null;
   chat.resumeAt = null;
+  chat.handoff = null;
   chat.title = 'New chat';
   chat.usage = { context: 0, turns: 0, model: '' };
   chat.alwaysAllow = new Set();
@@ -376,8 +435,7 @@ function userBubble(chat, body, rw) {
   const el = h(
     'div',
     { class: 'msg-user' },
-    // Rewind uses Claude Code's conversation forking, so it's Claude only.
-    agentOf(chat) === 'claude' ? h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind') : null,
+    h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind'),
     ...body
   );
   el.rw = rw;
@@ -446,6 +504,8 @@ function handleEvent(chat, ev) {
         chat.sessionId = ev.session_id;
         rememberSlashCommands(ev.slash_commands);
         chat.usage.model = ev.model || chat.usage.model;
+      } else if (ev.subtype === 'commands') {
+        agentCommands.set(agentOf(chat), ev.commands || []);
       } else if (ev.subtype === 'models') {
         // The models this agent offers (Cursor lists them per session) fill the Model menu.
         const id = agentOf(chat);
@@ -519,6 +579,7 @@ function handleEvent(chat, ev) {
           appendChat(h('div', { class: 'turn-foot' }, `${secs}s · ${ev.num_turns || 1} step${ev.num_turns === 1 ? '' : 's'}${denied ? ` · ${denied} action${denied > 1 ? 's' : ''} denied` : ''}`), chat);
         }
       }
+      if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
       endTurn(chat);
       if (!document.hasFocus()) {
         new Notification('Switchdesk', { body: `${agentLabel(chat)} finished: ${chat.title}` });
@@ -935,11 +996,13 @@ function changesCard(chat, turnId, changes) {
 // ------------------------------------------------------------------ rewind
 //
 // Takes the chat back to just before a message: the conversation carries on from the reply before
-// it (Claude Code forks the session, so the original is kept in History), the message goes back in
-// the box to edit, and the files can go back to how they were before it.
+// it (Claude Code forks the session, so the original is kept in History; other agents start a new
+// conversation that's given the one up to here), the message goes back in the box to edit, and the
+// files can go back to how they were before it.
 
 async function rewindTo(chat, bubble) {
-  if (chat.busy) return toast('Wait for Claude to finish, or stop it, before rewinding.');
+  if (chat.busy) return toast(`Wait for ${agentLabel(chat)} to finish, or stop it, before rewinding.`);
+  const forks = agentOf(chat) === 'claude';
   const all = [...chat.el.querySelectorAll('.msg-user')];
   const from = all.slice(all.indexOf(bubble));
   const turnIds = from.map((b) => b.rw && b.rw.turnId).filter(Boolean);
@@ -951,7 +1014,7 @@ async function rewindTo(chat, bubble) {
     h(
       'p',
       { class: 'muted' },
-      `The conversation goes back to just before this message${later ? `, along with ${later === 1 ? 'the message' : `the ${later} messages`} after it` : ''}, and the message is put back in the box so you can change it and send again. The original conversation stays in History.`
+      `The conversation goes back to just before this message${later ? `, along with ${later === 1 ? 'the message' : `the ${later} messages`} after it` : ''}, and the message is put back in the box so you can change it and send again. ${forks ? 'The original conversation stays in History.' : `${agentLabel(chat)} starts a new conversation that carries on from here.`}`
     ),
   ];
   if (files.files.length)
@@ -979,7 +1042,7 @@ async function rewindTo(chat, bubble) {
     }
     desk.chatClose(chat.id);
     const after = bubble.rw.after;
-    if (after) chat.resumeAt = after;
+    if (forks && after) chat.resumeAt = after;
     else chat.sessionId = null; // rewinding the first message starts a fresh conversation
     chat.lastReply = after;
     let node = bubble;
@@ -988,6 +1051,8 @@ async function rewindTo(chat, bubble) {
       node.remove();
       node = next;
     }
+    // Other agents can't fork a conversation, so the new one is given what's left of this one.
+    if (!forks) chat.handoff = handoffNote(chat, `The user rewound this conversation to an earlier point and is carrying on from there. Here it is up to that point. Anything after it was undone, so ignore what you remember of it. The files are as they are now.`) || null;
     if (!chat.el.children.length) chat.el.append(emptyState());
     const input = $('#input');
     input.value = bubble.rw.text || '';
@@ -1060,9 +1125,24 @@ async function send(textOverride, modeOverride, display) {
     if (chat.sessionId || !isPristine(chat)) clearChat(chat);
     return;
   }
+  if (!textOverride && state.chips.some((c) => c.kind === 'codebase')) await resolveCodebaseChips(text);
   let prompt = textOverride ? text : buildPrompt(text || 'See the attached image.');
-  // Slash commands go to Claude Code exactly as typed, without added context.
-  if (slash) prompt = text;
+  // Slash commands go to the agent exactly as typed, without added context, unless it's one the
+  // agent doesn't know: then Switchdesk sends what the command says to do.
+  let asTyped = !!slash;
+  let compact = false;
+  if (slash && agentOf(chat) !== 'claude' && !(agentCommands.get(agentOf(chat)) || []).some((c) => c.name === slash[0].slice(1))) {
+    const name = slash[0].slice(1);
+    const args = text.slice(slash[0].length).trim();
+    const file = (await loadFileCommands()).find((c) => c.name === name) || (await loadFileCommands(true)).find((c) => c.name === name);
+    const body = file ? expandCommand(file.body, args) : SD_PROMPTS[name] ? SD_PROMPTS[name] + (args ? `\n\n${args}` : '') : null;
+    if (body) {
+      asTyped = false;
+      compact = !file && name === 'compact';
+      prompt = buildPrompt(body);
+    }
+  }
+  if (asTyped) prompt = text;
   else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
   const codeChips = state.chips.filter((c) => c.kind !== 'image');
   const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${chipLabel(c)}`).join('\n')}` : text);
@@ -1077,10 +1157,10 @@ async function send(textOverride, modeOverride, display) {
     renderChatTabs();
   }
   const content = [
-    ...(slash ? [] : images).map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
+    ...(asTyped ? [] : images).map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
     { type: 'text', text: prompt },
   ];
-  const item = { content, shown, mode, images, rwText: textOverride ? display || text : text };
+  const item = { content, shown, mode, images, compact, rwText: textOverride ? display || text : text };
   // While Claude is working, new messages wait their turn.
   if (chat.busy) {
     chat.queue.push(item);
@@ -1090,13 +1170,14 @@ async function send(textOverride, modeOverride, display) {
   return dispatch(chat, item);
 }
 
-async function dispatch(chat, { content, shown, mode, images, rwText }) {
+async function dispatch(chat, { content, shown, mode, images, rwText, compact }) {
   // A chat taken over from another agent sends that conversation with its first message.
   if (chat.handoff) {
     content = [...content, { type: 'text', text: '\n\n' + chat.handoff }];
     chat.handoff = null;
   }
   startTurn(chat, shown, mode, images, rwText);
+  chat.turn.compact = compact;
   const bubble = chat.turn.bubble;
   const resumeAt = chat.sessionId ? chat.resumeAt : null;
   chat.resumeAt = null;
@@ -1215,7 +1296,7 @@ desk.onApproval(handleApproval);
 // ------------------------------------------------------------------ chips (code context and images)
 
 function chipLabel(c) {
-  if (c.kind === 'context') return `${c.icon} ${c.label}`;
+  if (c.kind === 'context' || c.kind === 'codebase') return `${c.icon} ${c.label}`;
   return c.kind === 'element' ? `⌖ ${c.label}` : `${c.rel}:${c.start}-${c.end}`;
 }
 
@@ -1235,6 +1316,7 @@ function recordUsage(chat, ev) {
 // @changes, @terminal and @<web address> attach their content to the message as a chip.
 async function attachMention(it) {
   const add = (chip) => (state.chips.push(chip), renderChips(), chip);
+  if (it.id === 'codebase') return attachCodebase();
   if (it.id === 'changes') {
     const diff = await desk.git.diff().catch(() => '');
     if (!diff) return toast('There are no uncommitted changes to attach.');
@@ -1271,7 +1353,7 @@ function renderChips() {
     ...state.chips.map((c, i) =>
       c.kind === 'image'
         ? h('span', { class: 'chip image' }, h('img', { src: `data:${c.mediaType};base64,${c.data}` }), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
-        : h('span', { class: `chip${c.kind === 'element' || c.kind === 'context' ? ' element' : ''}${c.loading ? ' loading' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
+        : h('span', { class: `chip${c.kind === 'element' || c.kind === 'context' || c.kind === 'codebase' ? ' element' : ''}${c.loading ? ' loading' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
     )
   );
   updateSendButton();

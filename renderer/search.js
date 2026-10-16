@@ -3,7 +3,7 @@
 
 // ------------------------------------------------------------------ search across files (Ctrl+Shift+F)
 
-const searchOpts = { caseSensitive: false, wholeWord: false, regex: false };
+const searchOpts = { caseSensitive: false, wholeWord: false, regex: false, meaning: false };
 let searchTimer = null;
 let searchSeq = 0;
 const collapsedResults = new Set();
@@ -39,6 +39,7 @@ async function runSearch() {
     host.replaceChildren();
     return;
   }
+  if (searchOpts.meaning) return runMeaningSearch(query, summary, host, seq, () => searchSeq);
   summary.textContent = 'Searching…';
   const res = await desk.searchFiles(query, { ...searchOpts, include: $('#search-include').value.trim() });
   if (seq !== searchSeq || res.cancelled) return;
@@ -120,7 +121,7 @@ function wireSearch() {
     h(
       'div',
       { class: 'search-box' },
-      h('div', { class: 'search-row' }, query, toggle('caseSensitive', 'Aa', 'Match case'), toggle('wholeWord', 'ab', 'Match whole word'), toggle('regex', '.*', 'Use regular expression')),
+      h('div', { class: 'search-row' }, query, toggle('caseSensitive', 'Aa', 'Match case'), toggle('wholeWord', 'ab', 'Match whole word'), toggle('regex', '.*', 'Use regular expression'), toggle('meaning', '≈', 'Search by meaning: find code by what it does')),
       include,
       h('div', { id: 'search-summary', class: 'muted small' })
     ),

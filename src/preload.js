@@ -96,6 +96,16 @@ contextBridge.exposeInMainWorld('desk', {
   },
   fetchPage: call('web:fetch'),
   attach: { pick: call('attach:pick'), read: call('attach:read') },
+  commands: call('commands:list'),
+  codebase: {
+    status: call('codebase:status'),
+    download: call('codebase:download'),
+    scan: call('codebase:scan'),
+    pending: call('codebase:pending'),
+    put: call('codebase:put'),
+    search: call('codebase:search'),
+    onProgress: on('codebase-progress'),
+  },
   pathForFile: (file) => webUtils.getPathForFile(file),
   lsp: {
     status: call('lsp:status'),

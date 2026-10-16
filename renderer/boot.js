@@ -40,6 +40,7 @@ async function init() {
   createEditors();
   wireAutocomplete();
   wireIntel();
+  wireCodebase();
   wireDiff();
   wireReview();
   wirePreview();
