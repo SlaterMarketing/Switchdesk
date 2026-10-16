@@ -222,7 +222,10 @@ body.mac #titlebar { padding-left: 78px; }
 .card pre.cmd { font: 12px var(--mono); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 4px 0; white-space: pre-wrap; word-break: break-all; }
 .card.approval { border-color: var(--warn); }
 .card.plan { border-color: var(--plan); }
-.card.plan .plan-body { max-height: 420px; overflow: auto; }
+.card.plan .plan-summary { cursor: pointer; display: flex; flex-direction: column; gap: 4px; padding: 6px 0 10px; }
+.card.plan .plan-summary:hover .plan-title { text-decoration: underline; }
+.card.plan .plan-title { font-weight: 600; color: var(--text-strong); font-size: 14px; }
+.card.plan .plan-title .plan-icon { color: var(--plan); margin-right: 6px; }
 .card textarea, .card input[type='text'] { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 8px; font: 12px var(--sans); resize: vertical; outline: none; }
 .card textarea.plan-edit { font-family: var(--mono); min-height: 220px; }
 .card.resolved { opacity: 0.75; }

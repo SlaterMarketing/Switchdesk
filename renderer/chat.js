@@ -811,14 +811,34 @@ function planBuildEnded(chat, build, failed) {
   appendChat(h('div', { class: 'notice plan-wait' }, `${agentLabel(chat)} hasn't started building the plan yet. It's waiting on your answer above. Reply to carry on.`), chat);
 }
 
+// The plan's title, its first paragraph and how many to-dos it has, for the chat card.
+function planSummary(md) {
+  const title = (/^#{1,3}\s+(.+)$/m.exec(md) || [])[1] || 'Plan';
+  const para = md
+    .replace(/^---[\s\S]*?---\s*/, '')
+    .split(/\n\s*\n/)
+    .map((x) => x.trim())
+    .find((x) => x && !/^(#|[-*]\s|\d+[.)]\s|```|\|)/.test(x));
+  const todos = (md.match(/^\s*[-*]\s+\[[ xX]\]\s+/gm) || []).length;
+  const steps = (md.match(/^#{2,3}\s+/gm) || []).length;
+  const clean = (t) => t.replace(/[*_`]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim();
+  return [
+    h('div', { class: 'plan-title' }, h('span', { class: 'plan-icon' }, '◆'), clean(title)),
+    para ? h('div', { class: 'muted small plan-overview' }, clean(para).slice(0, 220) + (clean(para).length > 220 ? '…' : '')) : null,
+    h('div', { class: 'muted small' }, [todos ? `${todos} to-do${todos > 1 ? 's' : ''}` : '', steps ? `${steps} section${steps > 1 ? 's' : ''}` : '', 'open it to read or edit'].filter(Boolean).join(' · ')),
+  ].filter(Boolean);
+}
+
 function planCard(chat, input, allow, deny, turnArg) {
   const turn = turnArg || chat.turn;
   if (turn) turn.planShown = true;
   const plan = input.plan || '';
   // Leaving plan mode by approval (Gemini, Copilot) can't carry edits or feedback, so those follow as messages.
   const followUp = !turnArg && agentOf(chat) !== 'claude';
-  const body = h('div', { class: 'msg-text plan-body' });
-  renderMarkdown(body, plan);
+  // The plan itself is in its tab; the card is a short summary of it with the buttons.
+  const body = h('div', { class: 'plan-summary', title: 'Open the plan', onclick: () => doc.open() });
+  const summarise = (md) => body.replaceChildren(...planSummary(md));
+  summarise(plan);
   const card = h('div', { class: 'card plan' }, h('h4', {}, 'Plan ready for review'), body);
   let decided = false;
   const done = (text, status) => {
@@ -830,7 +850,7 @@ function planCard(chat, input, allow, deny, turnArg) {
   const build = () => {
     if (decided) return;
     const edited = doc.text();
-    if (edited !== plan) renderMarkdown(body, edited);
+    if (edited !== plan) summarise(edited);
     if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
     // Show the build in the chat it belongs to, so it's clear the click did something.
     if (chat.id !== activeChatId) switchChat(chat.id);
@@ -871,7 +891,7 @@ function planCard(chat, input, allow, deny, turnArg) {
       'div',
       { class: 'actions' },
       h('button', { class: 'btn small primary', onclick: build }, 'Build it'),
-      h('button', { class: 'btn small', title: 'Edit the plan in the editor', onclick: () => doc.open() }, 'Open in editor'),
+      h('button', { class: 'btn small', title: 'Open the plan to read or edit it', onclick: () => doc.open() }, 'Open plan'),
       h(
         'button',
         {
