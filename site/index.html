@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Switchdesk</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Switchdesk is a free, open-source desktop editor that runs Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek through their own CLIs, signed in with your own plans and keys.">
+<meta name="description" content="Switchdesk is a free, open-source desktop editor that runs Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek through their own CLIs, signed in with your own plans and keys.">
 <meta name="theme-color" content="#111216">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.png">
@@ -13,7 +13,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://switchdesk.dev/">
 <meta property="og:title" content="Switchdesk: one desk for every coding agent">
-<meta property="og:description" content="A free, open-source desktop editor for Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek. Your plans, your keys, their own CLIs.">
+<meta property="og:description" content="A free, open-source desktop editor for Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek. Your plans, your keys, their own CLIs.">
 <meta property="og:image" content="https://switchdesk.dev/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -363,12 +363,12 @@ footer .legal { max-width: 46em; }
         <div class="pills">
           <span class="pill"><b>Free</b> forever</span>
           <span class="pill"><b>MIT</b> licensed</span>
-          <span class="pill"><b>7</b> agents</span>
+          <span class="pill"><b>8</b> agents</span>
         </div>
         <h1>One desk.<span class="swap grad">Every coding agent.</span></h1>
       </div>
       <div>
-        <p class="lede">Switchdesk is a Cursor-style editor for the agents you already pay for. It runs <strong>Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek</strong> through each maker's own CLI, signed in with your own plan or key. Switch agents in the middle of a task and keep going.</p>
+        <p class="lede">Switchdesk is a Cursor-style editor for the agents you already pay for. It runs <strong>Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek</strong> through each maker's own CLI, signed in with your own plan or key. Switch agents in the middle of a task and keep going.</p>
         <div class="cta">
           <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.1H3V5.1Zm0 13.8 7.4 1.1v-7H3v5.9Zm8.3 1.2L21 21.5v-8.4h-9.7v7Zm0-16.2v7.2H21V2.5l-9.7 1.4Z"/></svg>
@@ -387,11 +387,12 @@ footer .legal { max-width: 46em; }
       <span class="label">Switch agent</span>
       <button class="agent-chip" type="button" data-agent="0" aria-pressed="true">Claude Code</button>
       <button class="agent-chip" type="button" data-agent="1" aria-pressed="false">Codex</button>
-      <button class="agent-chip" type="button" data-agent="2" aria-pressed="false">Cursor</button>
-      <button class="agent-chip" type="button" data-agent="3" aria-pressed="false">Kimi</button>
-      <button class="agent-chip" type="button" data-agent="4" aria-pressed="false">Gemini</button>
-      <button class="agent-chip" type="button" data-agent="5" aria-pressed="false">Qwen</button>
-      <button class="agent-chip" type="button" data-agent="6" aria-pressed="false">DeepSeek</button>
+      <button class="agent-chip" type="button" data-agent="2" aria-pressed="false">Copilot</button>
+      <button class="agent-chip" type="button" data-agent="3" aria-pressed="false">Cursor</button>
+      <button class="agent-chip" type="button" data-agent="4" aria-pressed="false">Kimi</button>
+      <button class="agent-chip" type="button" data-agent="5" aria-pressed="false">Gemini</button>
+      <button class="agent-chip" type="button" data-agent="6" aria-pressed="false">Qwen</button>
+      <button class="agent-chip" type="button" data-agent="7" aria-pressed="false">DeepSeek</button>
     </div>
 
     <div class="window" aria-label="Switchdesk app window, illustrated">
@@ -455,6 +456,7 @@ footer .legal { max-width: 46em; }
           <tbody>
             <tr><td>Claude Code</td><td><span class="tag plan">plan</span>&nbsp; Your Claude plan, with several accounts side by side</td><td><code>claude -p --input-format stream-json</code></td></tr>
             <tr><td>Codex</td><td><span class="tag plan">plan</span>&nbsp; Your ChatGPT plan, or an OpenAI API key</td><td><code>codex app-server</code></td></tr>
+            <tr><td>GitHub Copilot</td><td><span class="tag plan">plan</span>&nbsp; Your GitHub Copilot plan, through <code>copilot login</code></td><td><code>copilot --acp</code></td></tr>
             <tr><td>Cursor</td><td><span class="tag plan">plan</span>&nbsp; Your Cursor plan, through <code>agent login</code></td><td><code>agent acp</code></td></tr>
             <tr><td>Kimi</td><td><span class="tag plan">plan</span>&nbsp; Your Kimi Code membership</td><td><code>kimi acp</code></td></tr>
             <tr><td>Gemini</td><td><span class="tag key">key</span>&nbsp; Your Gemini API key</td><td><code>gemini --acp</code></td></tr>
@@ -500,29 +502,47 @@ footer .legal { max-width: 46em; }
           </div>
         </div>
         <div class="group">
-          <div><h3>Run more at once</h3><p>Several agents, several projects, several accounts.</p></div>
+          <div><h3>Mix agents freely</h3><p>Use the best agent for each step without starting over.</p></div>
           <div class="feats">
-            <div class="feat"><h4>Parallel agents</h4><p>A chat that works in its own git worktree. Run several, then <b>Merge into my folder</b> for inline review, or discard.</p></div>
-            <div class="feat"><h4>Several windows</h4><p>Each window has its own project, chats, agents and terminals. Quitting remembers them all.</p></div>
-            <div class="feat"><h4>Multi-folder workspaces</h4><p>Add a shared library or the backend to the window. Every agent can read and change all of them.</p></div>
+            <div class="feat"><h4>Hand a chat to another agent</h4><p>Switch agents mid-chat and the new one gets the conversation so far, so it carries on where the last one left off.</p></div>
+            <div class="feat"><h4>One set of rules</h4><p>Keep your project rules in one <code>AGENTS.md</code>. Switchdesk points <code>CLAUDE.md</code> at it and hands it to agents that don't read it themselves.</p></div>
+            <div class="feat"><h4>History from every agent</h4><p>Past chats from Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek, each tagged with its agent, including ones started in your terminal.</p></div>
             <div class="feat"><h4>Several Claude accounts</h4><p>Stay signed in to personal and work accounts at once, and tie each folder to the right one.</p></div>
           </div>
         </div>
         <div class="group">
-          <div><h3>Talk to it naturally</h3><p>A chat panel that keeps up with how you actually work.</p></div>
+          <div><h3>Run more at once</h3><p>Several agents, several projects, one window each.</p></div>
           <div class="feats">
+            <div class="feat"><h4>Parallel agents</h4><p>A chat that works in its own git worktree. Run several, then <b>Merge into my folder</b> for inline review, or discard.</p></div>
+            <div class="feat"><h4>Several windows</h4><p>Each window has its own project, chats, agents and terminals. Quitting remembers them all.</p></div>
+            <div class="feat"><h4>Multi-folder workspaces</h4><p>Add a shared library or the backend to the window. Every agent can read and change all of them.</p></div>
             <div class="feat"><h4>Queue and steer</h4><p>Type while it works and the message waits its turn. Press Enter again to interrupt and steer mid-task.</p></div>
-            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, <kbd>Ctrl</kbd> <kbd>L</kbd> to add a selection, <kbd>Ctrl</kbd> <kbd>K</kbd> to edit it in place, or paste a screenshot.</p></div>
-            <div class="feat"><h4>Chat tabs and history</h4><p>Conversations side by side, and every past Claude Code chat for the folder, including ones from your terminal.</p></div>
+          </div>
+        </div>
+        <div class="group">
+          <div><h3>Quick to drive</h3><p>Everything is a keystroke away.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Command palette</h4><p><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds every command, settings page, agent, account and recent folder as you type.</p></div>
+            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, folder, web page, your uncommitted changes or terminal output. <kbd>Ctrl</kbd> <kbd>L</kbd> adds a selection and <kbd>Ctrl</kbd> <kbd>K</kbd> edits it in place.</p></div>
+            <div class="feat"><h4>Chat tabs</h4><p>Run several conversations side by side, each with its own agent. A spinner shows which ones are working.</p></div>
             <div class="feat"><h4>Slash commands</h4><p>Type <kbd>/</kbd> for Claude Code's commands, including your own commands and skills.</p></div>
+          </div>
+        </div>
+        <div class="group">
+          <div><h3>A real code editor</h3><p>For the moments you'd rather type the code yourself.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Tab autocomplete</h4><p>Grey suggestions as you type, accepted with Tab. It runs GitHub's Copilot language server (Copilot Free works) or your DeepSeek or Qwen key.</p></div>
+            <div class="feat"><h4>Code intelligence</h4><p>Go to definition, hover, completions and find references for TypeScript, JavaScript, Python, Go, Rust and C/C++, from the same language servers other editors use.</p></div>
+            <div class="feat"><h4>Errors as you type</h4><p>Problems are underlined in the editor and counted in the status bar. <kbd>F8</kbd> jumps to the next one.</p></div>
+            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
           </div>
         </div>
         <div class="group">
           <div><h3>The rest of the desk</h3><p>The tools you'd otherwise keep in other windows.</p></div>
           <div class="feats">
-            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
             <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
             <div class="feat"><h4>Live preview</h4><p>Your site in a tab beside the code. Pick an element on the page and attach it, with a screenshot, to the chat.</p></div>
+            <div class="feat"><h4>Usage at a glance</h4><p>Tokens and turns for each agent and account by day, week and month, plus each plan's limits and when they reset.</p></div>
             <div class="feat"><h4>Updates itself</h4><p>New versions download in the background and install with one click, or the next time you quit.</p></div>
           </div>
         </div>
@@ -550,7 +570,7 @@ footer .legal { max-width: 46em; }
         <div>
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
           <h3>No account, no telemetry server</h3>
-          <p>There's nothing to sign up for. The app talks to the agents you pick and to GitHub for updates.</p>
+          <p>There's nothing to sign up for. The app talks only to the agents and services you choose, and to GitHub for updates.</p>
         </div>
       </div>
     </div>
@@ -587,11 +607,11 @@ footer .legal { max-width: 46em; }
           <details open><summary>Does it cost anything?</summary><p>No. Switchdesk is free and MIT licensed. You use the plans and API keys you already have with each agent's maker, and they bill you as they normally would.</p></details>
           <details><summary>Which systems does it run on?</summary><p>There's a ready-made installer for Windows 10 and 11. On macOS and Linux, run it from source or build an installer with <code>npm run dist:mac</code> or <code>npm run dist:linux</code>.</p></details>
           <details><summary>Windows says it protected my PC. Is that normal?</summary><p>Yes. The installer isn't code-signed yet, because that needs a paid certificate. Click <b>More info</b>, then <b>Run anyway</b>. Updates after that install without the warning.</p></details>
-          <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box and the conversation carries on.</p></details>
+          <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box. The new agent gets the conversation so far and carries on where the last one left off, and your files stay as they were.</p></details>
         </div>
         <div>
-          <details><summary>Is it affiliated with Anthropic, OpenAI or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
-          <details><summary>Does it have Tab autocomplete?</summary><p>Not yet. Switchdesk is built around agent chats, and the agents' CLIs don't offer inline completions.</p></details>
+          <details><summary>Is it affiliated with Anthropic, OpenAI, GitHub or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
+          <details><summary>Does it have Tab autocomplete?</summary><p>Yes. It runs GitHub's own Copilot language server signed in with your GitHub account, and Copilot Free works. You can use your DeepSeek or Qwen API key instead. Pick the engine in Settings → Autocomplete.</p></details>
           <details><summary>Was this called Claude Desk?</summary><p>Yes. It was renamed Switchdesk in version 0.8, when it grew beyond Claude Code. Existing installs update on their own.</p></details>
           <details><summary>Can I share it with my team on my plan?</summary><p>Each person should sign in with their own plan or API key. That's how the agents' terms expect them to be used, and it's how Switchdesk is designed.</p></details>
         </div>
@@ -614,7 +634,7 @@ footer .legal { max-width: 46em; }
   <div class="wrap">
     <div class="legal">
       <a class="brand" href="#top" style="margin-bottom:12px"><img src="icon.svg" alt="">Switchdesk</a>
-      <p>Free and open source under the MIT licence. Claude, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+      <p>Free and open source under the MIT licence. Claude, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
     </div>
     <nav aria-label="Footer">
       <a href="https://github.com/SlaterMarketing/switchdesk">GitHub</a>
@@ -633,6 +653,8 @@ footer .legal { max-width: 46em; }
       reply: "Old timestamps now drop out of the window on every request, and <code>RATE_LIMIT</code> sets the limit (default 100). Tests pass." },
     { name: "Codex", via: "your ChatGPT plan", cli: "codex app-server",
       reply: "Picked up where the last agent left off. I added a test for the expiry case in <code>test/rateLimit.test.ts</code>; all 14 tests pass." },
+    { name: "Copilot", via: "your GitHub Copilot plan", cli: "copilot --acp",
+      reply: "Read the project rules in <code>AGENTS.md</code> and renamed <code>allow</code> to <code>allowRequest</code> to match them. Callers in <code>routes.ts</code> are updated." },
     { name: "Cursor", via: "your Cursor plan", cli: "agent acp",
       reply: "Reviewed the change. One gap: <code>hits</code> never deletes idle IPs. I added a cleanup when a list empties." },
     { name: "Kimi", via: "your Kimi Code membership", cli: "kimi acp",
