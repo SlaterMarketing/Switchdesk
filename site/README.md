@@ -4,7 +4,7 @@ The Switchdesk website. One static page with no build step: `index.html` holds t
 
 Preview it by opening `index.html` in a browser. Pushing a change under `site/` to `main` publishes it through `.github/workflows/pages.yml`.
 
-The download button links to the latest GitHub release. On Windows the page asks the GitHub API for the release and points the button straight at the `.exe`.
+The download buttons link to the latest GitHub release. The page asks the GitHub API for that release and points each button at the installer for the visitor's system (`.exe`, Apple Silicon or Intel `.dmg`, or `.AppImage`).
 
 ## Hosting on GitHub Pages (one-time setup)
 

@@ -113,6 +113,8 @@ p { margin: 0; }
 .lede strong { color: var(--fg); font-weight: 500; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
 .cta-note { margin-top: 12px; font-size: 13px; color: var(--faint); font-family: var(--mono); }
+.cta-note a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
+.cta-note a:hover { color: var(--fg); border-color: var(--muted); }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .pill {
   font: 500 12px/1 var(--mono); padding: 7px 10px; border-radius: 99px;
@@ -371,15 +373,15 @@ footer .legal { max-width: 46em; }
         <p class="lede">Switchdesk is a Cursor-style editor for the agents you already pay for. It runs <strong>Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek</strong> through each maker's own CLI, signed in with your own plan or key. Switch agents in the middle of a task and keep going.</p>
         <div class="cta">
           <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.1H3V5.1Zm0 13.8 7.4 1.1v-7H3v5.9Zm8.3 1.2L21 21.5v-8.4h-9.7v7Zm0-16.2v7.2H21V2.5l-9.7 1.4Z"/></svg>
-            <span id="dl-label">Download for Windows</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+            <span class="dl-label">Download Switchdesk</span>
           </a>
           <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
             Star on GitHub
           </a>
         </div>
-        <p class="cta-note" id="dl-note">Windows 10 and 11 · macOS and Linux from source</p>
+        <p class="cta-note"><span id="dl-version">Free</span> · <a class="plat" data-plat="win" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Windows</a> · <a class="plat" data-plat="mac-arm64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Apple Silicon)</a> · <a class="plat" data-plat="mac-x64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Intel)</a> · <a class="plat" data-plat="linux" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Linux</a></p>
       </div>
     </div>
 
@@ -476,9 +478,9 @@ footer .legal { max-width: 46em; }
         <h2>Decide how much it can touch.</h2>
       </div>
       <div class="modes">
-        <div class="mode"><h3>Ask <small>READ ONLY</small></h3><p>Answers questions about your code and never edits a file. Anything that would change something is refused automatically.</p></div>
-        <div class="mode"><h3>Plan <small>THINK FIRST</small></h3><p>Researches, then opens the plan as a Markdown document in its own tab. Edit it, then choose <b>Build it</b> or <b>Keep planning</b>.</p></div>
-        <div class="mode"><h3>Agent <small>HANDS ON</small></h3><p>Edits files without asking. Before a shell command runs, you get an Allow, Always allow or Deny card.</p></div>
+        <div class="mode"><h3>Ask <small>READ ONLY</small></h3><p>Answers questions about your code and never edits a file. Commands that only look, like <code>ls</code> or <code>git log</code>, run without asking.</p></div>
+        <div class="mode"><h3>Plan <small>THINK FIRST</small></h3><p>Researches, then opens the plan as a document in its own tab, with every agent. Edit it, then choose <b>Build it</b> or <b>Keep planning</b>.</p></div>
+        <div class="mode"><h3>Agent <small>HANDS ON</small></h3><p>Edits files without asking. Commands run by your rules, and anything else gets an Allow, Always allow or Deny card.</p></div>
         <div class="mode"><h3>Auto <small>CLAUDE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
       </div>
       <p class="modes-note">Cycle modes with <kbd>Ctrl</kbd> <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>Tab</kbd> in the chat box.</p>
@@ -497,8 +499,8 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Changes card after each turn</h4><p>Every file the turn changed, including ones changed by shell commands, with +/− counts, a diff and Undo per file.</p></div>
             <div class="feat"><h4>Inline review</h4><p>Edits appear in the editor in green and red, each with its own Keep and Undo, plus a side-by-side Compare.</p></div>
-            <div class="feat"><h4>Rewind</h4><p>Go back to just before any message you sent, edit it and resend. Your files can go back too.</p></div>
-            <div class="feat"><h4>Git panel</h4><p>Diffs, discard, branches, push and pull, and a ✨ button that writes the commit message for you.</p></div>
+            <div class="feat"><h4>Rewind, with any agent</h4><p>Go back to just before any message you sent, edit it and resend. Your files can go back too.</p></div>
+            <div class="feat"><h4>A full Git panel</h4><p>Commit with a ✨ written message, resolve merge conflicts, see blame and history, and draft pull request descriptions.</p></div>
           </div>
         </div>
         <div class="group">
@@ -506,6 +508,8 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Hand a chat to another agent</h4><p>Switch agents mid-chat and the new one gets the conversation so far, so it carries on where the last one left off.</p></div>
             <div class="feat"><h4>One set of rules</h4><p>Keep your project rules in one <code>AGENTS.md</code>. Switchdesk points <code>CLAUDE.md</code> at it and hands it to agents that don't read it themselves.</p></div>
+            <div class="feat"><h4>One set of permissions</h4><p>Allowed and blocked commands, and Always allow, apply to all eight agents, so you never approve the same thing twice.</p></div>
+            <div class="feat"><h4>Commands that travel</h4><p>A slash command you wrote for Claude, Codex, Cursor or Copilot works with every agent, plus <code>/init</code>, <code>/review</code> and <code>/compact</code>.</p></div>
             <div class="feat"><h4>History from every agent</h4><p>Past chats from Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek, each tagged with its agent, including ones started in your terminal.</p></div>
             <div class="feat"><h4>Several Claude accounts</h4><p>Stay signed in to personal and work accounts at once, and tie each folder to the right one.</p></div>
           </div>
@@ -520,21 +524,23 @@ footer .legal { max-width: 46em; }
           </div>
         </div>
         <div class="group">
-          <div><h3>Quick to drive</h3><p>Everything is a keystroke away.</p></div>
+          <div><h3>Give it the right context</h3><p>Point the agent at exactly what matters.</p></div>
           <div class="feats">
+            <div class="feat"><h4>@codebase</h4><p>Finds the parts of the project your message is about and attaches them. The search model runs on your computer.</p></div>
+            <div class="feat"><h4>@ anything else</h4><p>A file, folder, web page, your uncommitted changes or terminal output. <kbd>Ctrl</kbd> <kbd>L</kbd> adds the selection.</p></div>
+            <div class="feat"><h4>Attach documents</h4><p>Word, PDF, Excel and PowerPoint files go to the agent as text, with headings, tables, sheets and slides kept.</p></div>
             <div class="feat"><h4>Command palette</h4><p><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds every command, settings page, agent, account and recent folder as you type.</p></div>
-            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, folder, web page, your uncommitted changes or terminal output. <kbd>Ctrl</kbd> <kbd>L</kbd> adds a selection and <kbd>Ctrl</kbd> <kbd>K</kbd> edits it in place.</p></div>
-            <div class="feat"><h4>Chat tabs</h4><p>Run several conversations side by side, each with its own agent. A spinner shows which ones are working.</p></div>
-            <div class="feat"><h4>Slash commands</h4><p>Type <kbd>/</kbd> for Claude Code's commands, including your own commands and skills.</p></div>
           </div>
         </div>
         <div class="group">
-          <div><h3>A real code editor</h3><p>For the moments you'd rather type the code yourself.</p></div>
+          <div><h3>A real code editor</h3><p>For the moments you'd rather write the code yourself.</p></div>
           <div class="feats">
             <div class="feat"><h4>Tab autocomplete</h4><p>Grey suggestions as you type, accepted with Tab. It runs GitHub's Copilot language server (Copilot Free works) or your DeepSeek or Qwen key.</p></div>
-            <div class="feat"><h4>Code intelligence</h4><p>Go to definition, hover, completions and find references for TypeScript, JavaScript, Python, Go, Rust and C/C++, from the same language servers other editors use.</p></div>
-            <div class="feat"><h4>Errors as you type</h4><p>Problems are underlined in the editor and counted in the status bar. <kbd>F8</kbd> jumps to the next one.</p></div>
-            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
+            <div class="feat"><h4>Code intelligence</h4><p>Go to definition, hover, completions, find references and errors as you type for TypeScript, JavaScript, Python, Go, Rust and C/C++.</p></div>
+            <div class="feat"><h4>Run and debug</h4><p>Breakpoints, the call stack, variables, watches and a console for Node and Python. <b>✨ Ask the agent</b> hands it the stop.</p></div>
+            <div class="feat"><h4>Split and compare</h4><p>Two files side by side with <kbd>Ctrl</kbd> <kbd>\</kbd>, and a diff of any two files, or a file and your clipboard.</p></div>
+            <div class="feat"><h4>Search by meaning</h4><p>Search for "where do we retry failed payments" and find the code that does it, whatever it's called.</p></div>
+            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, regex search in files, and light or dark themes.</p></div>
           </div>
         </div>
         <div class="group">
@@ -543,7 +549,7 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
             <div class="feat"><h4>Live preview</h4><p>Your site in a tab beside the code. Pick an element on the page and attach it, with a screenshot, to the chat.</p></div>
             <div class="feat"><h4>Usage at a glance</h4><p>Tokens and turns for each agent and account by day, week and month, plus each plan's limits and when they reset.</p></div>
-            <div class="feat"><h4>Updates itself</h4><p>New versions download in the background and install with one click, or the next time you quit.</p></div>
+            <div class="feat"><h4>Updates itself</h4><p>On Windows and Linux, new versions download in the background and install with one click. On a Mac, the status bar tells you when one is out.</p></div>
           </div>
         </div>
       </div>
@@ -605,8 +611,8 @@ footer .legal { max-width: 46em; }
       <div class="faq">
         <div>
           <details open><summary>Does it cost anything?</summary><p>No. Switchdesk is free and MIT licensed. You use the plans and API keys you already have with each agent's maker, and they bill you as they normally would.</p></details>
-          <details><summary>Which systems does it run on?</summary><p>There's a ready-made installer for Windows 10 and 11. On macOS and Linux, run it from source or build an installer with <code>npm run dist:mac</code> or <code>npm run dist:linux</code>.</p></details>
-          <details><summary>Windows says it protected my PC. Is that normal?</summary><p>Yes. The installer isn't code-signed yet, because that needs a paid certificate. Click <b>More info</b>, then <b>Run anyway</b>. Updates after that install without the warning.</p></details>
+          <details><summary>Which systems does it run on?</summary><p>Windows 10 and 11, macOS on Apple Silicon or Intel, and Linux as an AppImage. Every release has all of them, or you can run it from source anywhere Node runs.</p></details>
+          <details><summary>My computer warns me about the installer. Is that normal?</summary><p>Yes. The installers aren't code-signed yet, because that needs paid certificates. On Windows, click <b>More info</b>, then <b>Run anyway</b>. On a Mac, right-click the app and choose <b>Open</b>, or use <b>Open Anyway</b> in System Settings → Privacy &amp; Security.</p></details>
           <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box. The new agent gets the conversation so far and carries on where the last one left off, and your files stay as they were.</p></details>
         </div>
         <div>
@@ -622,9 +628,9 @@ footer .legal { max-width: 46em; }
   <div class="final wrap">
     <img src="icon.svg" alt="">
     <h2>Pick an agent.<br><span class="grad">Switch any time.</span></h2>
-    <p>Download Switchdesk for Windows, or run it from source anywhere Node runs.</p>
+    <p>Download Switchdesk for Windows, Mac or Linux, or run it from source anywhere Node runs.</p>
     <div class="cta">
-      <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download for Windows</a>
+      <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="dl-label">Download Switchdesk</span></a>
       <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">View on GitHub</a>
     </div>
   </div>
@@ -707,15 +713,33 @@ footer .legal { max-width: 46em; }
     var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
   }
 
-  // Point the download buttons at the latest installer, and show the star count.
-  var isWin = /Windows/i.test(navigator.userAgent);
-  fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(function (r) {
+  // Point the download buttons at the installer for this computer, and show the version.
+  var ua = navigator.userAgent;
+  var os = /Windows/i.test(ua) ? "win" : /Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "mac" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "linux" : null;
+  var names = { win: "Windows", mac: "Mac", linux: "Linux" };
+  if (os) document.querySelectorAll(".dl-label").forEach(function (l) { l.textContent = "Download for " + names[os]; });
+  var patterns = { win: /Setup-.*\.exe$/i, "mac-arm64": /mac-arm64\.dmg$/i, "mac-x64": /mac-x64\.dmg$/i, linux: /\.AppImage$/i };
+  // Most Macs are Apple Silicon; Chromium browsers can tell us when it's an Intel one.
+  var macArch = Promise.resolve("arm64");
+  if (os === "mac" && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+    macArch = navigator.userAgentData.getHighEntropyValues(["architecture"]).then(function (v) {
+      return v.architecture === "x86" ? "x64" : "arm64";
+    }, function () { return "arm64"; });
+  }
+  Promise.all([fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(function (r) {
     return r.ok ? r.json() : null;
-  }).then(function (rel) {
+  }), macArch]).then(function (res) {
+    var rel = res[0];
     if (!rel) return;
-    var exe = (rel.assets || []).filter(function (a) { return /\.exe$/i.test(a.name); })[0];
-    if (exe && isWin) document.querySelectorAll(".dl-link").forEach(function (a) { a.href = exe.browser_download_url; });
-    document.getElementById("dl-note").textContent = rel.tag_name + " · Windows 10 and 11 · macOS and Linux from source";
+    var urls = {};
+    Object.keys(patterns).forEach(function (k) {
+      var a = (rel.assets || []).filter(function (x) { return patterns[k].test(x.name); })[0];
+      if (a) urls[k] = a.browser_download_url;
+    });
+    document.querySelectorAll(".plat").forEach(function (a) { if (urls[a.dataset.plat]) a.href = urls[a.dataset.plat]; });
+    var mine = os === "mac" ? urls["mac-" + res[1]] : urls[os];
+    if (mine) document.querySelectorAll(".dl-link").forEach(function (a) { a.href = mine; });
+    document.getElementById("dl-version").textContent = rel.tag_name;
   }).catch(function () {});
   fetch("https://api.github.com/repos/" + REPO).then(function (r) { return r.ok ? r.json() : null; }).then(function (repo) {
     if (repo && repo.stargazers_count > 0) {
