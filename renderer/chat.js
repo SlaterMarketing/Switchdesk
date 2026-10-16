@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc, renderCompareBar,
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc, renderCompareBar, opinionDone, secondOpinion,
    acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker, agentState, agentStatus, agentInfo, reopenAgentChat */
 'use strict';
 
@@ -586,6 +586,7 @@ function handleEvent(chat, ev) {
       }
       if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
       if (turn && turn.mode === 'debug' && !turn.interrupted && !ev.is_error) debugModeCard(chat, turn);
+      if (turn && chat.opinion && !turn.interrupted && !ev.is_error) opinionDone(chat, turn);
       if (turn && turn.planBuild && !turn.interrupted) planBuildEnded(chat, turn.planBuild, ev.is_error);
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
@@ -1039,6 +1040,7 @@ function changesCard(chat, turnId, changes) {
     h('span', { class: 'spacer' }),
     h('button', { class: 'ghost-btn', title: 'Put every file back how it was', onclick: stop(() => undo(changes)) }, 'Undo'),
     changes[0] && changes[0].worktree ? null : h('button', { class: 'ghost-btn', title: 'Accept these changes', onclick: stop(keep) }, 'Keep'),
+    h('button', { class: 'ghost-btn', title: 'Have another agent review these files', onclick: stop(() => secondOpinion(changes.filter((c) => !c.undone && !c.binary).map((c) => c.rel))) }, '2nd opinion'),
     reviewable ? h('button', { class: 'ghost-btn strong', title: 'Step through the changes', onclick: stop(() => reviewChange(changes.find((c) => reviews.has(c.rel)) || reviewable)) }, 'Review') : null
   );
   const card = h('div', { class: 'card changes' }, head, body);

@@ -705,3 +705,12 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .compare-pill .dot { font-size: 10px; color: var(--accent); }
 .compare-pick textarea { width: 100%; box-sizing: border-box; }
 .compare-agents { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
+.card.findings { display: flex; flex-direction: column; gap: 6px; }
+.card.findings h4 { margin: 0; }
+.finding { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.finding .sev { flex: none; width: 14px; text-align: center; font-size: 11px; line-height: 20px; }
+.finding.error .sev { color: var(--danger, #f85149); }
+.finding.warning .sev { color: var(--warn); }
+.finding.info .sev { color: var(--text-dim); }
+.finding .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.finding .where { font-family: var(--mono, monospace); font-size: 11px; color: var(--accent); }

@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode */
+/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion */
 'use strict';
 
 // ------------------------------------------------------------------ source control panel
@@ -171,7 +171,7 @@ function renderGit() {
 
   panel.replaceChildren(
     ...[
-    h('div', { class: 'git-head' }, repoSel, h('span', { class: 'muted small' }, '⎇'), branchSel, h('span', { class: 'spacer' }), prBtn, ...syncBtns, h('button', { class: 'icon-btn', title: 'Refresh', onclick: refreshGit }, '⟳')),
+    h('div', { class: 'git-head' }, repoSel, h('span', { class: 'muted small' }, '⎇'), branchSel, h('span', { class: 'spacer' }), h('button', { class: 'icon-btn', title: 'Second opinion: have another agent review your uncommitted changes', onclick: () => secondOpinion() }, '👁'), prBtn, ...syncBtns, h('button', { class: 'icon-btn', title: 'Refresh', onclick: refreshGit }, '⟳')),
     git.busy && !['suggest', 'commit'].includes(git.busy) ? h('div', { class: 'muted small', style: 'padding:0 10px 6px' }, git.busy === 'pr' ? 'Writing the pull request…' : `Running git ${git.busy}…`) : null,
     opBar,
     op ? null : h('div', { class: 'git-commit' }, msg, h('div', { class: 'row' }, suggest, h('span', { class: 'spacer' }), commitBtn)),
