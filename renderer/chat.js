@@ -464,8 +464,10 @@ function startTurn(chat, shown, mode, images, rwText) {
     autoEdits: mode === 'agent' || mode === 'auto' || mode === 'debug',
     debugCleanup: mode === 'debug' && !!chat.cleanupNext,
     started: Date.now(),
+    planBuild: chat.planBuildNext || null,
   };
   chat.cleanupNext = false;
+  chat.planBuildNext = null;
   chat.busy = true;
   renderChatTabs();
   if (chat.id === activeChatId) setRunning(true), renderQueue();
@@ -583,6 +585,7 @@ function handleEvent(chat, ev) {
       }
       if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
       if (turn && turn.mode === 'debug' && !turn.interrupted && !ev.is_error) debugModeCard(chat, turn);
+      if (turn && turn.planBuild && !turn.interrupted) planBuildEnded(chat, turn.planBuild, ev.is_error);
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
       if (!document.hasFocus()) {
@@ -650,6 +653,7 @@ function handleAssistant(chat, turn, msg) {
   for (const b of msg.content || []) {
     if (b.type === 'tool_use') {
       turn.replyTexts = [];
+      if (turn.planBuild && b.name !== 'ExitPlanMode' && (EDIT_TOOLS.has(b.name) || /^(Bash|PowerShell|shell|execute|edit|write)/i.test(b.name))) turn.planBuild.started = true;
       if (HIDDEN_TOOLS.has(b.name)) continue;
       let row = turn.tools.get(b.id);
       if (!row) {
@@ -792,7 +796,16 @@ function offerPlan(chat, turn) {
   if (!doc && (reply.length < 200 || !/^\s*(#{1,4}\s|\d+[.)]\s|[-*]\s)/m.test(reply))) return;
   const plan = doc ? doc.text : reply;
   const where = doc && doc.path ? ` (it's also saved at ${doc.path})` : '';
-  planCard(chat, { plan }, (input) => send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat), (message) => send(message, 'plan', 'Keep planning', chat), turn);
+  planCard(chat, { plan }, (input, job) => ((chat.planBuildNext = job), send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat)), (message) => send(message, 'plan', 'Keep planning', chat), turn);
+}
+
+// A turn that was meant to build a plan ended. If the agent stopped before changing anything
+// (usually to ask something), say so where you're looking, so it doesn't look like Build did nothing.
+function planBuildEnded(chat, build, failed) {
+  if (build.started) return build.say('Built. The changes are in the chat.');
+  if (failed) return build.say('Approved, but the build stopped with an error. See the chat.');
+  build.say(`Approved, but ${agentLabel(chat)} stopped to ask you something before building. Answer it in the chat.`);
+  appendChat(h('div', { class: 'notice plan-wait' }, `${agentLabel(chat)} hasn't started building the plan yet. It's waiting on your answer above. Reply to carry on.`), chat);
 }
 
 function planCard(chat, input, allow, deny, turnArg) {
@@ -816,8 +829,23 @@ function planCard(chat, input, allow, deny, turnArg) {
     const edited = doc.text();
     if (edited !== plan) renderMarkdown(body, edited);
     if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
-    allow({ ...input, plan: edited });
-    if (followUp && edited !== plan) send(`I edited the plan before approving it. Follow this version:\n\n${edited}`, 'agent', 'Use my edits to the plan', chat);
+    // Show the build in the chat it belongs to, so it's clear the click did something.
+    if (chat.id !== activeChatId) switchChat(chat.id);
+    const job = { started: false, say: (text) => (doc.resolve(text), $('.resolution', card) && ($('.resolution', card).textContent = text)) };
+    // The agent's turn ended before you chose (it was stopped, or the request was dropped), so
+    // there's nobody waiting for the approval: ask for the build as a new message instead.
+    const stale = !turnArg && turn && chat.turn !== turn;
+    if (stale) {
+      chat.planBuildNext = job;
+      send(`Build this plan now. Follow it step by step${edited !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${edited}`, 'agent', 'Build the plan', chat);
+    } else {
+      if (!turnArg && turn) {
+        turn.planBuild = job;
+        appendChat(h('div', { class: 'notice plan-go' }, `◆ Plan approved. ${agentLabel(chat)} is building it.`), chat);
+      }
+      allow({ ...input, plan: edited }, job);
+      if (followUp && edited !== plan) send(`I edited the plan before approving it. Follow this version:\n\n${edited}`, 'agent', 'Use my edits to the plan', chat);
+    }
     desk.chatSetMode(chat.id, 'agent');
     setMode('agent');
     done(edited !== plan ? 'Approved with your edits. Building it now.' : 'Approved. Building it now.');

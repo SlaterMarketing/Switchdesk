@@ -692,3 +692,5 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .limit-meter.high .limit-fill { background: var(--warn); }
 .limit-meter.full .limit-fill { background: var(--err); }
 .limit-meter.full .limit-pct { color: var(--err); }
+.notice.plan-go { color: var(--accent); font-weight: 500; }
+.notice.plan-wait { color: var(--warn, #d6a243); font-size: 12px; padding: 6px 10px; border: 1px solid currentColor; border-radius: 6px; text-align: left; }
