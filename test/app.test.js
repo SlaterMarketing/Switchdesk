@@ -58,7 +58,12 @@ appTest('replaces across files and undoes', async ({ w, dir }) => {
 });
 
 appTest('Claude carries on after its background subagents, and a subagent opens to show its work', async ({ w, p }) => {
-  await w.evaluate((bin) => desk.setSettings({ claudePath: bin }).then((s) => (state.settings = s)), path.join(__dirname, 'fake-claude', 'claude'));
+  // The stand-in Claude Code, found fresh (the app looked for Claude when it started).
+  await w.evaluate(async (bin) => {
+    state.settings = await desk.setSettings({ claudePath: bin });
+    await agentStatus('claude', true);
+    await checkCli();
+  }, path.join(__dirname, 'fake-claude', 'claude'));
   await chatWith(w, 'claude', 'plan');
   await sendMessage(w, 'plan the empty cart fix');
   // Claude's first turn ends while its subagent runs in the background.
