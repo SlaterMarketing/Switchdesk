@@ -545,3 +545,9 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .agent-key { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
 .agent-key input { flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; outline: none; }
 .agent-key details { display: grid; gap: 6px; }
+
+.set-box.warn-box { border-color: var(--accent); }
+.history-row .agent-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 0 5px; margin-right: 6px; border-radius: 4px; background: var(--bg-hover); color: var(--text); }
+.palette-item { display: flex; align-items: center; gap: 8px; }
+.palette-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item kbd { font-size: 11px; color: var(--text-dim); }

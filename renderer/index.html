@@ -82,11 +82,12 @@
             <div id="welcome">
               <div class="welcome-inner">
                 <h1>Switchdesk</h1>
-                <p class="muted">A Cursor-style editor for the coding agents you already use. Works with Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek.</p>
+                <p class="muted">A Cursor-style editor for the coding agents you already use. Works with Claude Code, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek.</p>
                 <button id="btn-open-folder" class="btn primary">Open folder</button>
                 <div id="recent-folders"></div>
                 <div id="cli-check" class="muted small"></div>
                 <div class="shortcuts muted small">
+                  <div><kbd>⌘⇧P</kbd> command palette</div>
                   <div><kbd>⌘P</kbd> open file</div>
                   <div><kbd>⌘L</kbd> add selection to chat</div>
                   <div><kbd>⌘K</kbd> edit selection with Claude</div>
@@ -190,6 +191,7 @@
     <script src="settings.js"></script>
     <script src="accounts.js"></script>
     <script src="agents.js"></script>
+    <script src="palette.js"></script>
     <script src="boot.js"></script>
   </body>
 </html>

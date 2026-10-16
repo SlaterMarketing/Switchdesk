@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const cli = require('./claude-cli');
 const { RpcPeer } = require('./jsonrpc');
-const { ClaudeShape, dirsNote } = require('./agent-events');
+const { ClaudeShape, appNote, dirsNote, stripAppNotes, chatTitle } = require('./agent-events');
 
 const isWin = process.platform === 'win32';
 const NOT_SIGNED_IN = -32000;
@@ -76,8 +76,8 @@ function diffLines(items) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, dirs, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
+  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -160,14 +160,16 @@ class AcpSession {
       await this.applyMode();
     }
     const prompt = [];
-    // Tell the agent about the workspace's other folders once per run.
-    if (this.dirs.length && !this.toldDirs) {
-      this.toldDirs = true;
-      prompt.push({ type: 'text', text: dirsNote(this.dirs) + '\n\n' });
-    }
     for (const b of content) {
       if (b.type === 'text') prompt.push({ type: 'text', text: (this.mode === 'plan' && !this.hasMode('plan') ? PLAN_PREFIX : '') + b.text });
       else if (b.type === 'image') prompt.push({ type: 'image', data: b.source.data, mimeType: b.source.media_type });
+    }
+    // Once per run: the workspace's other folders, and AGENTS.md for agents that don't read it.
+    // These go after the message so the agent's own chat title comes from what the user typed.
+    if (!this.toldContext) {
+      this.toldContext = true;
+      if (this.dirs.length) prompt.push({ type: 'text', text: '\n\n' + dirsNote(this.dirs) });
+      if (this.rules) prompt.push({ type: 'text', text: '\n\n' + appNote(`The project's rules, from AGENTS.md. Follow them:\n\n${this.rules}`) });
     }
     this.turnStarted = Date.now();
     // The reply to session/prompt only comes when the turn ends, so don't wait for it here.
@@ -312,4 +314,64 @@ async function acpStatus(bin, args, extraEnv, authMethod) {
   }
 }
 
-module.exports = { AcpSession, acpStatus };
+// A short-lived agent for one question about its saved conversations.
+async function acpAsk(bin, args, extraEnv, cwd, authMethod, fn) {
+  const env = await cli.childEnv(extraEnv);
+  const child = spawnAgent(bin, args, { env, cwd });
+  const rpc = new RpcPeer(child, { onNotification: (m, p) => rpc.onNote && rpc.onNote(m, p), onRequest: () => ({ outcome: { outcome: 'cancelled' } }) });
+  child.on('error', (e) => rpc.failAll(String(e.message || e)));
+  child.on('close', () => rpc.failAll('It stopped.'));
+  try {
+    const init = await rpc.request('initialize', CLIENT, 60000);
+    const auth = async (call) => {
+      try {
+        return await call();
+      } catch (err) {
+        if (err.code !== NOT_SIGNED_IN || !authMethod || !(init.authMethods || []).some((m) => m.id === authMethod)) throw err;
+        await rpc.request('authenticate', { methodId: authMethod }, 60000);
+        return call();
+      }
+    };
+    return await fn(rpc, init.agentCapabilities || {}, auth);
+  } finally {
+    setTimeout(() => child.kill(), 300);
+  }
+}
+
+// Past conversations in a folder, for agents that can list them: [{ id, title, updatedAt }].
+function acpSessions(bin, args, extraEnv, cwd, authMethod) {
+  return acpAsk(bin, args, extraEnv, cwd, authMethod, async (rpc, caps, auth) => {
+    if (!(caps.sessionCapabilities && caps.sessionCapabilities.list)) return [];
+    const r = await auth(() => rpc.request('session/list', { cwd }, 30000));
+    return (r.sessions || [])
+      .filter((x) => !x.cwd || x.cwd === cwd)
+      .map((x) => ({ id: x.sessionId, title: chatTitle(x.title, 'Chat'), updatedAt: x.updatedAt ? Date.parse(x.updatedAt) || 0 : 0 }));
+  });
+}
+
+// One conversation as chat messages, from the agent replaying it: [{ role, text } | { role: 'tool', name, input }].
+function acpHistory(bin, args, extraEnv, cwd, authMethod, sessionId) {
+  return acpAsk(bin, args, extraEnv, cwd, authMethod, async (rpc, caps, auth) => {
+    if (!caps.loadSession) return null;
+    const out = [];
+    const add = (role, text) => {
+      const last = out[out.length - 1];
+      if (last && last.role === role) last.text += text;
+      else out.push({ role, text });
+    };
+    rpc.onNote = (method, p) => {
+      const u = (method === 'session/update' && p && p.update) || {};
+      const text = u.content && u.content.type === 'text' ? u.content.text : '';
+      if (u.sessionUpdate === 'user_message_chunk' && text) add('user', text);
+      else if (u.sessionUpdate === 'agent_message_chunk' && text) add('assistant', text);
+      else if (u.sessionUpdate === 'tool_call') {
+        const t = toolFor(u);
+        out.push({ role: 'tool', name: t.name, input: t.input });
+      }
+    };
+    await auth(() => rpc.request('session/load', { sessionId, cwd, mcpServers: [] }, 120000));
+    return out.map((m) => (m.role === 'user' ? { ...m, text: stripAppNotes(m.text).trim() } : m)).filter((m) => m.role === 'tool' || m.text.trim());
+  });
+}
+
+module.exports = { AcpSession, acpStatus, acpSessions, acpHistory };

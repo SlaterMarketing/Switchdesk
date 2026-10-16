@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, chats, activeChat, createChat, isPristine, appendChat, renderChatTabs, renderAccountPill, openSettings, field, newTerminal, toggleTerminal, queueSaveWorkspace,
-   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli */
+   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli, switchChat, renderPast, agentLabel */
 'use strict';
 
 // ------------------------------------------------------------------ agents
@@ -185,8 +185,14 @@ async function pickAgent(id) {
   let chat = activeChat();
   if (!chat || agentOf(chat) === id) return;
   if (!isPristine(chat) || chat.worktree) {
+    // Hand the conversation over: a new tab on the other agent, which gets it with the first message.
+    const from = chat;
     chat = createChat();
-    toast(`New chat on ${agentInfo(id).label}. Your other chat is still in its tab.`);
+    chat.handoff = handoffNote(from);
+    if (chat.handoff) {
+      chat.title = from.title;
+      chat.el.replaceChildren(h('div', { class: 'notice' }, `Carrying on from your ${agentLabel(from)} chat "${from.title}". ${agentInfo(id).label} gets the conversation so far along with your next message. The ${agentLabel(from)} chat stays in its tab.`));
+    } else toast(`New chat on ${agentInfo(id).label}. Your other chat is still in its tab.`);
   }
   chat.agent = id;
   state.settings.lastAgent = id;
@@ -197,6 +203,24 @@ async function pickAgent(id) {
   $('#input').focus();
   const s = await agentStatus(id);
   if (!s.installed || !s.loggedIn) openSettings('agents');
+}
+
+// The conversation so far, as text another agent can pick up from: what you asked, what the agent
+// said and did, and the files it changed. The most recent part is kept when it's long.
+function handoffNote(from) {
+  const who = agentLabel(from);
+  const lines = [];
+  for (const el of from.el.querySelectorAll('.msg-user, .msg-text, .tool .head .label, .card.changes .name')) {
+    if (el.closest('.msg-user') && !el.classList.contains('msg-user')) continue;
+    if (el.classList.contains('msg-user')) lines.push(`User: ${[...el.childNodes].filter((n) => !(n.classList && n.classList.contains('rewind-btn'))).map((n) => n.textContent).join('').trim()}`);
+    else if (el.classList.contains('msg-text')) lines.push(`${who}: ${el.innerText.trim()}`);
+    else if (el.closest('.card.changes')) lines.push(`(${who} changed ${el.textContent.trim()})`);
+    else lines.push(`(${who} ran: ${el.textContent.trim()})`);
+  }
+  if (!lines.length) return '';
+  let text = lines.join('\n\n');
+  if (text.length > 16000) text = `${lines[0]}\n\n[…earlier messages left out…]\n\n${text.slice(-14000)}`;
+  return `<switchdesk-context>\nThis conversation started with ${who}, and you're taking it over. Here it is so far, so you can carry on. The files are as ${who} left them.\n\n${text}\n</switchdesk-context>\n\n`;
 }
 
 // ---------- Settings → Agents
@@ -306,8 +330,26 @@ function reopenAgentChat(saved) {
   chat.sessionId = saved.sessionId;
   chat.title = (saved.title || 'Chat').slice(0, 60);
   if (saved.worktree) chat.worktree = saved.worktree;
-  chat.el.replaceChildren();
-  appendChat(h('div', { class: 'notice' }, `Continuing your ${agentInfo(saved.agent).label} conversation "${chat.title}". Earlier messages are in ${agentInfo(saved.agent).label}'s own history; new messages carry on from them.`), chat);
+  const label = agentInfo(saved.agent).label;
+  const loading = h('div', { class: 'notice' }, `Loading your ${label} conversation…`);
+  chat.el.replaceChildren(loading);
   renderChatTabs();
   renderAgentPicker();
+  switchChat(chat.id);
+  // The agent replays its own copy of the conversation. Until then (or if it can't), a note says
+  // where the earlier messages are; new messages carry on either way.
+  desk.agents
+    .history(saved.agent, saved.sessionId)
+    .catch(() => null)
+    .then((msgs) => {
+      if (!chat.el.contains(loading)) return; // the chat moved on meanwhile
+      loading.remove();
+      if (msgs && msgs.length) {
+        const keep = [...chat.el.childNodes];
+        chat.el.replaceChildren();
+        renderPast(chat, msgs);
+        chat.el.append(...keep);
+        appendChat(h('div', { class: 'notice' }, `Continuing this ${label} conversation. New messages carry on from here.`), chat);
+      } else appendChat(h('div', { class: 'notice' }, `Continuing your ${label} conversation "${chat.title}". Earlier messages are in ${label}'s own history; new messages carry on from them.`), chat);
+    });
 }

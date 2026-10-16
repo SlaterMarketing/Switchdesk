@@ -1,6 +1,6 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
    activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc,
-   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker */
+   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker, agentState, agentStatus, agentInfo, reopenAgentChat */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -21,7 +21,7 @@ function emptyState() {
     'div',
     { class: 'empty-chat' },
     h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
   );
 }
 
@@ -194,41 +194,49 @@ function clearChat(chat) {
 
 // ------------------------------------------------------------------ history
 
-async function loadHistory() {
+// Past chats from every agent: Claude's transcripts straight away, then each other agent's own list
+// (asked once every couple of minutes, since it means starting that agent).
+const agentRows = { root: null, at: 0, rows: [], loading: null };
+
+async function loadHistory(fresh) {
   const list = $('#history-list');
   if (!state.folder) return list.replaceChildren();
-  const rows = await desk.listSessions();
-  list.replaceChildren(
-    ...(rows.length ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, 'No Claude Code chats in this folder yet.')]),
+  const root = state.folder.root;
+  const claudeRows = (await desk.listSessions()).map((r) => ({ ...r, agent: 'claude' }));
+  const show = () => renderHistory(list, [...claudeRows, ...(agentRows.root === root ? agentRows.rows : [])], !!agentRows.loading);
+  show();
+  if (!fresh && agentRows.root === root && Date.now() - agentRows.at < 120000) return;
+  if (agentRows.loading) return;
+  agentRows.loading = (async () => {
+    const ready = [];
+    for (const a of agentState.list) if (a.id !== 'claude' && (await agentStatus(a.id)).loggedIn) ready.push(a.id);
+    const lists = await Promise.all(ready.map((id) => desk.agents.sessions(id).catch(() => [])));
+    Object.assign(agentRows, { root, at: Date.now(), rows: lists.flat() });
+  })();
+  await agentRows.loading;
+  agentRows.loading = null;
+  if (state.folder && state.folder.root === root) loadHistory();
+}
+
+function renderHistory(list, rows, loading) {
+  rows = rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 150);
+  const items = [
+    ...(rows.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, 'No chats in this folder yet.')]),
     ...rows.map((r) =>
       h(
         'div',
         { class: `history-row${activeChat()?.sessionId === r.id ? ' active' : ''}`, 'data-session': r.id, onclick: () => openSession(r) },
         h('div', { class: 't' }, r.title),
-        h('div', { class: 'd' }, new Date(r.updatedAt).toLocaleString())
+        h('div', { class: 'd' }, h('span', { class: 'agent-tag' }, agentInfo(r.agent).label), r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '')
       )
-    )
-  );
+    ),
+    loading ? h('div', { class: 'muted small', style: 'padding:8px 12px' }, 'Looking for chats from your other agents…') : null,
+  ];
+  list.replaceChildren(...items.filter(Boolean));
 }
 
-async function openSession(row, worktree, account) {
-  const open = chats.find((c) => c.sessionId === row.id);
-  if (open) return switchChat(open.id);
-  // A past chat carries on with the account it last ran on.
-  account = account || row.account || acct.folderAccount;
-  const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined, account);
-  const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
-  chat.account = account;
-  chat.agent = 'claude'; // past chats in History are Claude Code transcripts
-  if (worktree) {
-    chat.worktree = worktree;
-    refreshWorktree(chat);
-  }
-  chat.sessionId = row.id;
-  chat.title = row.title.slice(0, 60);
-  chat.el.replaceChildren();
-  chat.lastReply = null;
-  chat.resumeAt = null;
+// Shows earlier messages in a chat tab.
+function renderPast(chat, msgs) {
   for (const m of msgs) {
     if (m.uuid) chat.lastReply = m.uuid;
     if (m.role === 'user') appendChat(userBubble(chat, [m.text], { text: m.text, after: m.after || null, turnId: null }), chat);
@@ -242,6 +250,31 @@ async function openSession(row, worktree, account) {
       appendChat(tool.el, chat);
     }
   }
+}
+
+async function openSession(row, worktree, account) {
+  const open = chats.find((c) => c.sessionId === row.id);
+  if (open) return switchChat(open.id);
+  if (row.agent && row.agent !== 'claude') {
+    reopenAgentChat({ agent: row.agent, sessionId: row.id, title: row.title });
+    return loadHistory();
+  }
+  // A past chat carries on with the account it last ran on.
+  account = account || row.account || acct.folderAccount;
+  const msgs = await desk.loadSession(row.id, worktree ? worktree.path : undefined, account);
+  const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
+  chat.account = account;
+  chat.agent = 'claude';
+  if (worktree) {
+    chat.worktree = worktree;
+    refreshWorktree(chat);
+  }
+  chat.sessionId = row.id;
+  chat.title = row.title.slice(0, 60);
+  chat.el.replaceChildren();
+  chat.lastReply = null;
+  chat.resumeAt = null;
+  renderPast(chat, msgs);
   appendChat(h('div', { class: 'notice' }, 'Continuing this conversation. New messages resume it in Claude Code.'), chat);
   switchChat(chat.id);
   loadHistory();
@@ -1038,6 +1071,11 @@ async function send(textOverride, modeOverride, display) {
 }
 
 async function dispatch(chat, { content, shown, mode, images, rwText }) {
+  // A chat taken over from another agent sends that conversation with its first message.
+  if (chat.handoff) {
+    content = [...content, { type: 'text', text: '\n\n' + chat.handoff }];
+    chat.handoff = null;
+  }
   startTurn(chat, shown, mode, images, rwText);
   const bubble = chat.turn.bubble;
   const resumeAt = chat.sessionId ? chat.resumeAt : null;

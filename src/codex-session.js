@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const cli = require('./claude-cli');
 const { RpcPeer } = require('./jsonrpc');
-const { ClaudeShape, plainCommand, dirsNote } = require('./agent-events');
+const { ClaudeShape, plainCommand, dirsNote, stripAppNotes, chatTitle } = require('./agent-events');
 
 const isWin = process.platform === 'win32';
 
@@ -265,4 +265,33 @@ function codexStatus(bin, extraEnv) {
   });
 }
 
-module.exports = { CodexSession, codexStatus, codexModels };
+// Past Codex conversations in a folder: [{ id, title, updatedAt }].
+function codexSessions(bin, extraEnv, cwd) {
+  return ask(bin, extraEnv, async (rpc) => {
+    const r = await rpc.request('thread/list', { cwd, limit: 50, sortKey: 'updated_at', archived: false }, 20000);
+    return (r.data || [])
+      .filter((t) => !t.ephemeral)
+      .map((t) => ({ id: t.id, title: chatTitle(t.name || t.preview, 'Codex chat'), updatedAt: (t.updatedAt || t.createdAt || 0) * (t.updatedAt > 1e12 ? 1 : 1000) }));
+  });
+}
+
+// One Codex conversation as chat messages: [{ role, text } | { role: 'tool', name, input }].
+function codexHistory(bin, extraEnv, threadId) {
+  return ask(bin, extraEnv, async (rpc) => {
+    const r = await rpc.request('thread/read', { threadId, includeTurns: true }, 30000);
+    const out = [];
+    for (const turn of (r.thread && r.thread.turns) || [])
+      for (const it of turn.items || []) {
+        if (it.type === 'userMessage') {
+          const text = (it.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+          const shown = stripAppNotes(text).trim();
+          if (shown) out.push({ role: 'user', text: shown });
+        } else if (it.type === 'agentMessage' && it.text) out.push({ role: 'assistant', text: it.text });
+        else if (it.type === 'commandExecution') out.push({ role: 'tool', name: 'Bash', input: { command: plainCommand(it.command || '') } });
+        else if (it.type === 'fileChange') for (const c of it.changes || []) out.push({ role: 'tool', name: 'Edit', input: { file_path: c.path } });
+      }
+    return out;
+  });
+}
+
+module.exports = { CodexSession, codexStatus, codexModels, codexSessions, codexHistory };

@@ -13,9 +13,37 @@ const mainAcct = () => ({ dir: path.join(os.homedir(), '.claude'), env: {}, main
 function memoryFiles(workspace, acct = mainAcct()) {
   const label = acct.main ? 'All projects (~/.claude/CLAUDE.md)' : `All projects, ${acct.name} account`;
   const files = [{ id: 'user', label, path: path.join(acct.dir, 'CLAUDE.md') }];
-  if (workspace) files.unshift({ id: 'project', label: 'This project (CLAUDE.md)', path: path.join(workspace, 'CLAUDE.md') });
+  if (workspace)
+    files.unshift(
+      { id: 'agents', label: 'This project, every agent (AGENTS.md)', path: path.join(workspace, 'AGENTS.md') },
+      { id: 'project', label: 'This project, Claude only (CLAUDE.md)', path: path.join(workspace, 'CLAUDE.md') }
+    );
   return files.map((f) => ({ ...f, content: fs.existsSync(f.path) ? fs.readFileSync(f.path, 'utf8') : '' }));
 }
+
+// Claude reads CLAUDE.md, and the other agents AGENTS.md. A line "@AGENTS.md" in CLAUDE.md makes
+// Claude read AGENTS.md too (Claude Code's import syntax), so one file holds the rules for all.
+const IMPORT_RE = /^@AGENTS\.md\s*$/m;
+const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
+
+function rulesShared(workspace) {
+  return !!workspace && IMPORT_RE.test(read(path.join(workspace, 'CLAUDE.md')));
+}
+
+// Moves CLAUDE.md's rules into AGENTS.md (when AGENTS.md is empty) and points CLAUDE.md at it.
+function shareRules(workspace) {
+  const claudeMd = path.join(workspace, 'CLAUDE.md');
+  const agentsMd = path.join(workspace, 'AGENTS.md');
+  const claude = read(claudeMd);
+  if (IMPORT_RE.test(claude)) return { moved: false };
+  const moved = !read(agentsMd).trim() && !!claude.trim();
+  if (moved) {
+    fs.writeFileSync(agentsMd, claude, 'utf8');
+    fs.writeFileSync(claudeMd, '@AGENTS.md\n', 'utf8');
+  } else fs.writeFileSync(claudeMd, '@AGENTS.md\n' + (claude ? '\n' + claude : ''), 'utf8');
+  return { moved };
+}
+
 
 function saveMemory(workspace, id, content, acct) {
   const f = memoryFiles(workspace, acct).find((x) => x.id === id);
@@ -94,4 +122,4 @@ async function mcpAdd(bin, cwd, { name, target, transport }, acct) {
   return runClaude(bin, args, cwd, acct);
 }
 
-module.exports = { memoryFiles, saveMemory, permissions, editRule, mcpList, mcpRemove, mcpAdd };
+module.exports = { rulesShared, shareRules, memoryFiles, saveMemory, permissions, editRule, mcpList, mcpRemove, mcpAdd };

@@ -6,7 +6,7 @@
 
 **One desk. Every coding agent.**
 
-A free, open-source, Cursor-style desktop editor for **Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek**.<br>
+A free, open-source, Cursor-style desktop editor for **Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek**.<br>
 Each agent runs through its maker's own CLI, signed in with your own plan or API key.
 
 [![Latest release](https://img.shields.io/github/v/release/SlaterMarketing/switchdesk?label=release&color=5eead4&labelColor=17181c)](https://github.com/SlaterMarketing/switchdesk/releases/latest)
@@ -26,13 +26,14 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 | --- | --- | --- |
 | Claude Code | Your Claude plan (several accounts side by side) | `claude -p --input-format stream-json` |
 | Codex | Your ChatGPT plan or an OpenAI API key | `codex app-server` |
+| GitHub Copilot | Your GitHub Copilot plan (`copilot login`) | `copilot --acp` |
 | Cursor | Your Cursor plan (`agent login`) | `agent acp` |
 | Kimi | Your Kimi Code membership | `kimi acp` |
 | Gemini | Your Gemini API key | `gemini --acp` |
 | Qwen | Your Alibaba Cloud API key | `qwen --acp` |
 | DeepSeek | Your DeepSeek API key, through Qwen Code | `qwen --acp` |
 
-Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the conversation carries on.
+Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the new one picks up the conversation where the last left off.
 
 Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
 
@@ -63,20 +64,24 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Search in files** (`Ctrl+Shift+F`): every file in the project, with match case, whole word, regex, and a files-to-include filter. Click a result to jump to it.
 - **Slash commands:** type `/` in the chat box for Claude Code's commands, including your own from `.claude/commands` and skills. `/clear` starts a fresh conversation in the tab.
 - **Several windows:** File → New Window (`Ctrl+Shift+N`) opens another window, each with its own project, chats, agents and terminals, all running at once. Opening a folder that's already open takes you to its window. File → Open Recent lists your recent folders, the ⧉ button beside a recent folder opens it in a new window, and the Window menu switches between them. Quitting remembers every open window and reopens them all next time.
-- **Workspaces with several folders:** File → Add Folder to Workspace (or ⊕ in the Explorer) adds another folder to the window, such as a shared library or the backend for this frontend. Each folder gets its own section in the Explorer, quick open and search cover all of them, and every agent in the window can read and change them: Claude Code gets `--add-dir`, Codex gets them as writable folders, Gemini and Qwen get `--include-directories`, and Cursor and Kimi are told where they are. The changes card, inline review and Undo cover the extra folders too. Files in an extra folder show as `⟦name⟧/path`. The extra folders come back whenever the main folder opens; ✕ on a folder's row removes it from the workspace (the folder itself is untouched). Git and the terminal stay on the main folder.
+- **Workspaces with several folders:** File → Add Folder to Workspace (or ⊕ in the Explorer) adds another folder to the window, such as a shared library or the backend for this frontend. Each folder gets its own section in the Explorer, quick open and search cover all of them, and every agent in the window can read and change them: Claude Code gets `--add-dir`, Codex gets them as writable folders, Gemini and Qwen get `--include-directories`, and Copilot, Cursor and Kimi are told where they are. The changes card, inline review and Undo cover the extra folders too. Files in an extra folder show as `⟦name⟧/path`. The extra folders come back whenever the main folder opens; ✕ on a folder's row removes it from the workspace (the folder itself is untouched). Git and the terminal stay on the main folder.
 - **Picks up where you left off:** open files and chat tabs come back when you reopen a folder.
-- **History:** the Chats tab lists your Claude Code conversations for the open folder, including ones started in the terminal. Click one to continue it.
+- **History:** the Chats tab lists your past conversations for the open folder from every agent that keeps them (Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek), each tagged with its agent, including ones started in the terminal. Click one to read it and carry on.
+- **Hand a chat to another agent:** switch agents in the middle of a chat and the new agent gets the conversation so far, so it carries on where the last one left off. The files stay as they were.
+- **One set of rules for every agent:** Settings → Instructions has "Use one file for every agent", which keeps your project rules in `AGENTS.md` and points `CLAUDE.md` at it. Codex, Copilot, Cursor and Kimi read `AGENTS.md` themselves; Switchdesk gives it to Gemini, Qwen and DeepSeek.
+- **Command palette** (`Ctrl+Shift+P`): every command, setting page, agent, account and recent folder, searchable by typing.
 - **Light/dark switch:** the sun/moon button in the title bar. Settings also has a System option.
 - **Taskbar flash:** when Claude finishes or needs you while the app is in the background, its taskbar button flashes (the Dock icon bounces on macOS) until you come back.
 - **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage.
 - **Agents:** pick the agent for each chat from the menu in the chat box. It lists only the agents that are installed and signed in (or have a key), and each Claude account separately. Settings → Agents installs each one and signs it in (in the app's terminal, so you see exactly what runs), or takes an API key.
   - **Claude** runs Claude Code with your Claude plan.
   - **Codex** runs OpenAI's Codex CLI with your ChatGPT plan or an OpenAI API key. The model list comes from Codex itself.
+  - **Copilot** runs GitHub's Copilot CLI with your GitHub Copilot plan, through `copilot --acp`. Sign in with `copilot login`.
   - **Kimi** runs Moonshot's Kimi Code CLI with your Kimi Code membership.
   - **Cursor** runs Cursor's own command-line agent (`agent`) with your Cursor plan, through `agent acp`, the connection Cursor provides for other editors. Sign in with `agent login`.
   - **Gemini** runs Google's Gemini CLI with your Gemini API key. (Google doesn't allow third-party apps to use a Google-account sign-in.)
   - **Qwen** and **DeepSeek** run Qwen Code (open source) with your Alibaba Cloud or DeepSeek API key. The API address and model can be changed, so other OpenAI-compatible providers work too.
-  - Every agent gets the same chat panel, modes, approval cards, changes card, inline review, queue and parallel copies. Rewind, History and slash commands are Claude only for now. API keys are stored encrypted with your operating system's keychain.
+  - Every agent gets the same chat panel, modes, approval cards, changes card, inline review, queue and parallel copies. Rewind and slash commands are Claude only for now. API keys are stored encrypted with your operating system's keychain.
 - **Several Claude accounts** (Settings → Accounts): stay signed in to a personal and a work account at the same time. Each folder uses your default account unless you tie it to another. The agent menu in the chat box lists each signed-in account with its email, so you can switch any chat at any time and the conversation carries on. The terminal, commit messages and the Settings pages follow the folder's account.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.
 
@@ -123,7 +128,7 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 - `src/terminal.js` runs the terminal through node-pty. `src/gitops.js` runs your own git, so it uses your existing credentials.
 - Conversations are Claude Code's own transcripts in `~/.claude/projects/`, so the terminal and the app share history.
 - `src/worktrees.js` makes the copies for parallel agents under the app's data folder and merges with `git merge-file`.
-- `src/codex-session.js` runs `codex app-server`, the JSON-RPC mode OpenAI provides for apps that embed Codex. `src/acp-session.js` speaks the [Agent Client Protocol](https://agentclientprotocol.com) to Cursor (`agent acp`), Kimi (`kimi acp`), Gemini CLI (`gemini --acp`) and Qwen Code (`qwen --acp`). Both translate the agent's events into the same shapes Claude Code's stream-json uses (`src/agent-events.js`), so the chat panel is shared.
+- `src/codex-session.js` runs `codex app-server`, the JSON-RPC mode OpenAI provides for apps that embed Codex. `src/acp-session.js` speaks the [Agent Client Protocol](https://agentclientprotocol.com) to Copilot (`copilot --acp`), Cursor (`agent acp`), Kimi (`kimi acp`), Gemini CLI (`gemini --acp`) and Qwen Code (`qwen --acp`). Both translate the agent's events into the same shapes Claude Code's stream-json uses (`src/agent-events.js`), so the chat panel is shared.
 - Each extra account is its own Claude Code config folder under the app's data folder, passed to the CLI as `CLAUDE_CONFIG_DIR`, so its sign-in, settings and history stay apart. Switching a chat to another account copies its transcript across before resuming it.
 - Rewind resumes with `--resume <session> --resume-session-at <reply> --fork-session`, and restores files from the turn's git snapshot.
 

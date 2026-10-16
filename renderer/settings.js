@@ -73,9 +73,33 @@ async function settingsGeneral(body, close) {
 
 async function settingsInstructions(body) {
   const files = await desk.cfg.memory();
+  const shared = await desk.cfg.rulesShared();
+  const project = files.find((f) => f.id === 'project');
+  const share = state.folder
+    ? h(
+        'div',
+        { class: `set-box${shared ? '' : ' warn-box'}` },
+        shared
+          ? h('div', { class: 'small' }, '✓ Every agent follows AGENTS.md. CLAUDE.md starts with "@AGENTS.md", so Claude reads it too.')
+          : h(
+              'div',
+              { class: 'row' },
+              h('div', { class: 'small', style: 'flex:1' }, project && project.content.trim() ? 'Only Claude reads CLAUDE.md. Share its rules with every agent: they move into AGENTS.md, and CLAUDE.md points Claude at it.' : 'Claude reads CLAUDE.md and the other agents read AGENTS.md. Have Claude read AGENTS.md too, so one file holds the rules for every agent.'),
+              h('button', {
+                class: 'btn small primary',
+                onclick: async () => {
+                  const r = await desk.cfg.shareRules();
+                  toast(r && r.moved ? 'Moved your rules into AGENTS.md. Every agent follows them now.' : 'Claude reads AGENTS.md too now.');
+                  settingsInstructions(body);
+                },
+              }, 'Use one file for every agent')
+            )
+      )
+    : null;
   body.replaceChildren(
     h('h3', {}, 'Instructions'),
-    h('p', { class: 'muted small' }, 'Claude reads these at the start of every chat. Use them for house rules, like "use British English" or "run npm test after changes".'),
+    h('p', { class: 'muted small' }, 'Agents read these at the start of every chat. Use them for house rules, like "use British English" or "run npm test after changes". Codex, Cursor, Copilot and Kimi read AGENTS.md themselves; Switchdesk passes it to Gemini, Qwen and DeepSeek.'),
+    ...(share ? [share] : []),
     ...files.map((f) => {
       const ta = h('textarea', { class: 'set-md', spellcheck: 'false', placeholder: 'Empty. Write instructions in plain English or Markdown.' });
       ta.value = f.content;

@@ -984,6 +984,7 @@ function wire() {
     else if (cmd === 'settings') openSettings();
     else if (cmd === 'preview') openPreview();
     else if (cmd === 'new-copy-chat') newChatInCopy();
+    else if (cmd === 'palette') commandPalette();
   });
 
   desk.onOpenFolder(async (dir) => setFolder(await desk.openFolder(dir)));

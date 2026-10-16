@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('desk', {
     command: call('agents:command'),
     codexKey: call('agents:codex-key'),
     models: call('agents:models'),
+    sessions: call('agents:sessions'),
+    history: call('agents:history'),
   },
   accounts: {
     list: call('accounts:list'),
@@ -104,6 +106,8 @@ contextBridge.exposeInMainWorld('desk', {
   cfg: {
     memory: call('cfg:memory'),
     saveMemory: call('cfg:save-memory'),
+    rulesShared: call('cfg:rules-shared'),
+    shareRules: call('cfg:share-rules'),
     permissions: call('cfg:permissions'),
     rule: call('cfg:rule'),
     mcpList: call('cfg:mcp-list'),
@@ -115,6 +119,7 @@ contextBridge.exposeInMainWorld('desk', {
   popupMenu: call('menu:popup'),
   setTitleBarColors: call('window:titlebar-colors'),
   installUpdate: call('update:install'),
+  checkUpdates: call('update:check'),
   appVersion: call('app:version'),
   onUpdateStatus: on('update-status'),
   onFsChanged: on('fs-changed'),

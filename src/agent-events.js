@@ -94,9 +94,17 @@ function plainCommand(cmd) {
   return m ? m[2] : String(cmd || '');
 }
 
+// Context the app adds to a message (extra folders, project rules, a hand-off). It's wrapped in a
+// tag so the app can leave it out when it shows the conversation again.
+const NOTE_RE = /<switchdesk-context>[\s\S]*?<\/switchdesk-context>\s*/g;
+const appNote = (text) => `<switchdesk-context>\n${text.trim()}\n</switchdesk-context>\n\n`;
+const stripAppNotes = (text) => String(text || '').replace(NOTE_RE, '').replace(/^\[Plan mode:[^\]]*\]\s*/, '');
+// A past chat's title, without app notes (including one cut off by the agent's own title limit).
+const chatTitle = (text, fallback) => stripAppNotes(text).replace(/<switchdesk-context>[\s\S]*$/, '').replace(/\s+/g, ' ').trim().slice(0, 120) || fallback;
+
 // For agents with no way to be given extra folders: say where they are.
 function dirsNote(dirs) {
-  return `This workspace also includes these folders, outside the current directory. Read and change files in them with absolute paths when the task involves them:\n${dirs.map((d) => `- ${d}`).join('\n')}`;
+  return appNote(`This workspace also includes these folders, outside the current directory. Read and change files in them with absolute paths when the task involves them:\n${dirs.map((d) => `- ${d}`).join('\n')}`);
 }
 
-module.exports = { dirsNote, ClaudeShape, plainCommand };
+module.exports = { appNote, stripAppNotes, chatTitle, dirsNote, ClaudeShape, plainCommand };

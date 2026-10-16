@@ -49,7 +49,18 @@ const AGENTS = {
     login: ['login'],
     help: 'Runs Cursor\'s own command-line agent with your Cursor plan, through the connection Cursor provides for other editors.',
   },
+  copilot: {
+    label: 'Copilot',
+    vendor: 'GitHub',
+    kind: 'acp',
+    bins: ['copilot'],
+    args: ['--acp'],
+    install: () => npmInstall('@github/copilot'),
+    login: ['login'],
+    help: 'Runs GitHub Copilot CLI with your Copilot plan (including Copilot Free), through the connection Copilot provides for other editors.',
+  },
   gemini: {
+    ownRulesFile: true, // reads GEMINI.md or QWEN.md, not AGENTS.md: the app passes AGENTS.md on
     label: 'Gemini',
     vendor: 'Google',
     kind: 'acp',
@@ -62,6 +73,7 @@ const AGENTS = {
     help: 'Runs Gemini CLI with your own Gemini API key (pay as you go). Google doesn\'t allow apps like this to use a Google-account sign-in.',
   },
   qwen: {
+    ownRulesFile: true, // reads GEMINI.md or QWEN.md, not AGENTS.md: the app passes AGENTS.md on
     label: 'Qwen',
     vendor: 'Alibaba',
     kind: 'acp',
@@ -75,6 +87,7 @@ const AGENTS = {
     help: 'Runs Qwen Code with your own Alibaba Cloud API key.',
   },
   deepseek: {
+    ownRulesFile: true, // reads GEMINI.md or QWEN.md, not AGENTS.md: the app passes AGENTS.md on
     label: 'DeepSeek',
     vendor: 'DeepSeek',
     kind: 'acp',

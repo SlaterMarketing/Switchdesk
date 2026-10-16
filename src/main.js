@@ -17,8 +17,9 @@ const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const agents = require('./agents');
-const { CodexSession, codexStatus, codexModels } = require('./codex-session');
-const { AcpSession, acpStatus } = require('./acp-session');
+const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
+const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
+const { stripAppNotes } = require('./agent-events');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -277,9 +278,10 @@ function folderAcct(ctx) {
   return { id, name: a ? a.name : '', dir: accounts.dirFor(id), env: accounts.envFor(id), main: accounts.isMain(id) };
 }
 
+// A message's text, without the context the app added to it.
 function textOf(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  if (typeof content === 'string') return stripAppNotes(content);
+  if (Array.isArray(content)) return stripAppNotes(content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'));
   return '';
 }
 
@@ -495,6 +497,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     authMethod: a.authMethod,
     cwd: chat.cwd,
     dirs,
+    rules: a.ownRulesFile ? projectRules(chat.cwd) : '',
     env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model),
     sessionId,
     resumeAt: agent === 'claude' ? resumeAt : null,
@@ -531,6 +534,15 @@ function withRealPaths(ctx, content) {
   if (!keyed.length) return content;
   const swap = (text) => keyed.reduce((t, r) => t.split(r.key).join(r.dir.split(path.sep).join('/')), text);
   return content.map((b) => (b.type === 'text' ? { ...b, text: swap(b.text) } : b));
+}
+
+// AGENTS.md, for agents that read their own rules file instead.
+function projectRules(dir) {
+  try {
+    return fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8').slice(0, 20000).trim();
+  } catch {
+    return '';
+  }
 }
 
 // A snapshot of every folder the chat can change, taken before each turn.
@@ -686,6 +698,24 @@ function registerIpc() {
     const bin = await agents.findBin('codex', settings);
     return bin ? codexModels(bin).catch(() => []) : [];
   });
+  // Past conversations an agent keeps for this folder, and one of them as messages.
+  handle('agents:sessions', async (ctx, id) => {
+    const a = agents.AGENTS[id];
+    if (!a || id === 'claude' || !ctx.workspace) return [];
+    const bin = await agents.findBin(id, settings);
+    if (!bin || (a.key && !agents.readKey(settings, id))) return [];
+    const env = agents.envFor(settings, id);
+    const rows = a.kind === 'codex' ? await codexSessions(bin, env, ctx.workspace) : await acpSessions(bin, a.args, env, ctx.workspace, a.authMethod);
+    return rows.map((r) => ({ ...r, agent: id }));
+  });
+  handle('agents:history', async (ctx, id, sessionId) => {
+    const a = agents.AGENTS[id];
+    if (!a || id === 'claude') return null;
+    const bin = await agents.findBin(id, settings);
+    if (!bin) return null;
+    const env = agents.envFor(settings, id);
+    return a.kind === 'codex' ? codexHistory(bin, env, sessionId) : acpHistory(bin, a.args, env, ctx.workspace, a.authMethod, sessionId);
+  });
   // Codex can use an OpenAI API key instead of a ChatGPT sign-in; Codex stores it itself.
   handle('agents:codex-key', async (ctx, key) => {
     const bin = await agents.findBin('codex', settings);
@@ -776,6 +806,7 @@ function registerIpc() {
     if (ctx.win && process.platform !== 'darwin' && ctx.win.setTitleBarOverlay) ctx.win.setTitleBarOverlay({ color, symbolColor, height: 38 });
   });
   handle('update:install', (ctx) => updater.installNow());
+  handle('update:check', (ctx) => updater.checkNow());
   // Flash the taskbar button (bounce the Dock on macOS) until you come back to the app.
   handle('window:flash', (ctx) => {
     if (!ctx.win || ctx.win.isDestroyed() || ctx.win.isFocused()) return;
@@ -893,6 +924,8 @@ function registerIpc() {
 
   // Settings page
   handle('cfg:memory', (ctx) => config.memoryFiles(ctx.workspace, folderAcct(ctx)));
+  handle('cfg:rules-shared', (ctx) => config.rulesShared(ctx.workspace));
+  handle('cfg:share-rules', (ctx) => (ctx.workspace ? config.shareRules(ctx.workspace) : null));
   handle('cfg:save-memory', (ctx, id, content) => config.saveMemory(ctx.workspace, id, content, folderAcct(ctx)));
   handle('cfg:permissions', (ctx) => config.permissions(ctx.workspace, folderAcct(ctx)));
   handle('cfg:rule', (ctx, scope, rule, add) => config.editRule(ctx.workspace, scope, rule, add, folderAcct(ctx)));
@@ -1032,6 +1065,7 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
+        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+Shift+P', click: menuCmd('palette') },
         { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: menuCmd('quick-open') },
         { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: menuCmd('search') },
         { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: menuCmd('new-chat') },
