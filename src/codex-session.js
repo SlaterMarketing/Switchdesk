@@ -20,6 +20,7 @@ const MODE = {
   ask: { sandbox: 'read-only', approval: 'never' },
   plan: { sandbox: 'read-only', approval: 'never' },
   agent: { sandbox: 'workspace-write', approval: 'untrusted' },
+  debug: { sandbox: 'workspace-write', approval: 'untrusted' },
   auto: { sandbox: 'workspace-write', approval: 'on-request' },
 };
 const PLAN_PREFIX = '[Plan mode: research the code, then reply with a step-by-step plan. Do not edit files or run commands that change anything.]\n\n';

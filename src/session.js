@@ -13,7 +13,7 @@ const isWin = process.platform === 'win32';
 
 // App modes → Claude Code permission modes. Ask mode runs in "default" so anything
 // that would change something asks first, and the app declines those requests.
-const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', auto: 'auto' };
+const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', debug: 'acceptEdits', auto: 'auto' };
 
 class ChatSession {
   constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit }) {

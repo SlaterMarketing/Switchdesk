@@ -461,9 +461,11 @@ function startTurn(chat, shown, mode, images, rwText) {
     blocks: new Map(),
     tools: new Map(),
     streamedMsgIds: new Set(),
-    autoEdits: mode === 'agent' || mode === 'auto',
+    autoEdits: mode === 'agent' || mode === 'auto' || mode === 'debug',
+    debugCleanup: mode === 'debug' && !!chat.cleanupNext,
     started: Date.now(),
   };
+  chat.cleanupNext = false;
   chat.busy = true;
   renderChatTabs();
   if (chat.id === activeChatId) setRunning(true), renderQueue();
@@ -582,6 +584,7 @@ function handleEvent(chat, ev) {
         }
       }
       if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
+      if (turn && turn.mode === 'debug' && !turn.interrupted && !ev.is_error) debugModeCard(chat, turn);
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
       if (!document.hasFocus()) {
@@ -1170,6 +1173,7 @@ async function send(textOverride, modeOverride, display, target) {
   }
   if (asTyped) prompt = text;
   else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
+  else if (mode === 'debug') prompt = await debugModePrompt(chat, prompt);
   const codeChips = state.chips.filter((c) => c.kind !== 'image');
   const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${chipLabel(c)}`).join('\n')}` : text);
   if (!textOverride) {

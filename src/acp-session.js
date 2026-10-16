@@ -19,6 +19,7 @@ const MODE_PREFS = {
   ask: ['default', 'ask'],
   plan: ['plan', 'default'],
   agent: ['auto-edit', 'autoedit', 'accept-edits', 'acceptedits', 'default', 'agent'],
+  debug: ['auto-edit', 'autoedit', 'accept-edits', 'acceptedits', 'default', 'agent'],
   auto: ['auto', 'yolo', 'auto-edit', 'autoedit', 'agent'],
 };
 const PLAN_PREFIX = '[Plan mode: research the code, then reply with a step-by-step plan. Do not edit files or run commands that change anything.]\n\n';

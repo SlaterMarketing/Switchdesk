@@ -17,8 +17,8 @@ const h = (tag, attrs = {}, ...children) => {
 
 const isMac = desk.platform === 'darwin';
 if (isMac) document.body.classList.add('mac');
-const MODES = ['ask', 'plan', 'agent', 'auto'];
-const MODE_LABEL = { ask: 'Ask', plan: 'Plan', agent: 'Agent', auto: 'Auto' };
+const MODES = ['ask', 'plan', 'agent', 'debug', 'auto'];
+const MODE_LABEL = { ask: 'Ask', plan: 'Plan', agent: 'Agent', debug: 'Debug', auto: 'Auto' };
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const HIDDEN_TOOLS = new Set(['ToolSearch']); // internal plumbing, not worth a row
 

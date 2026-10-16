@@ -16,6 +16,7 @@ const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
+const debuglog = require('./debuglog');
 const usage = require('./usage');
 const codebase = require('./codebase');
 const debug = require('./debugger');
@@ -690,6 +691,9 @@ function registerIpc() {
   handle('cli:status', (ctx, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount(ctx))));
 
   // Agents: Claude, Codex, Kimi, and API-key models through Gemini CLI and Qwen Code.
+  // Debug mode's log collector, one channel per chat.
+  handle('debuglog:open', (ctx, chatId) => debuglog.open(chatKey(ctx, chatId), (count) => sendTo(ctx, 'debuglog-count', { chatId, count })));
+  handle('debuglog:take', (ctx, chatId) => debuglog.take(chatKey(ctx, chatId)));
   handle('agents:list', (ctx) =>
     Object.entries(agents.AGENTS).map(([id, a]) => ({
       id,
