@@ -767,3 +767,12 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .search-match { position: relative; }
 .search-match .match-x { display: none; position: absolute; right: 4px; top: 0; font-size: 10px; }
 .search-match:hover .match-x { display: block; }
+
+/* scheduled tasks */
+.schedules { min-width: 520px; display: flex; flex-direction: column; gap: 8px; }
+.schedules textarea, .schedules input[type='text'] { width: 100%; box-sizing: border-box; }
+.schedule-row { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.schedule-row .what { flex: 1; min-width: 0; }
+.schedule-row.off { opacity: 0.6; }
+.schedule-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.schedules .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

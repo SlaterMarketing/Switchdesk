@@ -166,3 +166,38 @@ appTest('agents can drive the Preview', async ({ w }) => {
     server.close();
   }
 });
+
+appTest('a scheduled task runs on its own in a copy of the folder', async ({ w, p, dir }) => {
+  // When it's next due.
+  const due = await w.evaluate(() => {
+    const at = new Date(2026, 9, 16, 10, 0).getTime(); // a Friday, 10:00
+    return {
+      day: new Date(nextRun({ every: 'day', time: '09:00' }, at)).toString(),
+      weekdays: new Date(nextRun({ every: 'weekdays', time: '09:00' }, at)).getDay(),
+      hours: nextRun({ every: 'hours', hours: 3 }, at) - at,
+    };
+  });
+  assert.match(due.day, /Sat Oct 17 2026 09:00/);
+  assert.equal(due.weekdays, 1, 'weekdays skip to Monday');
+  assert.equal(due.hours, 3 * 3600e3);
+  // Make one in the dialog.
+  await w.evaluate(() => chooseAgent('cursor'));
+  await w.evaluate(() => openSchedules('new'));
+  await w.fill('.schedules input[type="text"]', 'Nightly check');
+  await w.fill('.schedules textarea', 'compare-test nightly');
+  await w.click('.schedules button:has-text("Schedule it")');
+  await until(w, () => schedules().length === 1 && $('.schedule-row'));
+  assert.match(await w.$eval('.schedule-row', (e) => e.innerText), /Every day at 09:00 · Cursor · in its own copy/);
+  await w.click('.modal button:has-text("Close")');
+  // Pretend it last ran two days ago: it runs now, in the background.
+  const before = await w.evaluate(() => activeChat().id);
+  await w.evaluate(() => updateSchedule(schedules()[0].id, { lastRun: Date.now() - 2 * 864e5 }).then(checkSchedules));
+  await until(w, () => chats.some((c) => c.scheduled && !c.busy && !c.making && c.sessionId), null, 30000);
+  assert.equal(await w.evaluate(() => activeChat().id), before, 'you stay where you were');
+  assert.ok(prompts(p, 'cursor').some((t) => /scheduled task/.test(t) && /compare-test nightly/.test(t)));
+  assert.equal(fs.existsSync(path.join(dir, 'fake.txt')), false, 'your folder is untouched');
+  await until(w, () => schedules()[0].lastResult === 'done' && Date.now() - schedules()[0].lastRun < 60000);
+  // Not again until it's next due.
+  await w.evaluate(() => checkSchedules());
+  assert.equal(await w.evaluate(() => chats.filter((c) => c.scheduled).length), 1);
+});

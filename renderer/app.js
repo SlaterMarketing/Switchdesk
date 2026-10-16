@@ -466,6 +466,7 @@ async function setFolder(info) {
     closeAllChats();
     await loadAccounts(); // the folder may use a different account
     await restoreWorkspace(info.root);
+    schedulesFolderOpened();
   } finally {
     restoringWorkspace = false;
   }

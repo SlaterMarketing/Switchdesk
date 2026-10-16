@@ -590,7 +590,8 @@ function handleEvent(chat, ev) {
       if (turn && turn.planBuild && !turn.interrupted) planBuildEnded(chat, turn.planBuild, ev.is_error);
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
-      if (!document.hasFocus()) {
+      if (chat.scheduled) scheduleDone(chat, ev.is_error);
+      else if (!document.hasFocus()) {
         new Notification('Switchdesk', { body: `${agentLabel(chat)} finished: ${chat.title}` });
         desk.flashWindow();
       }

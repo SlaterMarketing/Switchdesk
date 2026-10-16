@@ -148,6 +148,7 @@ function fillAgentMenu(menu, fresh) {
         )
       : null,
     h('button', { onclick: () => (close(), sendToSeveral()) }, h('b', {}, 'Send to several agents and compare…')),
+    h('button', { onclick: () => (close(), openSchedules()) }, h('b', {}, 'Scheduled tasks…')),
     h('button', { onclick: () => (close(), openSettings('agents')) }, h('b', {}, hidden ? `Set up more agents (${hidden} more), or add accounts…` : 'Agents and accounts…')),
   ];
   menu.replaceChildren(...items.filter(Boolean));
