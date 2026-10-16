@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, chats, activeChat, createChat, isPristine, appendChat, renderChatTabs, renderAccountPill, openSettings, field, newTerminal, toggleTerminal, queueSaveWorkspace,
-   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli, switchChat, renderPast, agentLabel, claudeAccountsBox */
+   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli, switchChat, renderPast, agentLabel, claudeAccountsBox, sendToSeveral */
 'use strict';
 
 // ------------------------------------------------------------------ agents
@@ -147,6 +147,7 @@ function fillAgentMenu(menu, fresh) {
           h('b', {}, `${ruled ? '✓ ' : ''}Always use ${accountName(currentAccount)} in ${folder.name}`)
         )
       : null,
+    h('button', { onclick: () => (close(), sendToSeveral()) }, h('b', {}, 'Send to several agents and compare…')),
     h('button', { onclick: () => (close(), openSettings('agents')) }, h('b', {}, hidden ? `Set up more agents (${hidden} more), or add accounts…` : 'Agents and accounts…')),
   ];
   menu.replaceChildren(...items.filter(Boolean));

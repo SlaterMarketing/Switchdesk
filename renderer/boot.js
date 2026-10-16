@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents, wireCompare */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -49,6 +49,7 @@ async function init() {
   wireDebugMode();
   wireQuickFix();
   wireTests();
+  wireCompare();
   wireDiff();
   wireReview();
   wirePreview();

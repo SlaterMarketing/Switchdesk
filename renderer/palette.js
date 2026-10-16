@@ -1,4 +1,4 @@
-/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy,
+/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy, sendToSeveral,
    addSelectionToChat, inlineEdit, toggleTerminal, newTerminal, showSidePanel, openSearch, openSettings, openPreview, toggleTheme, loadHistory,
    agentState, acct, multiAccount, chooseAgent, agentOf, activeChat, chatAccount, isMac, debugCmd, restartDebugging, toggleBreakpoint, activeTab, editor */
 'use strict';
@@ -13,6 +13,7 @@ function paletteCommands() {
   const cmds = [
     ['New Chat', '⌘N', newChat],
     ['New Chat in Its Own Copy', '⌘⌥N', newChatInCopy],
+    ['Send to Several Agents…', '', sendToSeveral],
     ['New Window', '⌘⇧N', () => desk.newWindow(null)],
     ['Open Folder…', '⌘O', () => desk.pickFolder().then(setFolder)],
     ['Add Folder to Workspace…', '', () => addWorkspaceFolder()],

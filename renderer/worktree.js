@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, activeChat, createChat, switchChat, renderChatTabs, appendChat, openDiff, addReviews,
-   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace */
+   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison */
 'use strict';
 
 // ------------------------------------------------------------------ parallel agents (own copies)
@@ -44,11 +44,13 @@ async function refreshWorktree(chat) {
     chat.worktree.removed = true;
   }
   if (chat === activeChat()) renderWorktreeBar();
+  if (chat.compare) renderCompareBar();
 }
 
 function renderWorktreeBar() {
   const bar = $('#worktree-bar');
   const chat = activeChat();
+  renderCompareBar();
   if (!chat || (!chat.worktree && !chat.making)) return bar.classList.add('hidden');
   bar.classList.remove('hidden');
   if (chat.making) return bar.replaceChildren(h('span', { class: 'spinner' }), h('span', {}, 'Making a copy of your folder…'));
@@ -62,7 +64,7 @@ function renderWorktreeBar() {
       h('span', { class: 'muted' }, n ? `${n} file${n > 1 ? 's' : ''} changed` : 'no changes yet'),
       h('span', { class: 'spacer' }),
       n ? h('button', { class: 'btn small', onclick: () => reviewWorktree(chat) }, 'Review') : null,
-      n ? h('button', { class: 'btn small primary', title: 'Bring these changes into your folder', onclick: () => mergeWorktree(chat) }, 'Merge into my folder') : null,
+      n ? h('button', { class: 'btn small primary', title: 'Bring these changes into your folder', onclick: () => (chat.compare ? useComparison(chat) : mergeWorktree(chat)) }, chat.compare ? 'Use this one' : 'Merge into my folder') : null,
       h('button', { class: 'btn small danger', title: 'Delete this copy and its branch', onclick: () => discardWorktree(chat) }, 'Discard'),
     ].filter(Boolean)
   );
@@ -90,7 +92,7 @@ async function reviewWorktree(chat) {
   const close = modal([h('div', { class: 'body' }, h('h3', {}, "Changes in Claude's copy"), h('p', { class: 'muted small' }, 'Click a file to see its diff.'), fileList(chat, (c) => (close(), openWorktreeDiff(chat, c))))]);
 }
 
-async function mergeWorktree(chat) {
+async function mergeWorktree(chat, { after } = {}) {
   if (chat.busy) return toast('Wait for Claude to finish before merging.');
   await refreshWorktree(chat);
   if (!(chat.wtChanges || []).length) return toast('Nothing to merge yet.');
@@ -136,6 +138,7 @@ async function mergeWorktree(chat) {
       chat
     );
     await refreshWorktree(chat);
+    if (after) after(r);
   });
 }
 

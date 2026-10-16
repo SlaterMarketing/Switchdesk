@@ -694,3 +694,14 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .limit-meter.full .limit-pct { color: var(--err); }
 .notice.plan-go { color: var(--accent); font-weight: 500; }
 .notice.plan-wait { color: var(--warn, #d6a243); font-size: 12px; padding: 6px 10px; border: 1px solid currentColor; border-radius: 6px; text-align: left; }
+#compare-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); font-size: 12px; flex: none; flex-wrap: wrap; }
+#compare-bar.hidden { display: none; }
+#compare-bar .compare-label { color: var(--text-dim); margin-right: 4px; }
+.compare-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text); cursor: pointer; font: inherit; }
+.compare-pill:hover { border-color: var(--text-dim); }
+.compare-pill.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.compare-pill.merged .dot { color: var(--ok, #3fb950); }
+.compare-pill.gone { opacity: 0.5; }
+.compare-pill .dot { font-size: 10px; color: var(--accent); }
+.compare-pick textarea { width: 100%; box-sizing: border-box; }
+.compare-agents { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
