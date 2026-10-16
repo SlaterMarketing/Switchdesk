@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const on = (channel) => (fn) => {
   const listener = (_e, payload) => fn(payload);
@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld('desk', {
     diff: call('git:diff'),
   },
   fetchPage: call('web:fetch'),
+  attach: { pick: call('attach:pick'), read: call('attach:read') },
+  pathForFile: (file) => webUtils.getPathForFile(file),
   lsp: {
     status: call('lsp:status'),
     open: call('lsp:open'),

@@ -21,7 +21,7 @@ function emptyState() {
     'div',
     { class: 'empty-chat' },
     h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF and other documents with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
   );
 }
 
@@ -1281,17 +1281,50 @@ function addImageFile(file) {
   reader.readAsDataURL(file);
 }
 
+// Documents from anywhere on the computer (Word, PDF, Excel, PowerPoint, text) become text chips.
+async function attachFiles(paths) {
+  if (!paths.length) return;
+  const pending = paths.map((p) => ({ kind: 'context', icon: '📄', label: `Reading ${p.split(/[\\/]/).pop()}…`, loading: true, context: '' }));
+  state.chips.push(...pending);
+  renderChips();
+  const results = await desk.attach.read(paths).catch((e) => paths.map((p) => ({ kind: 'error', name: p.split(/[\\/]/).pop(), error: String(e.message || e) })));
+  for (const chip of pending) state.chips.splice(state.chips.indexOf(chip), 1);
+  for (const r of results) {
+    if (r.kind === 'error') toast(r.error);
+    else if (r.kind === 'image') state.chips.push({ kind: 'image', mediaType: r.mediaType, data: r.data });
+    else
+      state.chips.push({
+        kind: 'context',
+        icon: '📄',
+        label: r.name,
+        context: `The attached document "${r.name}" (${r.file}${r.note ? ', ' + r.note : ''})${r.truncated ? ', cut short because it is long' : ''}:\n\`\`\`\`\n${r.text}\n\`\`\`\``,
+      });
+  }
+  renderChips();
+  $('#input').focus();
+}
+
+async function pickAttachments() {
+  const paths = await desk.attach.pick().catch(() => []);
+  return attachFiles(paths);
+}
+
 function wireImageInput() {
   const input = $('#input');
+  const split = (list) => {
+    const all = [...(list || [])];
+    return { images: all.filter((f) => IMAGE_TYPES.has(f.type)), docs: all.filter((f) => !IMAGE_TYPES.has(f.type)).map((f) => desk.pathForFile(f)).filter(Boolean) };
+  };
   input.addEventListener('paste', (e) => {
-    const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
-    if (!files.length) return;
+    const { images, docs } = split(e.clipboardData?.files);
+    if (!images.length && !docs.length) return;
     e.preventDefault();
-    files.forEach(addImageFile);
+    images.forEach(addImageFile);
+    attachFiles(docs);
   });
   const box = $('.composer-box');
   box.addEventListener('dragover', (e) => {
-    if ([...(e.dataTransfer?.items || [])].some((i) => i.type.startsWith('image/'))) {
+    if ([...(e.dataTransfer?.items || [])].some((i) => i.kind === 'file')) {
       e.preventDefault();
       box.classList.add('drop');
     }
@@ -1299,9 +1332,11 @@ function wireImageInput() {
   box.addEventListener('dragleave', () => box.classList.remove('drop'));
   box.addEventListener('drop', (e) => {
     box.classList.remove('drop');
-    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith('image/'));
-    if (!files.length) return;
+    const { images, docs } = split(e.dataTransfer?.files);
+    if (!images.length && !docs.length) return;
     e.preventDefault();
-    files.forEach(addImageFile);
+    images.forEach(addImageFile);
+    attachFiles(docs);
   });
+  $('#attach-btn').addEventListener('click', pickAttachments);
 }

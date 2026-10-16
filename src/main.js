@@ -18,6 +18,7 @@ const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const usage = require('./usage');
 const webpage = require('./webpage');
+const { extract } = require('./extract');
 const autocomplete = require('./autocomplete');
 const { LangServers } = require('./langservers');
 const agents = require('./agents');
@@ -1063,6 +1064,29 @@ function registerIpc() {
     const untracked = await git(ctx.workspace, ['ls-files', '--others', '--exclude-standard']).catch(() => '');
     if (untracked.trim()) diff += `\n\nNew files, not yet tracked:\n${untracked.trim()}`;
     return diff.trim();
+  });
+  // Documents attached to a chat from outside the workspace: Word, PDF, Excel, PowerPoint, text.
+  handle('attach:pick', async (ctx) => {
+    const r = await dialog.showOpenDialog(ctx.win, {
+      title: 'Attach files to the chat',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Documents and images', extensions: ['docx', 'pdf', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'csv', 'json', 'html', 'htm', 'xml', 'log', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return r.canceled ? [] : r.filePaths;
+  });
+  handle('attach:read', async (ctx, files) => {
+    const out = [];
+    for (const f of files || []) {
+      try {
+        out.push(await extract(f));
+      } catch (e) {
+        out.push({ kind: 'error', name: path.basename(f), error: String(e.message || e) });
+      }
+    }
+    return out;
   });
   handle('web:fetch', (ctx, url) => webpage.fetchPage(net.fetch.bind(net), url));
   handle('cfg:memory', (ctx) => config.memoryFiles(ctx.workspace, folderAcct(ctx)));
