@@ -43,6 +43,7 @@ async function init() {
   wireCodebase();
   wireConflicts();
   wireBlame();
+  wireSplit();
   wireDiff();
   wireReview();
   wirePreview();

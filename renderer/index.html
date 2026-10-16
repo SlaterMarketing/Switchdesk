@@ -55,6 +55,11 @@
           <div id="editor-host">
             <div id="editor"></div>
             <div id="diff-editor" class="hidden"></div>
+            <div id="side-resizer" class="hidden"></div>
+            <div id="editor-side" class="hidden">
+              <div class="side-head"><select id="side-file" title="File in the side editor"></select><span class="spacer"></span><button id="side-swap" class="icon-btn" title="Swap the two editors">⇄</button><button id="side-close" class="icon-btn" title="Close the side editor (Ctrl+\)">✕</button></div>
+              <div id="side-editor"></div>
+            </div>
             <div id="review-bar" class="hidden"></div>
             <div id="plan-bar" class="hidden"></div>
             <div id="plan-preview" class="msg-text hidden"></div>
@@ -203,6 +208,7 @@
     <script src="codebase.js"></script>
     <script src="conflicts.js"></script>
     <script src="blame.js"></script>
+    <script src="split.js"></script>
     <script src="boot.js"></script>
   </body>
 </html>

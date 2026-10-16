@@ -1344,6 +1344,8 @@ function buildMenu() {
         { label: 'Cycle Mode', accelerator: 'CmdOrCtrl+.', click: menuCmd('cycle-mode') },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: menuCmd('toggle-sidebar') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: menuCmd('toggle-terminal') },
+        { label: 'Split Editor', accelerator: 'CmdOrCtrl+\\', click: menuCmd('split') },
+        { label: 'Compare Active File With…', click: menuCmd('compare') },
         { label: 'Source Control', accelerator: 'CmdOrCtrl+Shift+G', click: menuCmd('source-control') },
         { label: 'Preview', accelerator: 'CmdOrCtrl+Shift+V', click: menuCmd('preview') },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: menuCmd('settings') },

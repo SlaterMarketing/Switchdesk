@@ -90,7 +90,8 @@
       ],
       "icon": "build/icon.png",
       "category": "Development",
-      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "executableName": "switchdesk"
     },
     "directories": {
       "buildResources": "build"

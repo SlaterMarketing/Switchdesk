@@ -173,7 +173,8 @@ function renderTabs() {
       h(
         'div',
         {
-          class: `tab${t.id === state.activeTab ? ' active' : ''}${t.dirty ? ' dirty' : ''}`,
+          class: `tab${t.id === state.activeTab ? ' active' : ''}${t.dirty ? ' dirty' : ''}${t.kind === 'file' && t.rel === side.rel ? ' on-side' : ''}`,
+          'data-id': t.id,
           title: t.rel,
           onclick: () => activateTab(t.id),
           onauxclick: (e) => e.button === 1 && closeTab(t.id),
@@ -224,6 +225,7 @@ function closeTab(id) {
   const t = state.tabs[i];
   if (t.dirty && !confirm(`${t.rel} has unsaved changes. Close anyway?`)) return;
   state.tabs.splice(i, 1);
+  sideTabClosed(t);
   if (t.kind === 'file' || t.kind === 'plan') t.model.dispose();
   else if (t.kind === 'preview') $('#preview').classList.add('hidden');
   else {
@@ -246,6 +248,17 @@ function closeTab(id) {
 }
 
 async function openFile(rel, line) {
+  const t = await loadFileTab(rel);
+  if (!t) return;
+  activateTab(t.id);
+  if (line) {
+    editor.revealLineInCenter(line);
+    editor.setPosition({ lineNumber: line, column: 1 });
+  }
+}
+
+// The file's tab, opening it (without switching to it) if it isn't open yet.
+async function loadFileTab(rel) {
   rel = rel.replace(/^\.?\//, '');
   let t = state.tabs.find((x) => x.kind === 'file' && x.rel === rel);
   if (!t) {
@@ -272,16 +285,13 @@ async function openFile(rel, line) {
       }
     });
     state.tabs.push(t);
+    renderTabs();
   }
-  activateTab(t.id);
-  if (line) {
-    editor.revealLineInCenter(line);
-    editor.setPosition({ lineNumber: line, column: 1 });
-  }
+  return t;
 }
 
-async function saveActive() {
-  const t = activeTab();
+async function saveActive(tab) {
+  const t = tab && tab.kind ? tab : sideEditor && sideEditor.hasTextFocus() ? sideTab() : activeTab();
   if (!t || t.kind !== 'file') return;
   await desk.writeFile(t.rel, t.model.getValue());
   t.savedVersion = t.model.getAlternativeVersionId();
@@ -1017,6 +1027,8 @@ function wire() {
     else if (cmd === 'cycle-mode') setMode(MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]);
     else if (cmd === 'toggle-sidebar') $('#workbench').classList.toggle('no-sidebar');
     else if (cmd === 'toggle-terminal') toggleTerminal();
+    else if (cmd === 'split') toggleSplit();
+    else if (cmd === 'compare') compareActiveWith();
     else if (cmd === 'source-control') showSidePanel('git');
     else if (cmd === 'search') openSearch();
     else if (cmd === 'settings') openSettings();
