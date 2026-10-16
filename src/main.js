@@ -47,6 +47,8 @@ let lastUpdate = null; // the updater's latest news, for windows opened later
 // extra accounts and parallel-agent copies carry over.
 const legacyData = path.join(app.getPath('appData'), 'Claude Desk');
 if (fs.existsSync(legacyData)) app.setPath('userData', legacyData);
+// The app's own tests run with a fresh data folder.
+if (process.env.SWITCHDESK_USER_DATA) app.setPath('userData', process.env.SWITCHDESK_USER_DATA);
 
 // ---------- settings ----------
 

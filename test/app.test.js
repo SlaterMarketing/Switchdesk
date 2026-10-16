@@ -1,0 +1,159 @@
+// End-to-end tests: the real app, driven through its window, with fake agents standing in for
+// Cursor and Copilot. Run with `npm test` (on Linux, under xvfb-run).
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle } = require('./helpers');
+
+const until = (w, fn, arg, timeout = 30000) => w.waitForFunction(fn, arg, { timeout });
+
+// Every test gets its own app, data folder and project, and closes the app even when it fails.
+function appTest(name, fn, opts = {}) {
+  test(name, { timeout: 120000 }, async () => {
+    const p = profile();
+    const dir = project(opts);
+    const run = await launch(p, dir);
+    try {
+      await fn({ ...run, p, dir });
+      assert.deepEqual(run.errors, [], 'no uncaught errors in the window');
+    } finally {
+      await run.app.close().catch(() => {});
+    }
+  });
+}
+
+appTest('opens a folder and a file', async ({ w }) => {
+  const rows = await w.$$eval('.tree-row', (r) => r.map((x) => x.textContent.trim()));
+  assert.ok(rows.some((r) => r.includes('cart.js')), `cart.js in the tree: ${rows}`);
+  await w.evaluate(() => openFile('cart.js'));
+  await until(w, () => activeTab() && activeTab().rel === 'cart.js');
+  assert.match(await w.evaluate(() => editor.getValue()), /function total/);
+});
+
+appTest('replaces across files and undoes', async ({ w, dir }) => {
+  await w.evaluate(() => openReplace());
+  await w.fill('#search-query', 'price');
+  await w.fill('#replace-with', 'cost');
+  await until(w, () => /\d/.test($('#search-summary').textContent));
+  await w.click('#replace-all');
+  await w.waitForFunction(() => /Replaced/.test(document.body.innerText), null, { timeout: 15000 });
+  assert.match(fs.readFileSync(path.join(dir, 'cart.js'), 'utf8'), /i\.cost/);
+  assert.match(fs.readFileSync(path.join(dir, 'lib', 'price.js'), 'utf8'), /const cost/);
+  await w.click('#replace-undo');
+  await w.waitForFunction(() => /Undid the replace/.test(document.body.innerText), null, { timeout: 15000 });
+  assert.match(fs.readFileSync(path.join(dir, 'cart.js'), 'utf8'), /i\.price/);
+  assert.match(fs.readFileSync(path.join(dir, 'lib', 'price.js'), 'utf8'), /const price/);
+});
+
+appTest('a plan opens as a document with its to-dos, and Build it builds it', async ({ w, p }) => {
+  await autoAllow(w);
+  await chatWith(w, 'cursor', 'plan');
+  await sendMessage(w, 'plan the empty cart fix');
+  await w.waitForSelector('.card.plan .plan-summary', { timeout: 30000 });
+  // The chat card is a short summary; the plan itself is in its tab.
+  const card = await w.$eval('.card.plan', (e) => e.innerText);
+  assert.match(card, /Tidy the cart/);
+  assert.doesNotMatch(card, /Keep the rest as it is/);
+  await until(w, () => activeTab() && activeTab().kind === 'plan');
+  await w.waitForSelector('#plan-preview .plan-todo', { timeout: 10000 });
+  const todos = await w.$$eval('#plan-preview .plan-todo', (e) => e.map((x) => x.innerText));
+  assert.ok(todos.some((t) => /Guard the empty cart/.test(t)), `to-dos: ${todos}`);
+  // cart.js in the plan opens the file.
+  await w.click('#plan-preview .file-ref');
+  await until(w, () => activeTab() && activeTab().rel === 'cart.js');
+  await w.evaluate(() => activateTab(state.tabs.find((t) => t.kind === 'plan').id));
+  await w.click('#plan-bar button:has-text("Build it")');
+  await until(w, () => state.tabs.find((t) => t.kind === 'plan').plan.status !== '');
+  await idle(w);
+  assert.ok(prompts(p, 'cursor').some((t) => /Build this plan now/.test(t)), 'the build was asked for');
+  assert.equal(await w.evaluate(() => activeChat().mode || state.mode), 'agent');
+});
+
+appTest('plan tabs and comparisons come back after a restart', async ({ app, w, p, dir }) => {
+  await autoAllow(w);
+  await chatWith(w, 'cursor', 'plan');
+  await sendMessage(w, 'plan it');
+  await w.waitForSelector('.card.plan', { timeout: 30000 });
+  await w.evaluate(() => startComparison('compare-test', [{ id: 'cursor', label: 'Cursor' }, { id: 'copilot', label: 'Copilot' }], false));
+  await until(w, () => chats.filter((c) => c.compare && c.sessionId && !c.busy && !c.making).length === 2, null, 60000);
+  await w.evaluate(() => saveWorkspace());
+  await app.close();
+
+  const again = await launch(p, dir);
+  try {
+    const w2 = again.w;
+    await until(w2, () => state.tabs.some((t) => t.kind === 'plan'));
+    await until(w2, () => chats.filter((c) => c.compare).length === 2);
+    await w2.evaluate(() => switchChat(chats.find((c) => c.compare).id));
+    await until(w2, () => /2 agents/.test($('#compare-bar').innerText) && /1 file/.test($('#compare-bar').innerText));
+    // Build it still works: it asks the plan's chat for a build as a new message.
+    await w2.evaluate(() => activateTab(state.tabs.find((t) => t.kind === 'plan').id));
+    await w2.click('#plan-bar button:has-text("Build it")');
+    await until(w2, () => !chats.some((c) => c.busy) && state.tabs.find((t) => t.kind === 'plan').plan.status !== '');
+    assert.ok(prompts(p, 'cursor').some((t) => /Build this plan now/.test(t)));
+    assert.deepEqual(again.errors, []);
+  } finally {
+    await again.app.close().catch(() => {});
+  }
+});
+
+appTest('switching agent carries on in the same tab', async ({ w, p }) => {
+  await chatWith(w, 'cursor');
+  await sendMessage(w, 'remember the word pineapple');
+  await idle(w);
+  const tabs = await w.evaluate(() => chats.length);
+  await w.evaluate(() => pickAgent('copilot'));
+  assert.equal(await w.evaluate(() => chats.length), tabs, 'no new tab');
+  assert.match(await w.evaluate(() => activeChat().el.innerText), /Switched from Cursor to Copilot/);
+  await sendMessage(w, 'what was the word?');
+  await idle(w);
+  const sent = prompts(p, 'copilot').pop();
+  assert.match(sent, /pineapple/, 'Copilot gets the conversation so far');
+  assert.match(sent, /what was the word/);
+});
+
+appTest('the same prompt to two agents, then merge one', async ({ w, dir }) => {
+  await w.evaluate(() => startComparison('compare-test', [{ id: 'cursor', label: 'Cursor' }, { id: 'copilot', label: 'Copilot' }], false));
+  await until(w, () => chats.filter((c) => c.compare && (c.wtChanges || []).length && !c.busy).length === 2, null, 60000);
+  // Each worked in its own copy; the folder itself is untouched.
+  assert.equal(fs.existsSync(path.join(dir, 'fake.txt')), false);
+  const copies = await w.evaluate(() => chats.filter((c) => c.compare).map((c) => c.worktree.path));
+  assert.equal(new Set(copies).size, 2);
+  await w.evaluate(() => switchChat(chats.find((c) => c.compare && c.agent === 'copilot').id));
+  await w.evaluate(() => useComparison(activeChat()));
+  await w.click('.modal button:has-text("Merge")');
+  await until(w, () => chats.some((c) => c.merged));
+  assert.equal(fs.readFileSync(path.join(dir, 'fake.txt'), 'utf8'), 'from copilot\n');
+  // The other copy is deleted once you say so (the test answers yes).
+  await until(w, () => chats.filter((c) => c.compare && c.worktree.removed).length === 1);
+});
+
+appTest('a second opinion marks its findings in the editor', async ({ w }) => {
+  await w.evaluate(() => startOpinion({ id: 'copilot', label: 'Copilot' }, ['cart.js'], activeChat()));
+  await w.waitForSelector('.card.findings', { timeout: 30000 });
+  assert.match(await w.$eval('.card.findings', (e) => e.innerText), /Empty cart not handled/);
+  await w.evaluate(() => openFile('cart.js'));
+  await until(w, () => monaco.editor.getModelMarkers({ owner: 'second-opinion' }).length === 1);
+});
+
+appTest('agents can drive the Preview', async ({ w }) => {
+  const http = require('http');
+  const page = '<title>Counter</title><button id="add" onclick="n.textContent = +n.textContent + 1">Add one</button> <span id="n">0</span><script>console.log("ready")</script>';
+  const server = http.createServer((req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(page));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const tool = (name, args = {}) => w.evaluate(([n, a]) => runPreviewTool(n, a), [name, args]);
+    assert.match((await tool('preview_open', { url })).text, /Counter/);
+    assert.match((await tool('preview_page')).text, /Add one/);
+    await tool('preview_click', { text: 'Add one' });
+    assert.equal((await tool('preview_eval', { expression: 'n.textContent' })).text, '"1"');
+    assert.match((await tool('preview_console')).text, /ready/);
+    assert.ok((await tool('preview_screenshot')).image, 'a screenshot');
+  } finally {
+    server.close();
+  }
+});

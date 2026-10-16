@@ -32,6 +32,8 @@ function ensureWebview() {
   v.id = 'preview-view';
   v.setAttribute('partition', 'persist:preview');
   v.setAttribute('src', 'about:blank');
+  // A new webview can't load or run anything until its first page is up.
+  v.ready = new Promise((resolve) => v.addEventListener('dom-ready', resolve, { once: true }));
   $('#preview-frame').append(v);
   v.addEventListener('console-message', (e) => {
     if (/Electron Security Warning/.test(e.message)) return; // Electron's own note, not the page's
@@ -65,7 +67,8 @@ function normaliseUrl(url) {
 function navigatePreview(url) {
   url = normaliseUrl(url);
   if (!url) return;
-  ensureWebview().loadURL(url).catch(() => {});
+  const v = ensureWebview();
+  v.ready.then(() => v.loadURL(url)).catch(() => {});
   setPreviewUrl(url);
 }
 
@@ -146,7 +149,7 @@ function resetPreview() {
   preview.url = '';
   preview.seen = [];
   preview.errors = [];
-  if (preview.view) preview.view.loadURL('about:blank').catch(() => {});
+  if (preview.view) preview.view.ready.then(() => preview.view.loadURL('about:blank')).catch(() => {});
   $('#btn-term-preview').classList.add('hidden');
   renderPreviewBar();
 }
@@ -286,6 +289,7 @@ async function showPreviewForAgent() {
   const v = ensureWebview();
   if (activeTab()?.kind !== 'preview') activateTab(previewTab().id);
   renderPreviewEmpty();
+  await Promise.race([v.ready, settle(10000)]);
   return v;
 }
 

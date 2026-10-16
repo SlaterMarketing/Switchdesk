@@ -1,0 +1,25 @@
+# Runs the app's end-to-end tests (test/) on every push and pull request: the real app in a
+# virtual screen, with fake agents standing in for Cursor and Copilot.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the code parses
+        run: for f in src/*.js renderer/*.js test/*.js; do node --check "$f"; done
+      - name: Run the tests
+        run: xvfb-run -a -s "-screen 0 1440x900x24" npm test

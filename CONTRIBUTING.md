@@ -21,11 +21,15 @@ npm start
 
 The README's "How it works" section explains how each agent is driven.
 
+## Tests
+
+`npm test` starts the real app with a fresh profile and drives it through its window (Playwright), using a fake agent (`test/fake-agent/`) in place of Cursor and Copilot, so it needs no sign-in and no network. The tests are in `test/app.test.js`; add one when you change how something behaves. On Linux without a screen, run `xvfb-run -a npm test`. They run on GitHub for every push and pull request.
+
 ## Sending a change
 
 1. Fork the repo and make a branch.
 2. Keep the change focused, and match the style of the code around it.
-3. Run the app and try what you changed with at least one agent.
+3. Run `npm test`, then run the app and try what you changed with at least one agent.
 4. Open a pull request that says what changed and how you tested it. Screenshots help for anything visual.
 
 ## Reporting a bug

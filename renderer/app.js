@@ -260,9 +260,16 @@ async function openFile(rel, line) {
   }
 }
 
-// The file's tab, opening it (without switching to it) if it isn't open yet.
-async function loadFileTab(rel) {
+// The file's tab, opening it (without switching to it) if it isn't open yet. Two opens of the same
+// file at once (a double click, or a link and its row) share one load.
+const loadingTabs = new Map();
+function loadFileTab(rel) {
   rel = rel.replace(/^\.?\//, '');
+  if (!loadingTabs.has(rel)) loadingTabs.set(rel, readFileTab(rel).finally(() => loadingTabs.delete(rel)));
+  return loadingTabs.get(rel);
+}
+
+async function readFileTab(rel) {
   let t = state.tabs.find((x) => x.kind === 'file' && x.rel === rel);
   if (!t) {
     let res;

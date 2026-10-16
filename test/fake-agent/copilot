@@ -1,0 +1,2 @@
+#!/bin/sh
+FAKE_AGENT_NAME=copilot exec node "$(dirname "$0")/fake-agent.js" "$@"

@@ -1,7 +1,7 @@
 {
   "name": "claude-desk",
   "productName": "Switchdesk",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "A Cursor-style desktop editor that drives the coding agents you already use: Claude Code, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek.",
   "main": "src/main.js",
   "private": true,
@@ -11,7 +11,8 @@
     "dist:mac": "npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15 && electron-builder --mac",
     "dist:win": "npm i --no-save --force @lydell/node-pty-win32-x64@1.2.0-beta.15 && electron-builder --win",
     "dist:linux": "electron-builder --linux",
-    "release": "npm version patch && git push --follow-tags"
+    "release": "npm version patch && git push --follow-tags",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec test/*.test.js"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.15",
@@ -25,7 +26,8 @@
   },
   "devDependencies": {
     "electron": "^44.7.2",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "playwright-core": "^1.56.1"
   },
   "build": {
     "appId": "uk.co.slatermarketing.claudedesk",

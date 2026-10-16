@@ -1,0 +1,2 @@
+#!/bin/sh
+FAKE_AGENT_NAME=cursor exec node "$(dirname "$0")/fake-agent.js" "$@"
