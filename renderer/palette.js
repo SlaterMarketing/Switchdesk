@@ -53,6 +53,7 @@ function paletteCommands() {
     ['Debug: Restart', '⌘F5', restartDebugging],
     ['Debug: Toggle Breakpoint', 'F9', () => { const t = activeTab(); const p = editor.getPosition(); if (t && t.kind === 'file' && p) toggleBreakpoint(t.rel, p.lineNumber); }],
     ['Debug: Open Run and Debug', '', () => showSidePanel('debug')],
+    ['Fix Problems in This File with the Agent', '', fixFileProblems],
     ['Settings: Codebase Search', '', () => openSettings('codebase')],
     ['Update Codebase Index', '', () => (codebaseOn() ? (indexCodebase(), toast('Updating the codebase index.')) : openSettings('codebase'))],
     ['Restart Language Servers', '', () => desk.lsp.restart().then(() => toast('Language servers restarted. They start again as you open files.'))],
