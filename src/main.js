@@ -685,6 +685,7 @@ function registerIpc() {
     settings = { ...settings, ...patch };
     saveSettings();
     if (patch.theme) nativeTheme.themeSource = patch.theme;
+    if (patch.keybindings) buildMenu(); // shortcuts changed in Settings → Keyboard
     broadcast('settings-changed', settings, ctx); // other windows keep their copy current
     return settings;
   });
@@ -1431,6 +1432,18 @@ async function newWindowWithPicker() {
   if (dir) newWindow(dir);
 }
 
+// A menu item's shortcut: yours from Settings → Keyboard if you changed it ("" for none), else its own.
+function accel(command, fallback) {
+  const b = settings.keybindings || {};
+  if (!(command in b)) return fallback;
+  if (!b[command]) return undefined;
+  const keys = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Escape: 'Esc' };
+  return b[command]
+    .split('+')
+    .map((p) => (p === 'Meta' ? 'Super' : keys[p] || p))
+    .join('+');
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const recents = (settings.recentFolders || []).filter((f) => fs.existsSync(f));
@@ -1440,9 +1453,9 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => newWindow(null) },
+        { label: 'New Window', accelerator: accel('New Window', 'CmdOrCtrl+Shift+N'), click: () => newWindow(null) },
         { type: 'separator' },
-        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open-folder') },
+        { label: 'Open Folder…', accelerator: accel('Open Folder…', 'CmdOrCtrl+O'), click: menuCmd('open-folder') },
         { label: 'Open Folder in New Window…', click: newWindowWithPicker },
         {
           label: 'Open Recent',
@@ -1466,8 +1479,8 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Add Folder to Workspace…', click: menuCmd('add-folder') },
         { type: 'separator' },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: menuCmd('close-tab') },
+        { label: 'Save', accelerator: accel('Save', 'CmdOrCtrl+S'), click: menuCmd('save') },
+        { label: 'Close Tab', accelerator: accel('Close Tab', 'CmdOrCtrl+W'), click: menuCmd('close-tab') },
         { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: (_i, bw) => bw && bw.close() },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
@@ -1477,21 +1490,21 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+Shift+P', click: menuCmd('palette') },
-        { label: 'Quick Open File', accelerator: 'CmdOrCtrl+P', click: menuCmd('quick-open') },
-        { label: 'Search in Files', accelerator: 'CmdOrCtrl+Shift+F', click: menuCmd('search') },
-        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: menuCmd('new-chat') },
-        { label: 'New Chat in Its Own Copy', accelerator: 'CmdOrCtrl+Alt+N', click: menuCmd('new-copy-chat') },
-        { label: 'Add Selection to Chat', accelerator: 'CmdOrCtrl+L', click: menuCmd('add-selection') },
-        { label: 'Edit Selection with Claude', accelerator: 'CmdOrCtrl+K', click: menuCmd('inline-edit') },
-        { label: 'Cycle Mode', accelerator: 'CmdOrCtrl+.', click: menuCmd('cycle-mode') },
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: menuCmd('toggle-sidebar') },
-        { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: menuCmd('toggle-terminal') },
-        { label: 'Split Editor', accelerator: 'CmdOrCtrl+\\', click: menuCmd('split') },
+        { label: 'Command Palette…', accelerator: accel('Command Palette', 'CmdOrCtrl+Shift+P'), click: menuCmd('palette') },
+        { label: 'Quick Open File', accelerator: accel('Go to File…', 'CmdOrCtrl+P'), click: menuCmd('quick-open') },
+        { label: 'Search in Files', accelerator: accel('Search in Files', 'CmdOrCtrl+Shift+F'), click: menuCmd('search') },
+        { label: 'New Chat', accelerator: accel('New Chat', 'CmdOrCtrl+N'), click: menuCmd('new-chat') },
+        { label: 'New Chat in Its Own Copy', accelerator: accel('New Chat in Its Own Copy', 'CmdOrCtrl+Alt+N'), click: menuCmd('new-copy-chat') },
+        { label: 'Add Selection to Chat', accelerator: accel('Add Selection to Chat', 'CmdOrCtrl+L'), click: menuCmd('add-selection') },
+        { label: 'Edit Selection with Claude', accelerator: accel('Edit Selection with the Agent', 'CmdOrCtrl+K'), click: menuCmd('inline-edit') },
+        { label: 'Cycle Mode', accelerator: accel('Cycle Mode', 'CmdOrCtrl+.'), click: menuCmd('cycle-mode') },
+        { label: 'Toggle Sidebar', accelerator: accel('Toggle Sidebar', 'CmdOrCtrl+B'), click: menuCmd('toggle-sidebar') },
+        { label: 'Toggle Terminal', accelerator: accel('Toggle Terminal', 'CmdOrCtrl+`'), click: menuCmd('toggle-terminal') },
+        { label: 'Split Editor', accelerator: accel('Split Editor', 'CmdOrCtrl+\\'), click: menuCmd('split') },
         { label: 'Compare Active File With…', click: menuCmd('compare') },
-        { label: 'Source Control', accelerator: 'CmdOrCtrl+Shift+G', click: menuCmd('source-control') },
-        { label: 'Preview', accelerator: 'CmdOrCtrl+Shift+V', click: menuCmd('preview') },
-        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: menuCmd('settings') },
+        { label: 'Source Control', accelerator: accel('Show Source Control', 'CmdOrCtrl+Shift+G'), click: menuCmd('source-control') },
+        { label: 'Preview', accelerator: accel('Preview', 'CmdOrCtrl+Shift+V'), click: menuCmd('preview') },
+        { label: 'Settings', accelerator: accel('Settings', 'CmdOrCtrl+,'), click: menuCmd('settings') },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },

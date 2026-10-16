@@ -59,6 +59,7 @@ function paletteCommands() {
     ['Restart Language Servers', '', () => desk.lsp.restart().then(() => toast('Language servers restarted. They start again as you open files.'))],
     ['Go to Next Problem', 'F8', () => (editor.focus(), editor.trigger('palette', 'editor.action.marker.nextInFiles', null))],
     ['Check for Updates', '', () => desk.checkUpdates()],
+    ['Settings: Keyboard Shortcuts', '', () => openSettings('keyboard')],
     ...MODES.map((m) => [`Mode: ${MODE_LABEL[m]}`, '', () => setMode(m)]),
   ];
   // Agents that are ready, and each Claude account.
@@ -101,7 +102,7 @@ function commandPalette() {
     items = items.slice(0, 60);
     index = Math.min(index, Math.max(0, items.length - 1));
     results.replaceChildren(
-      ...items.map((c, i) => h('div', { class: `pop-item palette-item${i === index ? ' active' : ''}`, onclick: () => run(c) }, h('span', {}, c[0]), c[1] ? h('kbd', {}, paletteKey(c[1])) : null))
+      ...items.map((c, i) => h('div', { class: `pop-item palette-item${i === index ? ' active' : ''}`, onclick: () => run(c) }, h('span', {}, c[0]), shortcutFor(c[0], c[1]) ? h('kbd', {}, shortcutFor(c[0], c[1])) : null))
     );
     const active = results.children[index];
     if (active) active.scrollIntoView({ block: 'nearest' });

@@ -16,6 +16,7 @@ const SETTINGS_SECTIONS = [
   ['autocomplete', 'Autocomplete'],
   ['intel', 'Code intelligence'],
   ['codebase', 'Codebase search'],
+  ['keyboard', 'Keyboard'],
   ['usage', 'Usage'],
 ];
 
@@ -36,7 +37,7 @@ function openSettings(section = 'general') {
   const show = (id) => {
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, usage: settingsUsage }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage }[id];
     render(body, close).catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
   };
   document.body.append(root);
