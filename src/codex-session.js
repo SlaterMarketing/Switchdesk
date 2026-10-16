@@ -34,13 +34,22 @@ function sandboxPolicy(mode, cwd, dirs = [], unrestricted = false) {
     : { type: 'workspaceWrite', writableRoots: [cwd, ...dirs], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
 }
 
+// Codex takes MCP servers as config overrides (TOML values; JSON strings and arrays are valid TOML).
+function mcpArgs(mcp) {
+  if (!mcp) return [];
+  const k = `mcp_servers.${mcp.name.replace(/-/g, '_')}`;
+  const out = ['-c', `${k}.command=${JSON.stringify(mcp.command)}`, '-c', `${k}.args=${JSON.stringify(mcp.args)}`];
+  for (const [n, v] of Object.entries(mcp.env || {})) out.push('-c', `${k}.env.${n}=${JSON.stringify(v)}`);
+  return out;
+}
+
 function spawnCodex(bin, args, opts) {
   return spawn(bin, args, { ...opts, shell: isWin && /\.(cmd|bat)$/i.test(bin), windowsHide: true });
 }
 
 class CodexSession {
-  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, mcp, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, mcp, onEvent, onPermission, onExit });
     this.alive = false;
     this.items = new Map(); // itemId -> item, for approvals that only name the item
     this.turnId = null;
@@ -49,7 +58,7 @@ class CodexSession {
 
   async start() {
     const env = await cli.childEnv(this.extraEnv);
-    this.child = spawnCodex(this.bin, ['app-server'], { cwd: this.cwd, env });
+    this.child = spawnCodex(this.bin, ['app-server', ...mcpArgs(this.mcp)], { cwd: this.cwd, env });
     this.alive = true;
     let stderr = '';
     this.child.stderr.on('data', (c) => (stderr = (stderr + c.toString('utf8')).slice(-8000)));

@@ -17,6 +17,7 @@ const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const debuglog = require('./debuglog');
+const previewBridge = require('./preview-bridge');
 const tests = require('./tests');
 const usage = require('./usage');
 const codebase = require('./codebase');
@@ -75,6 +76,18 @@ const contexts = new Map(); // webContents id -> { id, win, workspace, extra, wa
 const NO_WINDOW = { id: 0, win: null, workspace: null, extra: [], watchers: [] };
 const ctxOf = (e) => contexts.get(e.sender.id) || NO_WINDOW;
 const ctxOfWindow = (bw) => (bw && contexts.get(bw.webContents.id)) || null;
+
+// A Preview tool call from an agent, answered by the window's renderer (preview.js).
+const previewCalls = new Map(); // id -> resolve
+function previewTool(ctx, name, args) {
+  if (!ctx.win || ctx.win.isDestroyed()) return Promise.resolve({ error: 'The Switchdesk window was closed.' });
+  const id = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => previewCalls.delete(id) && resolve({ error: 'The Preview took too long to answer.' }), 90000);
+    previewCalls.set(id, (r) => (clearTimeout(timer), resolve(r)));
+    sendTo(ctx, 'preview-tool', { id, name, args });
+  });
+}
 
 function sendTo(ctx, channel, payload) {
   if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send(channel, payload);
@@ -529,7 +542,10 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   // Picking up a conversation another account had: give this account the latest transcript.
   if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
+  // The Preview tools (preview-mcp.js), so the agent can open and check the running app itself.
+  const mcp = settings.previewTools === false ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)));
   chat.session = new Session({
+    mcp,
     bin,
     args: [...(a.args || []), ...(a.dirsArg ? dirs.flatMap((d) => [a.dirsArg, d]) : [])],
     label: a.label,
@@ -994,6 +1010,11 @@ function registerIpc() {
     chat.mode = mode; // a plan approved mid-turn: the rest of the turn follows the new mode's rules
     return chat.session.setMode(mode);
   });
+  handle('preview:tool-result', (ctx, id, result) => {
+    const done = previewCalls.get(id);
+    previewCalls.delete(id);
+    if (done) done(result || {});
+  });
   handle('approval:answer', (ctx, chatId, reqId, decision) => answerApproval(ctx, chatId, reqId, decision));
   handle('rewind:files', (ctx, turnIds) => rewindFiles(turnIds, false));
   handle('rewind:apply', (ctx, turnIds) => rewindFiles(turnIds, true));
@@ -1413,6 +1434,7 @@ function createWindow(start) {
     closeWindowChats(ctx);
     terminal.killWhere(`${ctx.id}:`);
     if (ctx.debug) ctx.debug.stop();
+    previewBridge.forget(ctx);
     stopWatchers(ctx);
     if (loginCtx === ctx && loginHandle) loginHandle.cancel();
     contexts.delete(ctx.id);

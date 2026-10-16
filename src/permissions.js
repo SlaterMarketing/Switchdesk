@@ -89,6 +89,8 @@ const isPlanFile = (f) => /[\\/]plans?[\\/][^\\/]+\.md$/i.test(f) || /\.plan\.md
 // only look while planning), and read-only commands never do.
 function decide(settings, { toolName, input }, { mode, inWorkspace }) {
   if (ALWAYS_ASK.has(toolName)) return null;
+  // Switchdesk's own Preview tools only look at and click around the page in the Preview.
+  if (/switchdesk[-_]preview|^preview_(open|screenshot|page|click|type|console|eval)$/.test(toolName || '')) return { behavior: 'allow' };
   const pol = policyOf(settings);
   const looking = mode === 'ask' || mode === 'plan';
   if (SHELL.has(toolName)) {

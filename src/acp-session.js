@@ -114,8 +114,8 @@ function readPlan(file) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, onEvent, onPermission, onExit });
+  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, mcp, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, mcp, onEvent, onPermission, onExit });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -144,7 +144,7 @@ class AcpSession {
       this.caps = init.agentCapabilities || {};
       let r = null;
       if (this.sessionId) {
-        const params = { sessionId: this.sessionId, cwd: this.cwd, mcpServers: [] };
+        const params = { sessionId: this.sessionId, cwd: this.cwd, mcpServers: acpMcp(this.mcp) };
         try {
           if (this.caps.sessionCapabilities && this.caps.sessionCapabilities.resume) r = await this.rpc.request('session/resume', params, 60000);
           else if (this.caps.loadSession) {
@@ -160,7 +160,7 @@ class AcpSession {
         if (!r) this.sessionId = null;
       }
       if (!this.sessionId) {
-        r = await newSession(this.rpc, this.cwd, this.authMethod, init);
+        r = await newSession(this.rpc, this.cwd, this.authMethod, init, this.mcp);
         this.sessionId = r.sessionId;
       }
       this.modes = (r && r.modes && r.modes.availableModes) || [];
@@ -387,8 +387,13 @@ class AcpSession {
 
 // session/new. Some agents (Cursor) want `authenticate` with their own stored-login method first;
 // that uses the login the user made with the CLI and never passes credentials through here.
-async function newSession(rpc, cwd, authMethod, init) {
-  const params = { cwd, mcpServers: [] };
+// Switchdesk's own MCP server, in ACP's form (stdio, with env as a name/value list).
+function acpMcp(mcp) {
+  return mcp ? [{ name: mcp.name, command: mcp.command, args: mcp.args, env: Object.entries(mcp.env || {}).map(([name, value]) => ({ name, value })) }] : [];
+}
+
+async function newSession(rpc, cwd, authMethod, init, mcp) {
+  const params = { cwd, mcpServers: acpMcp(mcp) };
   try {
     return await rpc.request('session/new', params, 120000);
   } catch (err) {

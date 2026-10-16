@@ -43,7 +43,8 @@
     ],
     "asarUnpack": [
       "node_modules/@lydell/**",
-      "node_modules/pdfjs-dist/legacy/build/**"
+      "node_modules/pdfjs-dist/legacy/build/**",
+      "src/preview-mcp.js"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

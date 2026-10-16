@@ -16,8 +16,8 @@ const isWin = process.platform === 'win32';
 const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', debug: 'acceptEdits', auto: 'auto' };
 
 class ChatSession {
-  constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, mcp, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, mcp, onEvent, onPermission, onExit });
     this.child = null;
     this.pending = new Map(); // our control request id -> resolve
     this.alive = false;
@@ -38,6 +38,8 @@ class ChatSession {
       PERMISSION_MODE[this.mode] || 'acceptEdits',
     ];
     for (const d of this.dirs) args.push('--add-dir', d); // the workspace's other folders
+    // Switchdesk's own tools (the Preview), alongside the user's MCP servers.
+    if (this.mcp) args.push('--mcp-config', JSON.stringify({ mcpServers: { [this.mcp.name]: { type: 'stdio', command: this.mcp.command, args: this.mcp.args, env: this.mcp.env } } }));
     if (this.model) args.push('--model', this.model);
     if (this.effort) args.push('--effort', this.effort);
     if (this.sessionId) args.push('--resume', this.sessionId);
