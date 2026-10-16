@@ -219,11 +219,15 @@ class AcpSession {
     if (!/model name is not valid|model not found/i.test(message)) return message;
     const current = this.modelOptions.find((m) => m.id === this.currentModel);
     const name = current ? current.label : this.currentModel || 'the default model';
-    return `${this.label} wouldn't run ${name} for your account right now (it said: ${message.trim()}). Pick another model from the Model menu below and send your message again.${this.modelOptions.length ? '' : ' If the menu is empty, choose a model in ' + this.label + ' itself first.'}`;
+    return `${this.label} wouldn't run ${name} for your account right now (it said: ${message.trim()}). Pick another model from the Model menu below and send your message again.${this.modelOptions.length ? '' : ' If the menu is empty, choose a model in ' + this.label + ' itself first.'}${this.label === 'Cursor' ? ' If every model fails, your Cursor CLI is probably out of date: run `agent update` in the terminal.' : ''}`;
   }
 
   finish(error) {
     if (!this.turnStarted) return;
+    // Cursor can report a rejected model as reply text rather than an error.
+    const said = this.turnText || '';
+    this.turnText = '';
+    if (!error && said.length < 600 && /model name is not valid/i.test(said)) this.shape.notice(this.explain(said).replace(/ \(it said: [\s\S]*?\)\./, '.'));
     const started = this.turnStarted;
     this.turnStarted = null;
     this.tools.clear();
@@ -236,7 +240,10 @@ class AcpSession {
     const s = this.shape;
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
-        if (u.content && u.content.type === 'text') s.text(u.content.text, u.messageId || 'text');
+        if (u.content && u.content.type === 'text') {
+          s.text(u.content.text, u.messageId || 'text');
+          this.turnText = (this.turnText || '') + u.content.text;
+        }
         break;
       case 'agent_thought_chunk':
         if (u.content && u.content.type === 'text') s.thinking(u.content.text, u.messageId || 'thought');
