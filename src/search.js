@@ -34,6 +34,7 @@ async function search(root, files, query, opts = {}) {
   const id = (current.get(group) || 0) + 1;
   current.set(group, id);
   const absOf = typeof root === 'function' ? root : (rel) => path.join(root, rel);
+  const io = opts.io || fs; // an SSH folder reads through its connection instead
   if (!query) return { results: [], truncated: false };
   let re;
   try {
@@ -51,9 +52,9 @@ async function search(root, files, query, opts = {}) {
     let buf;
     try {
       const abs = absOf(rel);
-      const st = await fs.stat(abs);
+      const st = await io.stat(abs);
       if (!st.isFile() || st.size > MAX_FILE_BYTES) continue;
-      buf = await fs.readFile(abs);
+      buf = await io.readFile(abs);
     } catch {
       continue;
     }
@@ -92,6 +93,7 @@ async function search(root, files, query, opts = {}) {
 // before and after, so the change can be undone.
 async function replace(root, rels, query, replacement, opts = {}) {
   const absOf = typeof root === 'function' ? root : (rel) => path.join(root, rel);
+  const io = opts.io || fs;
   let re;
   try {
     re = buildRegex(query, opts);
@@ -104,7 +106,7 @@ async function replace(root, rels, query, replacement, opts = {}) {
     const abs = absOf(rel);
     let before;
     try {
-      before = await fs.readFile(abs, 'utf8');
+      before = await io.readFile(abs, 'utf8');
     } catch {
       continue;
     }
@@ -121,10 +123,10 @@ async function replace(root, rels, query, replacement, opts = {}) {
     }
     if (!count) continue;
     const after = parts.join('');
-    await fs.writeFile(abs, after, 'utf8');
+    await io.writeFile(abs, after, 'utf8');
     files.push({ rel, count, before, after });
   }
   return { files };
 }
 
-module.exports = { search, replace };
+module.exports = { search, replace, buildRegex };

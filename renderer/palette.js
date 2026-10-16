@@ -20,6 +20,7 @@ function paletteCommands() {
     ['Schedule a Task…', '', () => openSchedules('new')],
     ['New Window', '⌘⇧N', () => desk.newWindow(null)],
     ['Open Folder…', '⌘O', () => desk.pickFolder().then(setFolder)],
+    ['Open Folder over SSH…', '', () => openSshFolder()],
     ['Add Folder to Workspace…', '', () => addWorkspaceFolder()],
     ['Go to File…', '⌘P', quickOpen],
     ['Search in Files', '⌘⇧F', openSearch],
@@ -77,7 +78,7 @@ function paletteCommands() {
     const s = agentState.status.get(a.id);
     if (a.id !== 'claude' && s && s.loggedIn && agentOf(chat) !== a.id) cmds.push([`Agent: ${a.label}`, '', () => chooseAgent(a.id)]);
   }
-  for (const f of (state.settings.recentFolders || []).filter((f) => !state.folder || f !== state.folder.root)) {
+  for (const f of (state.settings.recentFolders || []).filter((f) => !state.folder || f !== folderId())) {
     cmds.push([`Open Recent: ${f}`, '', async () => setFolder(await desk.openFolder(f))]);
     cmds.push([`Open Recent in New Window: ${f}`, '', () => desk.newWindow(f)]);
   }

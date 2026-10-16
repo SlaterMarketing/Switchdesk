@@ -24,7 +24,7 @@ if (process.argv[2] === '--version') {
   process.exit(0);
 }
 
-const log = (x) => fs.appendFileSync(path.join(DIR, 'log.jsonl'), JSON.stringify({ agent: NAME, ...x }) + '\n');
+const log = (x) => fs.appendFileSync(path.join(DIR, 'log.jsonl'), JSON.stringify({ agent: NAME, overSsh: !!process.env.SSH_CONNECTION, ...x }) + '\n');
 const send = (o) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\n');
 const MODES = { currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Agent' }, { id: 'plan', name: 'Plan' }, { id: 'ask', name: 'Ask' }] };
 let SID = `${NAME}-${process.pid}`;

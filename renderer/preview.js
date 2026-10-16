@@ -137,7 +137,7 @@ async function runDevServer() {
   }
   const name = ['dev', 'start', 'serve', 'preview'].find((s) => scripts[s]);
   if (!name) {
-    if (state.fileSet.has('index.html')) return navigatePreview(`file://${state.folder.root.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1:')}/index.html`);
+    if (state.fileSet.has('index.html') && !state.folder.remote) return navigatePreview(`file://${state.folder.root.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1:')}/index.html`);
     return toast("Couldn't find a dev script in package.json. Start your server in the terminal and its address will show up here.");
   }
   const t = await newTerminal();

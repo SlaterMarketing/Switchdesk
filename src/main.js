@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const cli = require('./claude-cli');
 const jupyter = require('./jupyter');
+const remote = require('./remote');
 const { ChatSession } = require('./session');
 const { TurnSnapshot, MultiSnapshot, git, writeTree, diffTrees, blob, isGitRepo, gitRoot } = require('./snapshots');
 const gitops = require('./gitops');
@@ -99,10 +100,15 @@ function broadcast(channel, payload, except) {
   for (const c of contexts.values()) if (c !== except) sendTo(c, channel, payload);
 }
 
+// Paths in an SSH folder are the host's (POSIX), whatever this machine uses.
+const P = (ctx) => (ctx && ctx.remote ? path.posix : path);
+// The folder's identity for settings, recent folders and windows: its path, or ssh://host/path.
+const folderKey = (ctx) => (ctx.remote ? remote.urlOf(ctx.remote.spec, ctx.workspace) : ctx.workspace);
+
 // The folders open in a window, the main one first. key prefixes an extra folder's paths.
 function roots(ctx) {
   if (!ctx.workspace) return [];
-  const out = [{ key: '', dir: ctx.workspace, name: path.basename(ctx.workspace) || ctx.workspace }];
+  const out = [{ key: '', dir: ctx.workspace, name: P(ctx).basename(ctx.workspace) || ctx.workspace }];
   const used = new Set([out[0].name]);
   for (const dir of ctx.extra) {
     const base = path.basename(dir) || dir;
@@ -114,15 +120,16 @@ function roots(ctx) {
   return out;
 }
 
-const within = (dir, abs) => {
-  const rel = path.relative(dir, abs);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+const within = (dir, abs, p = path) => {
+  const rel = p.relative(dir, abs);
+  return rel === '' || (!rel.startsWith('..') && !p.isAbsolute(rel));
 };
 
 function rootOf(ctx, abs) {
-  abs = path.resolve(abs);
+  const p = P(ctx);
+  abs = p.resolve(abs);
   let best = null;
-  for (const r of roots(ctx)) if (within(r.dir, abs) && (!best || r.dir.length > best.dir.length)) best = r;
+  for (const r of roots(ctx)) if (within(r.dir, abs, p) && (!best || r.dir.length > best.dir.length)) best = r;
   return best;
 }
 
@@ -136,8 +143,8 @@ function resolveInWorkspace(ctx, p) {
   if (m) {
     const r = roots(ctx).find((x) => x.key === `⟦${m[1]}⟧`);
     if (!r) throw new Error('That folder is no longer in the workspace: ' + p);
-    abs = path.join(r.dir, m[2] || '');
-  } else abs = path.isAbsolute(p) ? p : path.join(ctx.workspace || '', p);
+    abs = P(ctx).join(r.dir, m[2] || '');
+  } else abs = P(ctx).isAbsolute(p) ? p : P(ctx).join(ctx.workspace || '', p);
   if (!inWorkspace(ctx, abs)) throw new Error('Path is outside the open folders: ' + p);
   return abs;
 }
@@ -146,13 +153,14 @@ function resolveInWorkspace(ctx, p) {
 function relOf(ctx, abs) {
   const r = rootOf(ctx, abs);
   if (!r) return null;
-  const rel = path.relative(r.dir, abs).split(path.sep).join('/');
+  const rel = P(ctx).relative(r.dir, abs).split(P(ctx).sep).join('/');
   return r.key ? (rel ? `${r.key}/${rel}` : r.key) : rel;
 }
 
 function folderInfo(ctx) {
   if (!ctx.workspace) return null;
-  return { root: ctx.workspace, name: path.basename(ctx.workspace), extra: roots(ctx).slice(1).map((r) => ({ key: r.key, dir: r.dir, name: r.name })) };
+  const info = { root: ctx.workspace, name: P(ctx).basename(ctx.workspace) || ctx.workspace, extra: roots(ctx).slice(1).map((r) => ({ key: r.key, dir: r.dir, name: r.name })) };
+  return ctx.remote ? { ...info, key: folderKey(ctx), remote: ctx.remote.spec, name: `${info.name} [${ctx.remote.spec}]` } : info;
 }
 
 function gitFiles(root) {
@@ -189,6 +197,7 @@ async function walkFiles(root, limit = 20000) {
 }
 
 async function listFiles(ctx) {
+  if (ctx.remote) return (await ctx.remote.call('list', { root: ctx.workspace })).sort();
   const out = [];
   for (const r of roots(ctx)) {
     const files = (await gitFiles(r.dir)) || (await walkFiles(r.dir));
@@ -229,7 +238,11 @@ function startWatchers(ctx) {
 
 // The window that already has this folder open, if any.
 function windowWith(dir, except) {
-  for (const c of contexts.values()) if (c !== except && c.workspace && path.resolve(c.workspace) === path.resolve(dir) && c.win && !c.win.isDestroyed()) return c;
+  if (remote.parseUrl(dir)) {
+    for (const c of contexts.values()) if (c !== except && c.workspace && folderKey(c) === dir && c.win && !c.win.isDestroyed()) return c;
+    return null;
+  }
+  for (const c of contexts.values()) if (c !== except && c.workspace && !c.remote && path.resolve(c.workspace) === path.resolve(dir) && c.win && !c.win.isDestroyed()) return c;
   return null;
 }
 
@@ -241,10 +254,12 @@ function focusWindow(ctx) {
 function setTitle(ctx) {
   if (!ctx.win || ctx.win.isDestroyed()) return;
   const extra = ctx.extra.length ? ` (+${ctx.extra.length} folder${ctx.extra.length > 1 ? 's' : ''})` : '';
-  ctx.win.setTitle(ctx.workspace ? `${path.basename(ctx.workspace)}${extra} — Switchdesk` : 'Switchdesk');
+  ctx.win.setTitle(ctx.workspace ? `${P(ctx).basename(ctx.workspace)}${ctx.remote ? ` [${ctx.remote.spec}]` : ''}${extra} — Switchdesk` : 'Switchdesk');
 }
 
 async function openFolder(ctx, dir) {
+  if (remote.parseUrl(dir)) return openSsh(ctx, dir);
+  dropRemote(ctx);
   dir = path.resolve(dir);
   // Already open in another window: go to it, the way Cursor does.
   const other = windowWith(dir, ctx);
@@ -263,9 +278,50 @@ async function openFolder(ctx, dir) {
   return folderInfo(ctx);
 }
 
+// An SSH folder: connect, find the folder on the host, and use it like a local one from here on.
+async function openSsh(ctx, url) {
+  const { spec, dir } = remote.parseUrl(url);
+  const other = [...contexts.values()].find((c) => c !== ctx && c.workspace && folderKey(c) === url && c.win && !c.win.isDestroyed());
+  if (other) {
+    focusWindow(other);
+    return { elsewhere: true, root: dir, name: path.posix.basename(dir) };
+  }
+  const conn = ctx.remote && ctx.remote.spec === spec && ctx.remote.alive ? ctx.remote : await new remote.Remote(spec).connect();
+  const where = await conn.call('resolve', { path: dir || '~' });
+  if (!where.isDir) {
+    if (conn !== ctx.remote) conn.close();
+    throw new Error(where.exists ? `${where.path} on ${spec} is a file, not a folder.` : `There's no folder ${where.path} on ${spec}.`);
+  }
+  closeWindowChats(ctx);
+  stopWatchers(ctx);
+  if (ctx.remote && ctx.remote !== conn) dropRemote(ctx);
+  ctx.remote = conn;
+  ctx.workspace = where.path;
+  ctx.extra = [];
+  conn.removeAllListeners('changed');
+  conn.removeAllListeners('closed');
+  conn.on('changed', (m) => m.root === ctx.workspace && sendTo(ctx, 'fs-changed', m.rels));
+  conn.on('closed', (why) => ctx.remote === conn && sendTo(ctx, 'remote-closed', { spec, message: why }));
+  await conn.call('watch', { root: where.path });
+  const key = folderKey(ctx);
+  settings.recentFolders = [key, ...settings.recentFolders.filter((f) => f !== key)].slice(0, 10);
+  rememberWindows();
+  setTitle(ctx);
+  buildMenu();
+  return folderInfo(ctx);
+}
+
+function dropRemote(ctx) {
+  if (!ctx.remote) return;
+  ctx.remote.removeAllListeners();
+  ctx.remote.close();
+  ctx.remote = null;
+}
+
 // Adds a folder to the window's workspace, remembered for the next time its main folder opens.
 function addFolder(ctx, dir) {
   if (!ctx.workspace) throw new Error('Open a folder first.');
+  if (ctx.remote) throw new Error("An SSH folder can't have other folders added to its window yet.");
   dir = path.resolve(dir);
   if (within(ctx.workspace, dir) || within(dir, ctx.workspace)) throw new Error(`${path.basename(dir)} is already part of ${path.basename(ctx.workspace)}.`);
   if (ctx.extra.some((d) => within(d, dir) || within(dir, d))) throw new Error(`${path.basename(dir)} is already in this workspace.`);
@@ -295,7 +351,7 @@ function saveExtra(ctx) {
 function rememberWindows() {
   if (quitting) return;
   for (const c of contexts.values()) noteBounds(c);
-  settings.openWindows = [...contexts.values()].map((c) => c.workspace).filter(Boolean);
+  settings.openWindows = [...contexts.values()].filter((c) => c.workspace).map(folderKey);
   saveSettings();
 }
 
@@ -305,12 +361,12 @@ function noteBounds(ctx) {
   const win = ctx.win;
   if (!win || win.isDestroyed() || win.isMinimized() || !ctx.workspace) return;
   const maximized = win.isMaximized() || win.isFullScreen();
-  const prev = (settings.windowBounds || {})[ctx.workspace];
+  const prev = (settings.windowBounds || {})[folderKey(ctx)];
   // A maximised window keeps the size it had before, for when it's restored.
   const b = maximized && prev ? prev : win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
   const all = { ...(settings.windowBounds || {}) };
-  delete all[ctx.workspace];
-  all[ctx.workspace] = { x: b.x, y: b.y, width: b.width, height: b.height, maximized };
+  delete all[folderKey(ctx)];
+  all[folderKey(ctx)] = { x: b.x, y: b.y, width: b.width, height: b.height, maximized };
   // The 50 folders used most recently.
   settings.windowBounds = Object.fromEntries(Object.entries(all).slice(-50));
 }
@@ -398,7 +454,7 @@ async function listSessionsIn(account, workspace) {
 
 // A chat's working folder: the open folder, or its own copy (a worktree) for parallel agents.
 function chatCwd(ctx, cwd) {
-  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
+  return !ctx.remote && cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
 }
 
 async function loadSession(ctx, id, cwd, account) {
@@ -536,27 +592,30 @@ function denyPending(chat, message) {
 async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent, agentAccount }) {
   const a = agents.AGENTS[agent] ? agents.AGENTS[agent] : agents.AGENTS.claude;
   agent = agents.AGENTS[agent] ? agent : 'claude';
-  const bin = await agents.findBin(agent, settings);
+  // In an SSH folder the agent's CLI is the host's, found on its PATH there.
+  const bin = ctx.remote ? (agent === 'claude' ? 'claude' : a.bins[0]) : await agents.findBin(agent, settings);
   if (!bin) throw new Error(agent === 'claude' ? 'Claude Code is not installed. Open Settings → Setup to install it.' : `${a.label} isn't installed yet. Open Settings → Agents to install it.`);
   if (a.key && !agents.readKey(settings, agent, agentAccount)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
   const dirs = [...ctx.extra];
   const chat = { ctx, session: null, effort: effort || '', model: model || '', mode, turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, agentAccount, dirs };
   const key = chatKey(ctx, chatId);
   // Picking up a conversation another account had: give this account the latest transcript.
-  if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
+  if (sessionId && agent === 'claude' && !ctx.remote) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
   // The Preview tools (preview-mcp.js), so the agent can open and check the running app itself.
-  const mcp = settings.previewTools === false ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)));
+  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)));
+  const hostArgs = (args) => ctx.remote.spawnArgs(chat.cwd, [bin, ...args]);
   chat.session = new Session({
     mcp,
     bin,
+    via: ctx.remote ? hostArgs : null,
     args: [...(a.args || []), ...(a.dirsArg ? dirs.flatMap((d) => [a.dirsArg, d]) : [])],
     label: a.label,
     authMethod: a.authMethod,
     cwd: chat.cwd,
     dirs,
-    rules: a.ownRulesFile ? projectRules(chat.cwd) : '',
-    env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model, agentAccount),
+    rules: a.ownRulesFile && !ctx.remote ? projectRules(chat.cwd) : '',
+    env: ctx.remote ? {} : agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model, agentAccount),
     sessionId,
     resumeAt: agent === 'claude' ? resumeAt : null,
     model,
@@ -573,8 +632,8 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
         if (EDIT_TOOLS.has(req.toolName)) touchForSnapshot(ctx, chat.turn, editTarget(req.input));
         // Switchdesk's own rules answer first, the same way for every agent.
         const inFolders = (f) => {
-          const abs = path.resolve(chat.cwd || ctx.workspace || '', f);
-          return (chat.cwd && within(chat.cwd, abs)) || inWorkspace(ctx, abs);
+          const abs = P(ctx).resolve(chat.cwd || ctx.workspace || '', f);
+          return (chat.cwd && within(chat.cwd, abs, P(ctx))) || inWorkspace(ctx, abs);
         };
         const auto = permissions.decide(settings, req, { mode: chat.mode, inWorkspace: inFolders });
         if (auto) {
@@ -619,6 +678,7 @@ function projectRules(dir) {
 
 // A snapshot of every folder the chat can change, taken before each turn.
 function beginSnapshot(ctx, chat) {
+  if (ctx.remote) return new remote.RemoteSnapshot(ctx.remote, chat.cwd).begin();
   const extra = chat.cwd === ctx.workspace ? roots(ctx).slice(1) : [];
   if (!extra.length) return new TurnSnapshot(chat.cwd).begin();
   return new MultiSnapshot([new TurnSnapshot(chat.cwd), ...extra.map((r) => new TurnSnapshot(r.dir, r.key))]).begin();
@@ -690,11 +750,150 @@ function answerApproval(ctx, chatId, reqId, decision) {
   resolve(decision);
 }
 
+// Git in an SSH folder: the same commands, run on the host.
+const remoteGit = {
+  cwd: (ctx) => ({ remote: ctx.remote, dir: ctx.workspace }),
+  async status(ctx) {
+    const s = await gitops.status(this.cwd(ctx));
+    if (s.files) for (const f of s.files) f.path = f.rel;
+    return s;
+  },
+  head: (ctx, rel) => gitops.headContent(remoteGit.cwd(ctx), './' + rel),
+  run: (ctx, args) => git(remoteGit.cwd(ctx), args, { env: { GIT_TERMINAL_PROMPT: '0', GIT_EDITOR: 'true' } }),
+  async commit(ctx, message) {
+    return gitops.commitAll(this.cwd(ctx), message);
+  },
+  sync: (ctx, action) => gitops.sync(remoteGit.cwd(ctx), action),
+  async discard(ctx, rel, wasUntracked) {
+    if (wasUntracked) return ctx.remote.call('remove', { path: resolveInWorkspace(ctx, rel) });
+    return git(this.cwd(ctx), ['checkout', 'HEAD', '--', rel]);
+  },
+  async diff(ctx) {
+    const diff = await git(this.cwd(ctx), ['diff', 'HEAD', '--no-color']).catch(() => '');
+    const untracked = await git(this.cwd(ctx), ['ls-files', '--others', '--exclude-standard']).catch(() => '');
+    return (untracked.trim() ? `${diff}\n\nNew files, not yet tracked:\n${untracked.trim()}` : diff).trim();
+  },
+};
+
 // ---------- IPC ----------
 
 function registerIpc() {
   // Every handler gets the window it was called from.
-  const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => fn(ctxOf(e), ...args));
+  // In an SSH folder, what works on the host has its own handler (REMOTE below); what only works on
+  // this machine's files gives an empty answer instead of touching a local path of the same name.
+  const handle = (channel, fn) =>
+    ipcMain.handle(channel, (e, ...args) => {
+      const ctx = ctxOf(e);
+      if (ctx && ctx.remote) {
+        if (REMOTE[channel]) return REMOTE[channel](ctx, ...args);
+        if (channel in LOCAL_ONLY) {
+          const v = LOCAL_ONLY[channel];
+          if (v instanceof Error) throw v;
+          return typeof v === 'function' ? v(ctx, ...args) : v;
+        }
+      }
+      return fn(ctx, ...args);
+    });
+  const notOverSsh = (what) => new Error(`${what} isn't available in SSH folders yet.`);
+  const LOCAL_ONLY = {
+    'file:reveal': null,
+    'sessions:list': [],
+    'sessions:load': [],
+    'agents:sessions': [],
+    'agents:history': [],
+    'worktree:create': notOverSsh('Working in a copy of the folder'),
+    'worktree:changes': [],
+    'worktree:diff': [],
+    'worktree:merge': notOverSsh('Merging a copy'),
+    'worktree:remove': true,
+    'worktree:exists': false,
+    'rewind:files': { available: false, files: [] },
+    'rewind:apply': { available: false, files: [] },
+    'git:repos': [],
+    'git:use': null,
+    'git:blame': null,
+    'git:log': [],
+    'git:commit-files': [],
+    'git:file-at': null,
+    'git:pr': notOverSsh('Pull requests'),
+    'git:suggest': '',
+    'git:init': notOverSsh('Making a git repository'),
+    'git:abort': notOverSsh('That git action'),
+    'git:continue': notOverSsh('That git action'),
+    'git:resolved': notOverSsh('That git action'),
+    'git:checkout': notOverSsh('Switching branches here'),
+    'lsp:status': { servers: [] },
+    'lsp:open': null,
+    'lsp:change': null,
+    'lsp:close': null,
+    'lsp:request': null,
+    'lsp:restart': null,
+    'complete:request': { items: [] },
+    'codebase:status': { model: false, files: 0, chunks: 0, embedded: 0, remote: true },
+    'codebase:scan': { model: false, files: 0, chunks: 0, embedded: 0, remote: true },
+    'codebase:pending': [],
+    'codebase:put': null,
+    'codebase:search': [],
+    'tests:run': notOverSsh('Running tests from the editor'),
+    'debug:start': notOverSsh('The debugger'),
+    'commands:list': [],
+    'cfg:memory': [],
+    'cfg:rules-shared': false,
+    'cfg:share-rules': notOverSsh('Sharing rules'),
+    'cfg:save-memory': notOverSsh('Editing memory files'),
+    'cfg:permissions': { rules: [] },
+    'cfg:rule': notOverSsh('Editing these rules'),
+    'nb:start': { error: "Notebooks in SSH folders can't run their cells yet. You can still read and edit them.", missing: 'remote' },
+    'folder:add': notOverSsh('Adding folders'),
+    'cfg:mcp-list': [],
+    'cfg:mcp-add': notOverSsh('Adding MCP servers'),
+    'cfg:mcp-remove': notOverSsh('Removing MCP servers'),
+  };
+  const REMOTE = {
+    'file:read': async (ctx, rel) => {
+      const r = await ctx.remote.call('read', { path: resolveInWorkspace(ctx, rel) });
+      return r.content != null ? { content: r.content } : r;
+    },
+    'file:write': (ctx, rel, content) => ctx.remote.call('write', { path: resolveInWorkspace(ctx, rel), content }),
+    'files:search': async (ctx, query, opts) => {
+      let re;
+      try {
+        re = search.buildRegex(query, opts || {});
+      } catch (err) {
+        return { error: `Invalid regular expression: ${err.message}` };
+      }
+      // The host finds the files that might match; the matching itself is the same as for local files.
+      const found = await ctx.remote.call('search', { root: ctx.workspace, files: await listFiles(ctx), pattern: re.source, caseSensitive: !!(opts && opts.caseSensitive) });
+      const text = new Map(Object.entries(found).map(([rel, t]) => [resolveInWorkspace(ctx, rel), t]));
+      const io = { stat: async () => ({ isFile: () => true, size: 0 }), readFile: async (abs) => Buffer.from(text.get(abs) || '') };
+      return search.search((rel) => resolveInWorkspace(ctx, rel), Object.keys(found).sort(), query, { ...opts, group: ctx.id, io });
+    },
+    'files:replace': (ctx, rels, query, replacement, opts) => {
+      const io = {
+        readFile: async (abs) => {
+          const r = await ctx.remote.call('read', { path: abs });
+          if (r.content == null) throw new Error('not text');
+          return r.content;
+        },
+        writeFile: (abs, content) => ctx.remote.call('write', { path: abs, content }),
+      };
+      return search.replace((rel) => resolveInWorkspace(ctx, rel), rels, query, replacement, { ...(opts || {}), io });
+    },
+    'term:create': (ctx, id, cols, rows) =>
+      terminal.create(termId(ctx, id), null, cols, rows, { onData: (d) => sendTo(ctx, 'term-data', { id, data: d }), onExit: (code) => sendTo(ctx, 'term-exit', { id, code }) }, {}, ctx.remote.shellArgs(ctx.workspace)),
+    'changes:undo': async (ctx, turnId, absPaths) => {
+      const snap = turnSnapshots.get(turnId);
+      if (!snap) return false;
+      await snap.undo(absPaths.filter((p) => inWorkspace(ctx, p)));
+      return true;
+    },
+    'git:status': (ctx) => remoteGit.status(ctx),
+    'git:head': (ctx, rel) => remoteGit.head(ctx, rel),
+    'git:diff': (ctx) => remoteGit.diff(ctx),
+    'git:commit': (ctx, message) => remoteGit.commit(ctx, message),
+    'git:sync': (ctx, action) => remoteGit.sync(ctx, action),
+    'git:discard': (ctx, rel, wasUntracked) => remoteGit.discard(ctx, rel, wasUntracked),
+  };
   handle('settings:get', (ctx) => settings);
   handle('settings:set', (ctx, patch) => {
     if (patch.workspaces) {
@@ -956,14 +1155,22 @@ function registerIpc() {
     const dir = await pickDir(ctx);
     return dir ? openFolder(ctx, dir) : null;
   });
-  handle('folder:open', (ctx, dir) => (fs.existsSync(dir) ? openFolder(ctx, dir) : null));
+  handle('folder:open', (ctx, dir) => (remote.parseUrl(dir) || fs.existsSync(dir) ? openFolder(ctx, dir) : null));
+  // SSH folders: the hosts in ~/.ssh/config, a quick check that one answers, and its folders.
+  handle('ssh:hosts', () => remote.configHosts());
+  handle('ssh:test', (ctx, spec) => remote.test(spec));
+  handle('ssh:dirs', async (ctx, spec, dir) => {
+    const conn = ctx.browse && ctx.browse.spec === spec && ctx.browse.alive ? ctx.browse : (ctx.browse = await new remote.Remote(spec).connect());
+    return conn.call('dirs', { path: dir || '~' });
+  });
+  handle('ssh:done-browsing', (ctx) => ctx.browse && (ctx.browse.close(), (ctx.browse = null)));
   handle('folder:current', (ctx) => folderInfo(ctx));
   // What a window shows when it first loads: its folder, the one it was opened for, or nothing.
   handle('folder:start', async (ctx) => {
     if (ctx.workspace) return folderInfo(ctx);
     const dir = ctx.start;
     ctx.start = null;
-    return dir && fs.existsSync(dir) ? openFolder(ctx, dir) : null;
+    return dir && (remote.parseUrl(dir) || fs.existsSync(dir)) ? openFolder(ctx, dir).catch(() => null) : null;
   });
   // Workspaces: more folders in one window.
   handle('folder:add', async (ctx, dir) => {
@@ -1447,6 +1654,8 @@ function createWindow(start) {
     if (ctx.debug) ctx.debug.stop();
     previewBridge.forget(ctx);
     jupyter.stopAll(ctx);
+    dropRemote(ctx);
+    if (ctx.browse) ctx.browse.close();
     stopWatchers(ctx);
     if (loginCtx === ctx && loginHandle) loginHandle.cancel();
     contexts.delete(ctx.id);
@@ -1506,6 +1715,7 @@ function buildMenu() {
         { label: 'New Window', accelerator: accel('New Window', 'CmdOrCtrl+Shift+N'), click: () => newWindow(null) },
         { type: 'separator' },
         { label: 'Open Folder…', accelerator: accel('Open Folder…', 'CmdOrCtrl+O'), click: menuCmd('open-folder') },
+        { label: 'Open Folder over SSH…', click: menuCmd('open-ssh') },
         { label: 'Open Folder in New Window…', click: newWindowWithPicker },
         {
           label: 'Open Recent',

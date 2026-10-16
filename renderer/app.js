@@ -469,7 +469,7 @@ async function setFolder(info) {
     queueCodebaseIndex(3000);
     closeAllChats();
     await loadAccounts(); // the folder may use a different account
-    await restoreWorkspace(info.root);
+    await restoreWorkspace(info.key || info.root);
     schedulesFolderOpened();
   } finally {
     restoringWorkspace = false;
@@ -525,6 +525,9 @@ async function workspaceFoldersChanged(info) {
 let restoringWorkspace = false;
 let saveWorkspaceTimer = null;
 
+// The open folder's identity in settings: its path, or ssh://host/path for an SSH folder.
+const folderId = () => state.folder && (state.folder.key || state.folder.root);
+
 function queueSaveWorkspace() {
   if (restoringWorkspace || !state.folder) return;
   clearTimeout(saveWorkspaceTimer);
@@ -551,7 +554,7 @@ async function saveWorkspace() {
     planActive: !!(t && t.kind === 'plan'),
     savedAt: Date.now(),
   };
-  const all = { ...(state.settings.workspaces || {}), [state.folder.root]: snapshot };
+  const all = { ...(state.settings.workspaces || {}), [folderId()]: snapshot };
   // Keep the 30 most recent folders.
   const keep = Object.entries(all).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0)).slice(0, 30);
   state.settings = await desk.setSettings({ workspaces: Object.fromEntries(keep) });
@@ -609,7 +612,7 @@ async function renderRecent() {
       h(
         'div',
         { class: 'recent-row' },
-        h('button', { class: 'recent', title: f, onclick: async () => setFolder(await desk.openFolder(f)) }, f),
+        h('button', { class: 'recent', title: f, onclick: async () => setFolder(await desk.openFolder(f).catch((e) => (toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')), null))) }, f),
         h('button', { class: 'icon-btn', title: 'Open in a new window', onclick: () => desk.newWindow(f) }, '⧉')
       )
     )
@@ -1029,6 +1032,7 @@ function wire() {
     saveWorkspace();
   });
   $('#btn-open-folder').addEventListener('click', async () => setFolder(await desk.pickFolder()));
+  $('#btn-open-ssh').addEventListener('click', () => openSshFolder());
   $('#btn-quickopen').addEventListener('click', quickOpen);
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-theme').addEventListener('click', toggleTheme);
@@ -1089,6 +1093,7 @@ function wire() {
 
   desk.onMenu((cmd) => {
     if (cmd === 'open-folder') desk.pickFolder().then(setFolder);
+    if (cmd === 'open-ssh') openSshFolder();
     else if (cmd === 'add-folder') addWorkspaceFolder();
     else if (cmd === 'save') saveActive();
     else if (cmd === 'close-tab') state.activeTab && closeTab(state.activeTab);

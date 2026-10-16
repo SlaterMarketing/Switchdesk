@@ -16,8 +16,8 @@ const isWin = process.platform === 'win32';
 const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', debug: 'acceptEdits', auto: 'auto' };
 
 class ChatSession {
-  constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, mcp, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, mcp, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, mcp, via, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, mcp, via, onEvent, onPermission, onExit });
     this.child = null;
     this.pending = new Map(); // our control request id -> resolve
     this.alive = false;
@@ -47,7 +47,9 @@ class ChatSession {
     if (this.sessionId && this.resumeAt) args.push('--resume-session-at', this.resumeAt, '--fork-session');
 
     const env = await cli.childEnv(this.extraEnv); // extraEnv picks the account
-    this.child = spawn(this.bin, args, { cwd: this.cwd, env, shell: isWin && this.bin.endsWith('.cmd'), windowsHide: true });
+    // In an SSH folder the CLI runs on the host, over ssh (remote.js).
+    const run = this.via ? this.via(args) : null;
+    this.child = run ? spawn(run.command, run.args, { env: process.env, windowsHide: true }) : spawn(this.bin, args, { cwd: this.cwd, env, shell: isWin && this.bin.endsWith('.cmd'), windowsHide: true });
     this.alive = true;
     let buf = '';
     let stderr = '';

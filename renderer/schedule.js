@@ -14,7 +14,7 @@ let scheduleTimer = null;
 const scheduleStarting = new Set(); // schedule ids whose run is being set up
 const isRunning = (id) => scheduleStarting.has(id) || chats.some((c) => c.scheduled === id && (c.busy || c.making));
 
-const schedules = () => (state.settings.schedules || []).filter((s) => state.folder && s.folder === state.folder.root);
+const schedules = () => (state.settings.schedules || []).filter((s) => state.folder && s.folder === folderId());
 
 // When a schedule is next due, after the run at (or the creation time) `from`.
 function nextRun(s, from = s.lastRun || s.created) {
@@ -44,7 +44,7 @@ function whenText(t) {
 }
 
 async function saveSchedules(list) {
-  const others = (state.settings.schedules || []).filter((s) => !state.folder || s.folder !== state.folder.root);
+  const others = (state.settings.schedules || []).filter((s) => !state.folder || s.folder !== folderId());
   state.settings = await desk.setSettings({ schedules: [...others, ...list] });
 }
 
@@ -174,7 +174,7 @@ async function openSchedules(editing) {
       const c = choices[parseInt(agent.value, 10)] || { id: 'claude' };
       const next = {
         id: s ? s.id : crypto.randomUUID(),
-        folder: state.folder.root,
+        folder: folderId(),
         title: title.value.trim() || prompt.value.trim().split('\n')[0].slice(0, 50),
         prompt: prompt.value.trim(),
         every: every.value,

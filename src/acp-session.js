@@ -123,8 +123,8 @@ function readPlan(file) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, mcp, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, mcp, onEvent, onPermission, onExit });
+  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, mcp, via, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, mcp, via, onEvent, onPermission, onExit });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -133,7 +133,8 @@ class AcpSession {
 
   async start() {
     const env = await cli.childEnv(this.extraEnv);
-    this.child = spawnAgent(this.bin, this.args, { cwd: this.cwd, env });
+    const run = this.via ? this.via(this.args) : null; // on the host of an SSH folder
+    this.child = run ? spawn(run.command, run.args, { env: process.env, windowsHide: true }) : spawnAgent(this.bin, this.args, { cwd: this.cwd, env });
     this.alive = true;
     let stderr = '';
     this.child.stderr.on('data', (c) => (stderr = (stderr + c.toString('utf8')).slice(-8000)));

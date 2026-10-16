@@ -17,11 +17,12 @@ function defaultShell() {
   return { file: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), args: ['-l'] };
 }
 
-async function create(id, cwd, cols, rows, { onData, onExit }, extraEnv = {}) {
+// shell: another program to run instead of the login shell (ssh into an SSH folder's host).
+async function create(id, cwd, cols, rows, { onData, onExit }, extraEnv = {}, shell = null) {
   if (!pty) throw new Error('Terminal support failed to load on this system.');
-  const { file, args } = defaultShell();
+  const { file, args } = shell ? { file: shell.command, args: shell.args } : defaultShell();
   const env = await cli.childEnv({ ...extraEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' });
-  const p = pty.spawn(file, args, { name: 'xterm-256color', cols: cols || 80, rows: rows || 24, cwd: cwd || os.homedir(), env });
+  const p = pty.spawn(file, args, { name: 'xterm-256color', cols: cols || 80, rows: rows || 24, cwd: shell ? os.homedir() : cwd || os.homedir(), env });
   terms.set(id, p);
   p.onData((d) => onData(d));
   p.onExit(({ exitCode }) => {

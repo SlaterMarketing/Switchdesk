@@ -18,6 +18,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # For the notebook test's Jupyter kernel.
+      - run: python -m pip install ipykernel jupyter_client
+      # For the SSH folder test: a throwaway server on this machine.
+      - run: sudo apt-get install -y -q openssh-server && sudo mkdir -p /run/sshd
       - run: npm ci
       - name: Check the code parses
         run: for f in src/*.js renderer/*.js test/*.js; do node --check "$f"; done

@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle } = require('./helpers');
+const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle, sshServer, agentLog } = require('./helpers');
 
 const until = (w, fn, arg, timeout = 30000) => w.waitForFunction(fn, arg, { timeout });
 
@@ -243,4 +243,54 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   await until(w, () => /43/.test(document.querySelectorAll('#nb-view .nb-outputs')[4]?.innerText || ''), null, 30000).catch(async () => {
     throw new Error('outputs: ' + (await w.$$eval('#nb-view .nb-outputs', (e) => e.map((x) => x.innerText).join(' | '))));
   });
+});
+
+test('an SSH folder: files, search, git, the terminal and an agent all on the host', { timeout: 180000 }, async (t) => {
+  const p = profile();
+  const server = await sshServer(p);
+  if (!server) return t.skip('no sshd on this machine');
+  const dir = project();
+  const { app, w, errors } = await launch(p, null, { SWITCHDESK_SSH_CONFIG: server.config });
+  try {
+    await w.evaluate((url) => desk.openFolder(url).then(setFolder), `ssh://${server.host}${dir}`);
+    await w.waitForSelector('.tree-row', { timeout: 30000, state: 'attached' });
+    assert.equal(await w.evaluate(() => state.folder.remote), server.host);
+    assert.ok((await w.$$eval('.tree-row', (r) => r.map((x) => x.textContent))).some((x) => x.includes('cart.js')));
+    // Open, edit and save a file.
+    await w.evaluate(() => openFile('cart.js'));
+    await until(w, () => activeTab() && activeTab().rel === 'cart.js');
+    await w.evaluate(() => (editor.getModel().setValue('// edited over ssh\n' + editor.getValue()), saveActive()));
+    await until(w, () => !activeTab().dirty);
+    assert.match(fs.readFileSync(path.join(dir, 'cart.js'), 'utf8'), /^\/\/ edited over ssh/);
+    // Search runs on the host.
+    const found = await w.evaluate(() => desk.searchFiles('price', {}));
+    assert.deepEqual(found.results.map((r) => r.rel).sort(), ['README.md', 'cart.js', 'lib/price.js']);
+    // Git on the host sees the edit.
+    const git = await w.evaluate(() => desk.git.status());
+    assert.equal(git.repo, true);
+    assert.deepEqual(git.files.map((f) => `${f.status} ${f.rel}`), ['M cart.js']);
+    // The terminal is a shell on the host, in the folder.
+    await w.evaluate(async () => {
+      toggleTerminal(true);
+      const term = await newTerminal();
+      desk.term.write(term.id, 'echo "in-$(basename "$PWD")-$((40+2))"\r');
+    });
+    const want = `in-${path.basename(dir)}-42`;
+    await until(w, (s) => terms.some((x) => { const b = x.xterm.buffer.active; for (let i = 0; i < b.length; i++) if ((b.getLine(i)?.translateToString() || '').includes(s)) return true; return false; }), want, 30000);
+    // An agent runs on the host, in the folder, and its changes show as for a local folder.
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'compare-test over ssh');
+    await idle(w);
+    assert.equal(fs.readFileSync(path.join(dir, 'fake.txt'), 'utf8'), 'from cursor\n');
+    const sent = agentLog(p).filter((m) => m.method === 'session/prompt');
+    assert.ok(sent.length && sent.every((m) => m.overSsh), 'the agent ran over ssh');
+    await until(w, () => /fake\.txt/.test(activeChat().el.innerText));
+    // What only works locally says so instead of touching a local folder.
+    const copy = await w.evaluate(() => desk.worktree.create('x').then(() => 'made', (e) => e.message));
+    assert.match(copy, /isn't available in SSH folders/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+    server.stop();
+  }
 });

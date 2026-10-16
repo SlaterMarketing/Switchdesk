@@ -810,3 +810,12 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 .nb-adder:hover { opacity: 1; }
 .nb-banner { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #d29922; border-radius: 6px; background: color-mix(in srgb, #d29922 10%, transparent); }
 .nb-error, .nb-empty { padding: 24px; }
+
+/* SSH folders */
+.ssh-dialog { min-width: 560px; display: flex; flex-direction: column; gap: 8px; }
+.ssh-dialog .row { display: flex; gap: 6px; }
+.ssh-dialog .row input { flex: 1; }
+.ssh-status.bad { color: #f85149; }
+.ssh-dirs { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.ssh-browser.hidden { display: none; }
+.ssh-browser .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

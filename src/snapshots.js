@@ -11,7 +11,13 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
+// cwd is a folder, or { remote, dir } for a folder on an SSH host (remote.js), where git runs there.
 function git(cwd, args, { env, encoding = 'utf8', input } = {}) {
+  if (cwd && typeof cwd === 'object' && cwd.remote)
+    return cwd.remote.exec(['git', ...args], cwd.dir, { input, env }).then((r) => {
+      if (r.code !== 0) throw Object.assign(new Error(r.stderr.trim() || `git ${args[0]} failed`), { stderr: r.stderr });
+      return encoding === 'utf8' ? r.stdout.toString('utf8') : r.stdout;
+    });
   return new Promise((resolve, reject) => {
     const child = execFile(
       'git',

@@ -48,8 +48,8 @@ function spawnCodex(bin, args, opts) {
 }
 
 class CodexSession {
-  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, mcp, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, mcp, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, mcp, via, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, mcp, via, onEvent, onPermission, onExit });
     this.alive = false;
     this.items = new Map(); // itemId -> item, for approvals that only name the item
     this.turnId = null;
@@ -58,7 +58,9 @@ class CodexSession {
 
   async start() {
     const env = await cli.childEnv(this.extraEnv);
-    this.child = spawnCodex(this.bin, ['app-server', ...mcpArgs(this.mcp)], { cwd: this.cwd, env });
+    const args = ['app-server', ...mcpArgs(this.mcp)];
+    const run = this.via ? this.via(args) : null; // on the host of an SSH folder
+    this.child = run ? spawn(run.command, run.args, { env: process.env, windowsHide: true }) : spawnCodex(this.bin, args, { cwd: this.cwd, env });
     this.alive = true;
     let stderr = '';
     this.child.stderr.on('data', (c) => (stderr = (stderr + c.toString('utf8')).slice(-8000)));

@@ -28,14 +28,14 @@ let lineDecos = [];
 // ---------- breakpoints (kept per folder in settings)
 
 function allBreakpoints() {
-  return (state.folder && state.settings.breakpoints && state.settings.breakpoints[state.folder.root]) || {};
+  return (state.folder && state.settings.breakpoints && state.settings.breakpoints[folderId()]) || {};
 }
 
 function saveBreakpoints(map) {
   if (!state.folder) return;
   const clean = Object.fromEntries(Object.entries(map).filter(([, l]) => l.length));
-  desk.setSettings({ breakpoints: { ...(state.settings.breakpoints || {}), [state.folder.root]: clean } }).then((s) => (state.settings = s));
-  state.settings.breakpoints = { ...(state.settings.breakpoints || {}), [state.folder.root]: clean };
+  desk.setSettings({ breakpoints: { ...(state.settings.breakpoints || {}), [folderId()]: clean } }).then((s) => (state.settings = s));
+  state.settings.breakpoints = { ...(state.settings.breakpoints || {}), [folderId()]: clean };
 }
 
 function linesFor(rel) {
