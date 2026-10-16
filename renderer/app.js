@@ -147,6 +147,9 @@ function createEditors() {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, addSelectionToChat);
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, inlineEdit);
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, quickOpen);
+  // Where you are in each file is part of what the window reopens with.
+  editor.onDidChangeCursorPosition(() => queueSaveWorkspace());
+  editor.onDidScrollChange(() => queueSaveWorkspace());
 }
 
 function languageFor(rel) {
@@ -513,15 +516,23 @@ let saveWorkspaceTimer = null;
 function queueSaveWorkspace() {
   if (restoringWorkspace || !state.folder) return;
   clearTimeout(saveWorkspaceTimer);
-  saveWorkspaceTimer = setTimeout(saveWorkspace, 500);
+  saveWorkspaceTimer = setTimeout(saveWorkspace, 800);
 }
 
 async function saveWorkspace() {
   if (restoringWorkspace || !state.folder) return;
   const t = activeTab();
+  if (t && t.kind === 'file') t.viewState = editor.saveViewState();
+  // Where you were in each file (cursor, selection, scroll), so it reopens the same way.
+  const views = {};
+  for (const x of state.tabs) if (x.kind === 'file' && x.viewState) views[x.rel] = x.viewState;
   const snapshot = {
     tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
     active: t && t.kind === 'file' ? t.rel : null,
+    views,
+    side: side.rel || null,
+    panel: state.sidePanel || 'explorer',
+    draft: $('#input').value.slice(0, 20000),
     chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined })),
     activeChat: activeChat()?.sessionId || null,
     savedAt: Date.now(),
@@ -550,8 +561,18 @@ async function restoreWorkspace(root) {
   if (active) switchChat(active.id);
   if (saved) {
     for (const rel of saved.tabs || []) if (state.fileSet.has(rel)) await openFile(rel);
-    const t = saved.active && state.tabs.find((x) => x.kind === 'file' && x.rel === saved.active);
-    if (t) activateTab(t.id);
+    for (const x of state.tabs) if (x.kind === 'file' && saved.views && saved.views[x.rel]) x.viewState = saved.views[x.rel];
+    const t = (saved.active && state.tabs.find((x) => x.kind === 'file' && x.rel === saved.active)) || [...state.tabs].reverse().find((x) => x.kind === 'file');
+    if (t) {
+      state.activeTab = null; // so activating it applies the saved place instead of saving the current one over it
+      activateTab(t.id);
+    }
+    if (saved.side && state.fileSet.has(saved.side)) await openToSide(saved.side).then(() => editor.focus());
+    if (saved.panel && saved.panel !== 'explorer') showSidePanel(saved.panel);
+    if (saved.draft && !$('#input').value) {
+      $('#input').value = saved.draft;
+      autoGrow();
+    }
   }
 }
 
@@ -956,6 +977,11 @@ async function showSetup() {
 // ------------------------------------------------------------------ wiring
 
 function wire() {
+  $('#input').addEventListener('input', () => queueSaveWorkspace());
+  addEventListener('beforeunload', () => {
+    clearTimeout(saveWorkspaceTimer);
+    saveWorkspace();
+  });
   $('#btn-open-folder').addEventListener('click', async () => setFolder(await desk.pickFolder()));
   $('#btn-quickopen').addEventListener('click', quickOpen);
   $('#btn-settings').addEventListener('click', openSettings);
@@ -1106,6 +1132,8 @@ function wire() {
 }
 
 function showSidePanel(name) {
+  state.sidePanel = name;
+  queueSaveWorkspace();
   $('#workbench').classList.remove('no-sidebar');
   for (const t of document.querySelectorAll('.side-tab')) t.classList.toggle('active', t.dataset.panel === name);
   $('#panel-explorer').classList.toggle('hidden', name !== 'explorer');
