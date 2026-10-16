@@ -602,20 +602,27 @@ function approvalKey(toolName, input) {
   return toolName;
 }
 
-// The rule Claude Code itself understands, so "Always allow" sticks across chats and the terminal.
-function permissionRule(toolName, input) {
+
+// What "Always allow" saves for every agent: a command rule, or one of the broad switches.
+function sharedAllowRule(toolName, input) {
   if (isShell(toolName)) {
-    const first = (input.command || '').trim().split(/\s+/)[0];
-    return first ? `${toolName}(${first} *)` : null;
+    // One rule per command in a chain, so "make && make test" is allowed next time as a whole.
+    const parts = (input.command || '').split(/&&|\|\||[;|\n]/).map((p) => p.trim().replace(/^(sudo|env|time|nohup)\s+/, '')).filter(Boolean);
+    const rules = [
+      ...new Set(
+        parts.map((p) => {
+          const words = p.split(/\s+/);
+          // "npm test" rather than all of npm; a path or flag as the second word means just the program.
+          return words[1] && /^[a-z][\w:-]*$/i.test(words[1]) ? `${words[0]} ${words[1]}` : words[0];
+        })
+      ),
+    ];
+    const shown = rules.map((r) => `\`${r}\``).join(', ');
+    return { rules, label: `Always allow ${shown}`, done: `Every agent can now run ${rules.map((r) => `"${r}"`).join(', ')} without asking` };
   }
-  if (toolName === 'WebFetch' && input.url) {
-    try {
-      return `WebFetch(domain:${new URL(input.url).hostname})`;
-    } catch {
-      return null;
-    }
-  }
-  return toolName;
+  if (EDIT_TOOLS.has(toolName)) return { patch: { edits: true }, label: 'Always allow edits', done: 'Every agent can now edit files in the open folders without asking' };
+  if (toolName === 'WebFetch' || toolName === 'WebSearch') return { patch: { web: true }, label: 'Always allow web', done: 'Every agent can now fetch pages and search without asking' };
+  return { rules: [`tool:${toolName}`], label: `Always allow ${toolName}`, done: `Every agent can now use ${toolName} without asking` };
 }
 
 function handleApproval(req) {
@@ -654,8 +661,9 @@ function handleApproval(req) {
     card.classList.add('resolved');
     $('.actions', card).replaceChildren(h('span', { class: 'resolution' }, text));
   };
-  const rule = agentOf(chat) === 'claude' ? permissionRule(toolName, input) : null; // saved rules are Claude Code's
-  const alwaysLabel = key.includes(':') ? `Always allow \`${key.split(':')[1]}\`` : `Always allow ${toolName}`;
+  // "Always allow" saves a Switchdesk rule, so every agent gets it, not just this one.
+  const shared = sharedAllowRule(toolName, input);
+  const alwaysLabel = shared.label;
   card.append(
     h(
       'div',
@@ -665,12 +673,14 @@ function handleApproval(req) {
         'button',
         {
           class: 'btn small',
-          title: rule ? `Saves "${rule}" to this project's Claude Code settings` : 'Allows this for the rest of this chat',
-          onclick: () => {
+          title: 'Saves a rule in Settings → Permissions that applies to every agent',
+          onclick: async () => {
             chat.alwaysAllow.add(key);
-            if (rule) desk.cfg.rule('local', rule, true);
+            const pol = { allow: [], ...(state.settings.permissions || {}) };
+            const patch = shared.rules ? { allow: [...new Set([...pol.allow, ...shared.rules])] } : shared.patch;
+            state.settings = await desk.setSettings({ permissions: { ...pol, ...patch } });
             allow();
-            resolve(rule ? `Allowed. Saved "${rule}" for this project (Settings → Permissions).` : 'Allowed for this chat.');
+            resolve(`Allowed. ${shared.done} (Settings → Permissions).`);
           },
         },
         alwaysLabel

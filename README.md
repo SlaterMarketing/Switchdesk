@@ -56,6 +56,12 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Parallel agents** (⑂, `Ctrl+Alt+N`): a chat that works in its own copy of the folder (a git worktree on its own branch), starting from your files as they are now. Run several at once. **Merge into my folder** brings the changes back as normal edits for inline review, combining them with anything you changed meanwhile. **Discard** deletes the copy and its branch.
 - **Queue:** press Enter while Claude is working and the message waits its turn. Press Enter again in the empty box (or ↑ on a queued message) to send it now: Claude stops and reads it straight away, which is handy for steering it mid-task. Queued messages can be edited or removed, and pressing Stop pauses the queue.
 - **Git panel** (`Ctrl+Shift+G`): changed files with diffs against the last commit, discard, commit (with a ✨ button that asks Claude Haiku to write the message), branches, push and pull.
+- **Permissions for every agent** (Settings → Permissions): one set of rules that Claude, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek all follow, so you don't approve the same thing once per agent.
+  - **Skip all permission prompts** is the `--dangerously-skip-permissions` switch for every agent at once. Codex also leaves its folder sandbox. The status bar shows a warning while it's on.
+  - **Run any command**, **edit files in the open folders** and **fetch web pages** without asking, each on its own.
+  - **Always allowed commands** (`npm test`, `git *`) and **always blocked commands** (`rm -rf`, `git push`). A chained command (`a && b`) is allowed only if every part is, and blocked if any part is. Blocked commands stay blocked even when prompts are skipped.
+  - **Always allow** on an approval card saves the rule for every agent.
+  - Ask and Plan modes stay read-only whatever you set.
 - **Settings** (`Ctrl+,`): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
 - **Context**
   - `@` in the chat box mentions a file or folder. `@changes` attaches your uncommitted changes, `@terminal` the terminal's recent output (or what's selected in it), and `@` followed by a web address fetches that page and attaches its text.

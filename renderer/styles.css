@@ -579,3 +579,10 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 /* Attach button in the chat box */
 .attach-btn { border: none; background: none; color: var(--text-dim); cursor: pointer; padding: 4px; border-radius: 6px; display: flex; align-items: center; }
 .attach-btn:hover { color: var(--text-strong); background: var(--bg-hover); }
+
+/* Settings → Permissions */
+.perm-toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+.perm-toggle input { margin-top: 3px; }
+.perm-toggle.danger b { color: #ef4444; }
+.set-sub { margin-top: 18px; }
+#status-perms { color: #f59e0b; cursor: pointer; }

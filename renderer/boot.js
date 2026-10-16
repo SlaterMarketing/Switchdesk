@@ -28,6 +28,8 @@ async function init() {
   wireSearch();
   wireAgents();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));
+  $('#status-perms').addEventListener('click', () => openSettings('permissions'));
+  renderPermissionBadge();
   await loadAccounts();
   await loadAgents();
   setMode(state.settings.mode || 'agent');

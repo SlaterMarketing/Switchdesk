@@ -1027,6 +1027,7 @@ function wire() {
   desk.onSettingsChanged((s) => {
     state.settings = s;
     applyTheme();
+    renderPermissionBadge();
     if (!state.folder) renderRecent();
   });
   $('#btn-add-folder').addEventListener('click', () => addWorkspaceFolder());

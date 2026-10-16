@@ -24,7 +24,10 @@ const MODE = {
 };
 const PLAN_PREFIX = '[Plan mode: research the code, then reply with a step-by-step plan. Do not edit files or run commands that change anything.]\n\n';
 
-function sandboxPolicy(mode, cwd, dirs = []) {
+// unrestricted: the user turned off permission prompts in Switchdesk, so Codex isn't boxed into the
+// folder either. It still asks before untrusted commands, so the app's blocked-command rules apply.
+function sandboxPolicy(mode, cwd, dirs = [], unrestricted = false) {
+  if (unrestricted && MODE[mode]?.sandbox !== 'read-only') return { type: 'dangerFullAccess' };
   return MODE[mode]?.sandbox === 'read-only'
     ? { type: 'readOnly', networkAccess: false }
     : { type: 'workspaceWrite', writableRoots: [cwd, ...dirs], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
@@ -35,8 +38,8 @@ function spawnCodex(bin, args, opts) {
 }
 
 class CodexSession {
-  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, onEvent, onPermission, onExit });
+  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, onEvent, onPermission, onExit }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, onEvent, onPermission, onExit });
     this.alive = false;
     this.items = new Map(); // itemId -> item, for approvals that only name the item
     this.turnId = null;
@@ -63,7 +66,7 @@ class CodexSession {
     await this.rpc.request('initialize', { clientInfo: { name: 'switchdesk', title: 'Switchdesk', version: '1' }, capabilities: { experimentalApi: false, requestAttestation: false } }, 30000);
     this.rpc.notify('initialized');
     const m = MODE[this.mode] || MODE.agent;
-    const common = { cwd: this.cwd, approvalPolicy: m.approval, sandbox: m.sandbox, model: this.model || null, ...(this.dirs.length ? { developerInstructions: dirsNote(this.dirs) } : {}) };
+    const common = { cwd: this.cwd, approvalPolicy: m.approval, sandbox: this.unrestricted && m.sandbox !== 'read-only' ? 'danger-full-access' : m.sandbox, model: this.model || null, ...(this.dirs.length ? { developerInstructions: dirsNote(this.dirs) } : {}) };
     let r;
     if (this.sessionId) {
       try {
@@ -95,7 +98,7 @@ class CodexSession {
         threadId: this.sessionId,
         input,
         approvalPolicy: m.approval,
-        sandboxPolicy: sandboxPolicy(this.mode, this.cwd, this.dirs),
+        sandboxPolicy: sandboxPolicy(this.mode, this.cwd, this.dirs, this.unrestricted),
         model: this.model || null,
         effort: this.effort || null,
       });

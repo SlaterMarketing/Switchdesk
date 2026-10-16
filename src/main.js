@@ -19,6 +19,7 @@ const accounts = require('./accounts');
 const usage = require('./usage');
 const webpage = require('./webpage');
 const { extract } = require('./extract');
+const permissions = require('./permissions');
 const autocomplete = require('./autocomplete');
 const { LangServers } = require('./langservers');
 const agents = require('./agents');
@@ -491,7 +492,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   if (!bin) throw new Error(agent === 'claude' ? 'Claude Code is not installed. Open Settings → Setup to install it.' : `${a.label} isn't installed yet. Open Settings → Agents to install it.`);
   if (a.key && !agents.readKey(settings, agent)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
   const dirs = [...ctx.extra];
-  const chat = { ctx, session: null, effort: effort || '', model: model || '', turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, dirs };
+  const chat = { ctx, session: null, effort: effort || '', model: model || '', mode, turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, dirs };
   const key = chatKey(ctx, chatId);
   // Picking up a conversation another account had: give this account the latest transcript.
   if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
@@ -510,6 +511,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     model,
     effort,
     mode,
+    unrestricted: permissions.policyOf(settings).skipAll,
     onEvent: (ev) => {
       trackStream(ctx, chat.turn, ev);
       sendTo(ctx, 'chat-event', { chatId, ev });
@@ -518,6 +520,19 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     onPermission: (req) =>
       new Promise((resolve) => {
         if (EDIT_TOOLS.has(req.toolName)) touchForSnapshot(ctx, chat.turn, editTarget(req.input));
+        // Switchdesk's own rules answer first, the same way for every agent.
+        const inFolders = (f) => {
+          const abs = path.resolve(chat.cwd || ctx.workspace || '', f);
+          return (chat.cwd && within(chat.cwd, abs)) || inWorkspace(ctx, abs);
+        };
+        const auto = permissions.decide(settings, req, { mode: chat.mode, inWorkspace: inFolders });
+        if (auto) {
+          if (auto.behavior === 'deny' && auto.rule) {
+            const what = permissions.SHELL_TOOLS.has(req.toolName) ? `\`${String(req.input.command || '').slice(0, 200)}\`` : req.toolName;
+            sendTo(ctx, 'chat-event', { chatId, ev: { type: 'system', subtype: 'notice', text: `Blocked ${what}: it matches your rule "${auto.rule}" (Settings → Permissions).` } });
+          }
+          return resolve(auto.behavior === 'allow' ? { behavior: 'allow', updatedInput: req.input } : { behavior: 'deny', message: auto.message });
+        }
         const reqId = crypto.randomUUID();
         chat.approvals.set(reqId, resolve);
         sendTo(ctx, 'approval-request', { chatId, reqId, toolName: req.toolName, input: req.input, description: req.description });
@@ -585,6 +600,8 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
   else await chat.session.setModel(model);
   const turn = { id: crypto.randomUUID(), snap: await beginSnapshot(ctx, chat), blocks: new Map() };
   chat.turn = turn;
+  chat.mode = mode;
+  chat.session.unrestricted = permissions.policyOf(settings).skipAll;
   await chat.session.send(withRealPaths(ctx, content), mode);
   return { turnId: turn.id };
 }

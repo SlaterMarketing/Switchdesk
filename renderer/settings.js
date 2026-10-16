@@ -119,7 +119,71 @@ async function settingsInstructions(body) {
   );
 }
 
+// Switchdesk's rules apply to every agent: each request to run or change something comes through
+// the app, and these answer it before you're asked (src/permissions.js).
 async function settingsPermissions(body) {
+  const rerender = () => settingsPermissions(body);
+  const pol = { skipAll: false, commands: false, edits: false, web: false, allow: [], deny: [], ...(state.settings.permissions || {}) };
+  const save = async (patch) => {
+    state.settings = await desk.setSettings({ permissions: { ...pol, ...patch } });
+    renderPermissionBadge();
+    rerender();
+  };
+  const toggle = (key, label, hint, danger) => {
+    const box = h('input', { type: 'checkbox', checked: !!pol[key] });
+    box.addEventListener('change', async () => {
+      if (box.checked && danger && !confirm(danger)) return (box.checked = false);
+      save({ [key]: box.checked });
+    });
+    return h('label', { class: `perm-toggle${danger ? ' danger' : ''}` }, box, h('span', {}, h('b', {}, label), h('br'), h('span', { class: 'muted small' }, hint)));
+  };
+  const list = (key, title, hint, placeholder) => {
+    const input = h('input', { type: 'text', placeholder, spellcheck: 'false' });
+    const add = () => {
+      const v = input.value.trim();
+      if (!v || pol[key].includes(v)) return;
+      save({ [key]: [...pol[key], v] });
+    };
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
+    return h(
+      'div',
+      { class: 'set-box' },
+      h('b', {}, title),
+      h('div', { class: 'muted small' }, hint),
+      pol[key].length
+        ? h('div', { class: 'rules' }, ...pol[key].map((r) => h('div', { class: 'rule' }, h('code', {}, r), h('span', { class: 'spacer' }), h('button', { class: 'icon-btn', title: 'Remove', onclick: () => save({ [key]: pol[key].filter((x) => x !== r) }) }, '✕'))))
+        : h('div', { class: 'muted small' }, 'None yet.'),
+      h('div', { class: 'row' }, input, h('button', { class: 'btn small', onclick: add }, 'Add'))
+    );
+  };
+  body.replaceChildren(
+    h('h3', {}, 'Permissions'),
+    h('p', { class: 'muted small' }, 'These rules apply to every agent the same way: Claude, Codex, Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek. When an agent asks to run a command or change a file, Switchdesk checks them first and only asks you if they don’t decide. Ask and Plan modes stay read-only whatever you set here.'),
+    h(
+      'div',
+      { class: 'set-box' },
+      toggle('skipAll', 'Skip all permission prompts', 'Every agent runs commands, edits files and fetches pages without asking, like --dangerously-skip-permissions. Codex also leaves its folder sandbox. Blocked commands below are still refused.', 'Agents will run any command and change any file without asking you first. Blocked commands are still refused. Turn this on?'),
+      toggle('commands', 'Run any command without asking', 'Every command is allowed except the blocked ones.'),
+      toggle('edits', 'Edit files without asking', 'Only files inside the open folders. Edits elsewhere still ask.'),
+      toggle('web', 'Fetch web pages and search without asking', '')
+    ),
+    list('allow', 'Always allowed commands', 'A rule matches the command and anything after it: "npm test" also allows "npm test -- --watch". Use * as a wildcard. Commands joined with && or | are allowed only if every part is. "Always allow" on an approval card adds a rule here.', 'e.g. npm test, git status, pytest'),
+    list('deny', 'Always blocked commands', 'Refused for every agent, even with prompts skipped. A command is blocked if any part of it matches.', 'e.g. rm -rf, git push --force, npm publish'),
+    ...(await claudePermissionBoxes(body))
+  );
+}
+
+// A badge in the status bar while prompts are skipped, so it's never on by surprise.
+function renderPermissionBadge() {
+  const el = $('#status-perms');
+  if (!el) return;
+  const pol = state.settings.permissions || {};
+  el.classList.toggle('hidden', !pol.skipAll && !pol.commands);
+  el.textContent = pol.skipAll ? '⚠ No permission prompts' : '⚠ Any command allowed';
+  el.title = 'Change in Settings → Permissions';
+}
+
+async function claudePermissionBoxes(body) {
   const scopes = await desk.cfg.permissions();
   const ruleInput = h('input', { type: 'text', placeholder: 'e.g. Bash(npm test *)  or  WebFetch(domain:github.com)', spellcheck: 'false' });
   const scopeSel = h('select', {}, ...scopes.map((s) => h('option', { value: s.id }, s.label)));
@@ -130,9 +194,9 @@ async function settingsPermissions(body) {
     settingsPermissions(body);
   };
   ruleInput.addEventListener('keydown', (e) => e.key === 'Enter' && add());
-  body.replaceChildren(
-    h('h3', {}, 'Permissions'),
-    h('p', { class: 'muted small' }, 'Actions Claude may take without asking. "Always allow" on an approval adds a rule here.'),
+  return [
+    h('h3', { class: 'set-sub' }, 'Claude Code’s own rules'),
+    h('p', { class: 'muted small' }, 'Claude Code also keeps rules in its settings files, which apply when you run claude in a terminal too.'),
     ...scopes.map((s) =>
       h(
         'div',
@@ -150,8 +214,8 @@ async function settingsPermissions(body) {
         s.deny.length ? h('div', { class: 'muted small' }, `Always blocked: ${s.deny.join(', ')}`) : null
       )
     ),
-    h('div', { class: 'set-box' }, h('b', {}, 'Add a rule'), h('div', { class: 'row' }, ruleInput, scopeSel, h('button', { class: 'btn small primary', onclick: add }, 'Add')))
-  );
+    h('div', { class: 'set-box' }, h('b', {}, 'Add a Claude Code rule'), h('div', { class: 'row' }, ruleInput, scopeSel, h('button', { class: 'btn small primary', onclick: add }, 'Add'))),
+  ];
 }
 
 async function settingsMcp(body) {
