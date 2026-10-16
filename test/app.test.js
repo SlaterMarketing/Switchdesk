@@ -70,7 +70,7 @@ appTest('Claude carries on after its background subagents, and a subagent opens 
   assert.equal(await w.$$eval('.notice.waiting', (e) => e.length), 0);
   // The subagent's row opens its task, thinking, tools and report.
   await w.click('.tool .head:has-text("Find the cart code")');
-  await w.waitForSelector('.sub-view .sub-result', { timeout: 10000 });
+  await w.waitForSelector('.sub-view .sub-status.completed', { timeout: 10000 });
   const view = await w.$eval('.sub-view', (e) => e.innerText);
   assert.match(view, /Find where the cart total is worked out/);
   assert.match(view, /Read cart\.js/);
