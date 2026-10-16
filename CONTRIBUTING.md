@@ -4,7 +4,7 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
 
 ## Run it locally
 
-You need Node.js 20 or newer and at least one agent CLI (Claude Code, Codex, Cursor's `agent`, Kimi, Gemini CLI or Qwen Code) installed and signed in.
+You need Node.js 20 or newer and at least one agent CLI (Claude Code, Codex, GitHub Copilot, Cursor's `agent`, Kimi, Gemini CLI or Qwen Code) installed and signed in.
 
 ```
 git clone https://github.com/SlaterMarketing/switchdesk
