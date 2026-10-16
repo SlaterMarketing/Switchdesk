@@ -57,6 +57,8 @@ async function launch(p, folder) {
   w.on('pageerror', (e) => e.message !== 'Canceled' && errors.push(process.env.TEST_STACKS ? e.stack : e.message));
   w.on('dialog', (d) => d.accept()); // confirm() boxes get Yes
   await w.waitForFunction(() => window.monaco && typeof state !== 'undefined' && state.settings && typeof setFolder === 'function', null, { timeout: 60000 });
+  // With no Claude Code on the machine (as on GitHub), the first-run setup covers the window.
+  await w.addStyleTag({ content: '.setup-backdrop { display: none !important; }' });
   if (folder) await openFolder(w, folder);
   return { app, w, errors };
 }
