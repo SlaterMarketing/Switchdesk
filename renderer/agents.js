@@ -18,20 +18,29 @@ const CLAUDE_MODELS = [
 ];
 
 const agentOf = (chat) => (chat && chat.agent) || 'claude';
+// Agents other than Claude can have several accounts too (Settings → Agents). 'default' is the main one.
+const agentAccounts = (id) => (agentInfo(id).accounts || []).length ? agentInfo(id).accounts : [{ id: 'default', name: 'Main account' }];
+const agentAccountOf = (chat) => {
+  const id = agentOf(chat);
+  return chat && chat.agentAccount && agentAccounts(id).some((x) => x.id === chat.agentAccount) ? chat.agentAccount : 'default';
+};
+const agentAccountName = (id, account) => (agentAccounts(id).find((x) => x.id === account) || { name: 'Main account' }).name;
+const statusKey = (id, account) => (!account || account === 'default' ? id : `${id}:${account}`);
 const agentInfo = (id) => agentState.list.find((a) => a.id === id) || { id, label: id === 'claude' ? 'Claude' : id, kind: id === 'claude' ? 'claude' : 'acp' };
 const agentLabel = (chat) => agentInfo(agentOf(chat)).label;
 
 async function loadAgents() {
   agentState.list = await desk.agents.list();
   renderAgentPicker();
-  // Find out which agents are ready, so the menu lists only those.
-  for (const a of agentState.list) if (a.id !== 'claude') agentStatus(a.id).then(refreshAgentMenu);
+  // Find out which agents (and their accounts) are ready, so the menu lists only those.
+  for (const a of agentState.list) if (a.id !== 'claude') for (const x of agentAccounts(a.id)) agentStatus(a.id, false, x.id).then(refreshAgentMenu);
 }
 
-async function agentStatus(id, fresh) {
-  if (!fresh && agentState.status.has(id)) return agentState.status.get(id);
-  const s = await desk.agents.status(id).catch((e) => ({ installed: false, detail: String(e.message || e) }));
-  agentState.status.set(id, s);
+async function agentStatus(id, fresh, account) {
+  const k = statusKey(id, account);
+  if (!fresh && agentState.status.has(k)) return agentState.status.get(k);
+  const s = await desk.agents.status(id, account && account !== 'default' ? account : undefined).catch((e) => ({ installed: false, detail: String(e.message || e) }));
+  agentState.status.set(k, s);
   return s;
 }
 
@@ -49,7 +58,7 @@ function renderAgentButton() {
   const chat = activeChat();
   const id = agentOf(chat);
   const info = agentInfo(id);
-  const account = id === 'claude' && multiAccount() ? accountName(chatAccount(chat)) : '';
+  const account = id === 'claude' ? (multiAccount() ? accountName(chatAccount(chat)) : '') : agentAccounts(id).length > 1 ? agentAccountName(id, agentAccountOf(chat)) : '';
   btn.textContent = account ? `${info.label} · ${account}` : info.label;
   btn.title = `This chat runs on ${info.label}${account ? ` (${account} account)` : info.vendor ? ` (${info.vendor})` : ''}. Click to change.`;
 }
@@ -61,7 +70,7 @@ function toggleAgentMenu() {
   if (old) return old.remove();
   const menu = h('div', { id: 'agent-menu', class: 'popup' });
   $('#agent-wrap').append(menu);
-  fillAgentMenu(menu);
+  fillAgentMenu(menu, true);
   const away = (e) => {
     if (!menu.isConnected) return removeEventListener('mousedown', away, true);
     if (!menu.contains(e.target) && e.target !== $('#agent-btn')) {
@@ -77,7 +86,9 @@ function refreshAgentMenu() {
   if (menu) fillAgentMenu(menu);
 }
 
-function fillAgentMenu(menu) {
+const pendingStatus = new Set();
+
+function fillAgentMenu(menu, fresh) {
   const chat = activeChat();
   const current = agentOf(chat);
   const currentAccount = chatAccount(chat);
@@ -91,21 +102,28 @@ function fillAgentMenu(menu) {
     else if (!auth || !auth.loggedIn) continue;
     rows.push(row(current === 'claude' && currentAccount === a.id, multiAccount() ? `Claude · ${a.name}` : 'Claude', 'Anthropic', accountDetail(auth), () => chooseAgent('claude', a.id)));
   }
-  // Other agents: only the ones installed and signed in, or with a key.
+  // Other agents: one row per account that's signed in, or has a key.
   let checking = 0;
   let hidden = 0;
   for (const a of agentState.list) {
     if (a.id === 'claude') continue;
-    if (!agentState.status.has(a.id)) {
-      checking++;
-      continue;
+    const several = agentAccounts(a.id).length > 1;
+    let shown = 0;
+    for (const x of agentAccounts(a.id)) {
+      const k = statusKey(a.id, x.id);
+      if (!agentState.status.has(k)) {
+        checking++;
+        if (!pendingStatus.has(k)) pendingStatus.add(k), agentStatus(a.id, false, x.id).then(() => (pendingStatus.delete(k), refreshAgentMenu()));
+        continue;
+      }
+      const s = agentState.status.get(k);
+      // Not ready last time: look again (it may have been signed in since), and show it if so.
+      if ((!s || !s.installed || !s.loggedIn) && fresh && !pendingStatus.has(k)) pendingStatus.add(k), agentStatus(a.id, true, x.id).then((n) => (pendingStatus.delete(k), n && n.loggedIn && refreshAgentMenu()));
+      if (!s || !s.installed || !s.loggedIn) continue;
+      shown++;
+      rows.push(row(current === a.id && agentAccountOf(chat) === x.id, several ? `${a.label} · ${x.name}` : a.label, a.vendor, s.detail || 'Ready', () => chooseAgent(a.id, x.id)));
     }
-    const s = agentState.status.get(a.id);
-    if (!s || !s.installed || !s.loggedIn) {
-      hidden++;
-      continue;
-    }
-    rows.push(row(current === a.id, a.label, a.vendor, s.detail || 'Ready', () => chooseAgent(a.id)));
+    if (!shown && agentState.status.has(a.id)) hidden++;
   }
   const folder = state.folder;
   const ruled = folder && current === 'claude' && acct.rules[folder.root] === currentAccount;
@@ -136,9 +154,30 @@ function fillAgentMenu(menu) {
 }
 
 async function chooseAgent(id, account) {
-  if (agentOf(activeChat()) !== id) await pickAgent(id);
-  if (account) await switchChatAccount(activeChat(), account);
+  if (agentOf(activeChat()) !== id) await pickAgent(id, id === 'claude' ? undefined : account);
+  else if (id !== 'claude' && account && agentAccountOf(activeChat()) !== account) await switchAgentAccount(activeChat(), account);
+  if (id === 'claude' && account) await switchChatAccount(activeChat(), account);
   renderAgentButton();
+}
+
+// Another account of the same agent. Its conversations are kept by that account, so a chat with
+// history carries on in a new tab that's given the conversation so far, like switching agents.
+async function switchAgentAccount(chat, account) {
+  const id = agentOf(chat);
+  if (!isPristine(chat) || chat.worktree) {
+    const from = chat;
+    chat = createChat();
+    chat.agent = id;
+    chat.handoff = handoffNote(from, `This conversation started on another ${agentInfo(id).label} account, and you're taking it over. Here it is so far, so you can carry on. The files are as they were left.`);
+    chat.title = from.title;
+    chat.el.replaceChildren(h('div', { class: 'notice' }, `Carrying on from "${from.title}" on ${agentAccountName(id, account)}. It gets the conversation so far along with your next message. The other chat stays in its tab.`));
+  }
+  chat.agentAccount = account;
+  renderChatTabs();
+  renderAgentPicker();
+  queueSaveWorkspace();
+  const s = await agentStatus(id, false, account);
+  if (!s.installed || !s.loggedIn) openSettings('agents');
 }
 
 function renderModelPicker() {
@@ -181,7 +220,7 @@ function saveModelChoice(value) {
 
 // Picking an agent: a fresh chat switches over; a chat with history opens a new tab, since a
 // conversation can't move between vendors.
-async function pickAgent(id) {
+async function pickAgent(id, account) {
   let chat = activeChat();
   if (!chat || agentOf(chat) === id) return;
   if (!isPristine(chat) || chat.worktree) {
@@ -195,13 +234,14 @@ async function pickAgent(id) {
     } else toast(`New chat on ${agentInfo(id).label}. Your other chat is still in its tab.`);
   }
   chat.agent = id;
+  chat.agentAccount = account && account !== 'default' ? account : undefined;
   state.settings.lastAgent = id;
   desk.setSettings({ lastAgent: id });
   renderChatTabs();
   renderAgentPicker();
   queueSaveWorkspace();
   $('#input').focus();
-  const s = await agentStatus(id);
+  const s = await agentStatus(id, false, account);
   if (!s.installed || !s.loggedIn) openSettings('agents');
 }
 
@@ -274,6 +314,7 @@ async function settingsAgents(body, close) {
     });
     if (a.key) card.append(keyForm(a, rerender));
     if (a.id === 'codex') card.append(codexKeyForm(rerender));
+    if (a.canAddAccounts) card.append(agentAccountsBox(a, rerender, close));
     return card;
   });
   body.replaceChildren(
@@ -283,40 +324,107 @@ async function settingsAgents(body, close) {
   );
 }
 
-function keyForm(a, rerender) {
-  const key = h('input', { type: 'password', placeholder: a.hasKey ? 'Saved. Paste a new key to replace it.' : `Paste your ${a.key.name}`, spellcheck: 'false', autocomplete: 'off' });
-  const showAdvanced = a.options && a.options.baseUrl;
-  const base = h('input', { type: 'text', value: (a.options && a.options.baseUrl) || '', spellcheck: 'false' });
-  const model = h('input', { type: 'text', value: (a.options && a.options.model) || '', placeholder: 'Default', spellcheck: 'false' });
+// The key form for an API-key agent's account (the main one unless account says otherwise).
+function keyForm(a, rerender, account) {
+  const x = account ? (a.accounts || []).find((y) => y.id === account) || {} : a;
+  const key = h('input', { type: 'password', placeholder: x.hasKey ? 'Saved. Paste a new key to replace it.' : `Paste your ${a.key.name}`, spellcheck: 'false', autocomplete: 'off' });
+  const showAdvanced = x.options && x.options.baseUrl;
+  const base = h('input', { type: 'text', value: (x.options && x.options.baseUrl) || '', spellcheck: 'false' });
+  const model = h('input', { type: 'text', value: (x.options && x.options.model) || '', placeholder: 'Default', spellcheck: 'false' });
   const save = h('button', { class: 'btn small primary' }, 'Save');
   save.addEventListener('click', async () => {
-    await desk.agents.setKey(a.id, { key: key.value.trim() ? key.value.trim() : undefined, baseUrl: base.value, model: model.value });
-    agentState.status.delete(a.id);
+    await desk.agents.setKey(a.id, { key: key.value.trim() ? key.value.trim() : undefined, baseUrl: base.value, model: model.value }, account);
+    agentState.status.delete(statusKey(a.id, account));
     agentState.models.delete(a.id);
     toast(`Saved ${a.label} settings.`);
     rerender();
   });
-  const clear = h('button', { class: 'btn small', onclick: async () => (await desk.agents.setKey(a.id, { key: '', baseUrl: base.value, model: model.value }), agentState.status.delete(a.id), rerender()) }, 'Remove key');
+  const clear = h('button', { class: 'btn small', onclick: async () => (await desk.agents.setKey(a.id, { key: '', baseUrl: base.value, model: model.value }, account), agentState.status.delete(statusKey(a.id, account)), rerender()) }, 'Remove key');
   return h(
     'div',
     { class: 'agent-key' },
-    h('div', { class: 'row' }, key, save, a.hasKey ? clear : null),
+    h('div', { class: 'row' }, key, save, x.hasKey ? clear : null),
     h('div', { class: 'muted small' }, 'Get a key at ', h('a', { href: '#', onclick: (e) => (e.preventDefault(), desk.openExternal(a.key.url)) }, a.key.url.replace(/^https:\/\//, '').replace(/\/$/, '')), '. Usage is billed to your account by the provider.'),
     showAdvanced ? h('details', {}, h('summary', { class: 'muted small' }, 'Endpoint and model'), field('API address', base), field('Model', model)) : field('Model', model)
   );
 }
 
-function codexKeyForm(rerender) {
+function codexKeyForm(rerender, account) {
   const key = h('input', { type: 'password', placeholder: 'Or paste an OpenAI API key', spellcheck: 'false', autocomplete: 'off' });
   const save = h('button', { class: 'btn small' }, 'Use API key');
   save.addEventListener('click', async () => {
     if (!key.value.trim()) return key.focus();
-    const r = await desk.agents.codexKey(key.value);
-    agentState.status.delete('codex');
+    const r = await desk.agents.codexKey(key.value, account);
+    agentState.status.delete(statusKey('codex', account));
     toast(r.ok ? 'Codex will use your API key.' : `Codex didn't accept it: ${r.out}`);
     rerender();
   });
   return h('div', { class: 'agent-key' }, h('div', { class: 'row' }, key, save), h('div', { class: 'muted small' }, 'Codex stores the key itself, the same as `codex login --with-api-key`.'));
+}
+
+// More accounts for one agent, each with its own sign-in (or key), chat history and settings.
+function agentAccountsBox(a, rerender, close) {
+  const extra = (a.accounts || []).filter((x) => x.id !== 'default');
+  const rows = extra.map((x) => {
+    const detail = h('span', { class: 'muted small' }, 'Checking…');
+    const btns = h('span', { class: 'row' });
+    agentStatus(a.id, true, x.id).then((s) => {
+      detail.textContent = !s.installed ? 'Not installed.' : s.detail || (s.loggedIn ? 'Ready' : 'Not signed in');
+      if (s.installed && a.canLogin)
+        btns.replaceChildren(
+          h('button', {
+            class: `btn small${s.loggedIn ? '' : ' primary'}`,
+            onclick: async () => {
+              close();
+              await runInTerminal(await desk.agents.command(a.id, 'login', x.id));
+              toast(`Sign in to ${a.label} as ${x.name} in the terminal. Use the browser profile for that account.`);
+              agentState.status.delete(statusKey(a.id, x.id));
+            },
+          }, s.loggedIn ? 'Sign in again' : 'Sign in')
+        );
+    });
+    const name = h('b', { class: 'acct-name', title: 'Click to rename', contenteditable: 'plaintext-only', spellcheck: 'false' }, x.name);
+    name.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), name.blur()));
+    name.addEventListener('blur', async () => {
+      if (name.textContent.trim() && name.textContent.trim() !== x.name) (await desk.agents.renameAccount(a.id, x.id, name.textContent), rerender());
+      else name.textContent = x.name;
+    });
+    const remove = h('button', {
+      class: 'btn small danger',
+      onclick: async () => {
+        if (chats.some((c) => c.busy && agentOf(c) === a.id && agentAccountOf(c) === x.id)) return toast(`A chat is still running on ${x.name}. Stop it first.`);
+        if (!confirm(`Remove ${x.name}? Switchdesk deletes its ${a.label} sign-in, chat history and settings on this computer. The account itself isn't affected.`)) return;
+        await desk.agents.removeAccount(a.id, x.id);
+        for (const c of chats) if (agentOf(c) === a.id && c.agentAccount === x.id) c.agentAccount = undefined;
+        agentState.status.delete(statusKey(a.id, x.id));
+        rerender();
+      },
+    }, 'Remove');
+    return h(
+      'div',
+      { class: 'acct-block' },
+      h('div', { class: 'acct-row' }, h('div', { class: 'acct-who' }, name, h('br'), detail), h('span', { class: 'spacer' }), btns, remove),
+      a.key ? keyForm(a, rerender, x.id) : null,
+      a.id === 'codex' ? codexKeyForm(rerender, x.id) : null
+    );
+  });
+  const nameInput = h('input', { type: 'text', placeholder: 'Name, e.g. Work', spellcheck: 'false' });
+  const add = async () => {
+    const n = nameInput.value.trim();
+    if (!n) return nameInput.focus();
+    await desk.agents.addAccount(a.id, n);
+    toast(a.key ? `Added ${n}. Paste its key below.` : `Added ${n}. Click Sign in next to it.`);
+    rerender();
+  };
+  nameInput.addEventListener('keydown', (e) => e.key === 'Enter' && add());
+  return h(
+    'details',
+    { class: 'agent-accounts', open: extra.length ? '' : null },
+    h('summary', { class: 'muted small' }, extra.length ? `More ${a.label} accounts (${extra.length})` : `Add another ${a.label} account`),
+    ...rows,
+    h('div', { class: 'row' }, nameInput, h('button', { class: 'btn small', onclick: add }, 'Add account')),
+    h('div', { class: 'muted small' }, a.key ? 'Each account uses its own key. Pick the account for a chat from the agent menu in the chat box.' : `Each account has its own ${a.label} sign-in and chat history. Pick it for a chat from the agent menu in the chat box.`)
+  );
 }
 
 function wireAgents() {
@@ -328,6 +436,7 @@ function wireAgents() {
 function reopenAgentChat(saved) {
   const chat = isPristine(activeChat()) && !activeChat().worktree ? activeChat() : createChat();
   chat.agent = saved.agent;
+  chat.agentAccount = saved.agentAccount || undefined;
   chat.sessionId = saved.sessionId;
   chat.title = (saved.title || 'Chat').slice(0, 60);
   if (saved.worktree) chat.worktree = saved.worktree;
@@ -340,7 +449,7 @@ function reopenAgentChat(saved) {
   // The agent replays its own copy of the conversation. Until then (or if it can't), a note says
   // where the earlier messages are; new messages carry on either way.
   desk.agents
-    .history(saved.agent, saved.sessionId)
+    .history(saved.agent, saved.sessionId, saved.agentAccount || undefined)
     .catch(() => null)
     .then((msgs) => {
       if (!chat.el.contains(loading)) return; // the chat moved on meanwhile

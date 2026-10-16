@@ -148,8 +148,8 @@ async function findCommand(names) {
 
 // ---------- API keys, kept encrypted with the operating system's keychain
 
-function readKey(settings, id) {
-  const saved = (settings.apiKeys || {})[id];
+function readKey(settings, id, account) {
+  const saved = isMainAccount(account) ? (settings.apiKeys || {})[id] : findAccount(settings, id, account);
   if (!saved || !saved.key) return '';
   try {
     return saved.enc && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(saved.key, 'base64')) : saved.enc ? '' : saved.key;
@@ -164,19 +164,82 @@ function sealKey(key) {
   return { key, enc: false };
 }
 
-function options(settings, id) {
+function options(settings, id, account) {
   const a = AGENTS[id];
-  const saved = (settings.apiKeys || {})[id] || {};
+  const saved = (isMainAccount(account) ? (settings.apiKeys || {})[id] : findAccount(settings, id, account)) || {};
   return { ...(a.defaults || {}), ...(saved.baseUrl ? { baseUrl: saved.baseUrl } : {}), ...(saved.model ? { model: saved.model } : {}) };
 }
 
 // Environment for one run of an agent. model overrides the saved default where the CLI reads it.
-function envFor(settings, id, model) {
+function envFor(settings, id, model, account) {
   const a = AGENTS[id];
-  if (!a || !a.env) return {};
-  const o = options(settings, id);
+  if (!a) return {};
+  account = findAccount(settings, id, account) ? account : MAIN;
+  const home = HOME_VAR[id] && !isMainAccount(account) ? { [HOME_VAR[id]]: accountDir(id, account) } : {};
+  if (!a.env) return home;
+  const o = options(settings, id, account);
   if (model) o.model = model;
-  return a.env(readKey(settings, id), o);
+  return { ...a.env(readKey(settings, id, account), o), ...home };
+}
+
+// ---------- extra accounts for every agent (Claude's are in accounts.js)
+//
+// An agent that signs in keeps its login in a config folder, and each CLI has a variable that moves
+// it, so each extra account gets its own folder: its own login and history, never mixed with the
+// main one. API-key agents (Gemini, Qwen, DeepSeek) keep a key per account instead.
+
+const MAIN = 'default';
+const HOME_VAR = { codex: 'CODEX_HOME', kimi: 'KIMI_SHARE_DIR', copilot: 'COPILOT_HOME', cursor: 'CURSOR_CONFIG_DIR' };
+// What a new account copies from the main one, so it behaves the same (never the login itself).
+const COPY = {
+  codex: { from: () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), items: ['config.toml', 'AGENTS.md', 'prompts', 'skills', 'rules'] },
+  kimi: { from: () => process.env.KIMI_SHARE_DIR || path.join(os.homedir(), '.kimi'), items: ['mcp.json'] },
+  copilot: { from: () => process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot'), items: ['mcp-config.json', 'agents', 'copilot-instructions.md'] },
+};
+let accountsBase = path.join(os.homedir(), '.switchdesk-agent-accounts');
+const setAccountsBase = (dir) => (accountsBase = dir);
+const isMainAccount = (account) => !account || account === MAIN;
+const canAddAccounts = (id) => !!(AGENTS[id] && id !== 'claude' && (HOME_VAR[id] || AGENTS[id].key));
+const accountDir = (id, account) => path.join(accountsBase, id, String(account).replace(/[^\w-]/g, ''));
+
+function findAccount(settings, id, account) {
+  if (isMainAccount(account)) return { id: MAIN };
+  return ((settings.agentAccounts || {})[id] || []).find((x) => x && x.id === account) || null;
+}
+
+// [{ id, name }] for an agent, main account first.
+function accountsOf(settings, id) {
+  const extra = ((settings.agentAccounts || {})[id] || []).filter((x) => x && x.id);
+  return [{ id: MAIN, name: ((settings.agentMainNames || {})[id]) || 'Main account' }, ...extra.map((x) => ({ id: x.id, name: x.name }))];
+}
+
+async function createAccount(id, name) {
+  const account = { id: `acct-${require('crypto').randomBytes(4).toString('hex')}`, name: String(name || 'Account').trim().slice(0, 40) || 'Account' };
+  if (HOME_VAR[id]) {
+    const dir = accountDir(id, account.id);
+    await fs.promises.mkdir(dir, { recursive: true });
+    const copy = COPY[id];
+    for (const item of copy ? copy.items : []) {
+      await fs.promises.cp(path.join(copy.from(), item), path.join(dir, item), { recursive: true, errorOnExist: false }).catch(() => {});
+    }
+  }
+  return account;
+}
+
+async function removeAccount(id, account) {
+  if (isMainAccount(account)) throw new Error("The main account can't be removed.");
+  const dir = accountDir(id, account);
+  const rel = path.relative(accountsBase, dir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Not a Switchdesk account folder.');
+  await fs.promises.rm(dir, { recursive: true, force: true });
+}
+
+// A command for the app's terminal that runs as an account: PowerShell on Windows, sh elsewhere.
+function withEnv(cmd, env) {
+  const vars = Object.entries(env || {});
+  if (!vars.length) return cmd;
+  if (isWin) return `${vars.map(([k, v]) => `$env:${k}='${String(v).replace(/'/g, "''")}'`).join('; ')}; ${cmd}`;
+  return `${vars.map(([k, v]) => `${k}='${String(v).replace(/'/g, "'\\''")}'`).join(' ')} ${cmd}`;
 }
 
 function commandLine(bin, args) {
@@ -185,9 +248,10 @@ function commandLine(bin, args) {
 }
 
 // `<cli> status`: signed in unless it says otherwise.
-function cliStatus(bin, args) {
+async function cliStatus(bin, args, extraEnv) {
+  const env = await cli.childEnv(extraEnv || {});
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 20000, windowsHide: true, shell: isWin && /\.(cmd|bat)$/i.test(bin) }, (err, out, errOut) => {
+    execFile(bin, args, { env, timeout: 20000, windowsHide: true, shell: isWin && /\.(cmd|bat)$/i.test(bin) }, (err, out, errOut) => {
       const text = (String(out || '') + String(errOut || '')).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
       const loggedIn = !err && !/not (logged|signed) in|log ?in required|unauthenticated/i.test(text);
       resolve({ loggedIn, detail: text.split('\n').find((l) => /@|logged|signed/i.test(l)) || '' });
@@ -201,4 +265,4 @@ function version(bin) {
   });
 }
 
-module.exports = { AGENTS, findBin, findCommand, readKey, sealKey, options, envFor, commandLine, version, cliStatus };
+module.exports = { AGENTS, MAIN, findBin, findCommand, readKey, sealKey, options, envFor, commandLine, version, cliStatus, setAccountsBase, accountsOf, findAccount, createAccount, removeAccount, canAddAccounts, isMainAccount, withEnv, homeVar: (id) => HOME_VAR[id] || null };

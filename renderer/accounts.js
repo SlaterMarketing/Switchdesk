@@ -45,7 +45,10 @@ function renderAccountPill() {
   const chat = activeChat();
   const isClaude = !chat || !chat.agent || chat.agent === 'claude';
   renderAgentButton();
-  if (!isClaude) return ($('#status-limit').textContent = acct.usage.get(`agent:${chat.agent}`) ? `${chat.agent[0].toUpperCase()}${chat.agent.slice(1)} usage ${acct.usage.get(`agent:${chat.agent}`)}` : '');
+  if (!isClaude) {
+    const u = acct.usage.get(`agent:${usageKey(chat)}`);
+    return ($('#status-limit').textContent = u ? `${usageLabel(usageKey(chat))} usage ${u}` : '');
+  }
   const id = chatAccount(chat);
   const usage = acct.usage.get(id);
   $('#status-limit').textContent = usage ? `${multiAccount() ? accountName(id) + ' usage' : 'Usage'} ${usage}` : '';
@@ -53,7 +56,7 @@ function renderAccountPill() {
 
 // Rate-limit use arrives on each chat's events; it belongs to that chat's account.
 function noteAccountUsage(chat, text) {
-  const id = chat.agent && chat.agent !== 'claude' ? `agent:${chat.agent}` : chatAccount(chat);
+  const id = chat.agent && chat.agent !== 'claude' ? `agent:${usageKey(chat)}` : chatAccount(chat);
   acct.usage.set(id, text);
   if (chat === activeChat()) renderAccountPill();
 }

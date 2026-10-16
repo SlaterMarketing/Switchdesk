@@ -662,3 +662,9 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .dbg-console .c-console { color: var(--text-dim); }
 .dbg-console .c-eval { color: var(--ask); }
 .dbg-console .c-result { color: var(--text-strong); }
+
+/* more accounts for one agent (Settings → Agents) */
+.agent-accounts { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.agent-accounts summary { cursor: pointer; }
+.agent-accounts[open] > .row, .agent-accounts[open] > .acct-block { margin-top: 6px; }
+.acct-block { border-top: 1px solid var(--border); padding-top: 6px; }

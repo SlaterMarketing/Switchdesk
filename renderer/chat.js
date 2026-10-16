@@ -315,7 +315,7 @@ async function openSession(row, worktree, account) {
   const open = chats.find((c) => c.sessionId === row.id);
   if (open) return switchChat(open.id);
   if (row.agent && row.agent !== 'claude') {
-    reopenAgentChat({ agent: row.agent, sessionId: row.id, title: row.title });
+    reopenAgentChat({ agent: row.agent, agentAccount: row.agentAccount, sessionId: row.id, title: row.title });
     return loadHistory();
   }
   // A past chat carries on with the account it last ran on.
@@ -1218,6 +1218,7 @@ async function dispatch(chat, { content, shown, mode, images, rwText, compact })
       cwd: chat.worktree ? chat.worktree.path : undefined,
       account: chatAccount(chat),
       agent: agentOf(chat),
+      agentAccount: agentOf(chat) === 'claude' ? undefined : agentAccountOf(chat),
     });
     if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {
@@ -1328,7 +1329,8 @@ function chipLabel(c) {
 
 // ------------------------------------------------------------------ usage ledger (Settings → Usage)
 function usageKey(chat) {
-  return chat.agent && chat.agent !== 'claude' ? chat.agent : `claude:${chatAccount(chat)}`;
+  if (chat.agent && chat.agent !== 'claude') return agentAccountOf(chat) === 'default' ? chat.agent : `${chat.agent}:${agentAccountOf(chat)}`;
+  return `claude:${chatAccount(chat)}`;
 }
 
 // Claude Code reports the whole turn's tokens and cost; other agents report tokens as they go.

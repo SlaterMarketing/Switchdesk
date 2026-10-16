@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('desk', {
     models: call('agents:models'),
     sessions: call('agents:sessions'),
     history: call('agents:history'),
+    addAccount: call('agents:add-account'),
+    renameAccount: call('agents:rename-account'),
+    removeAccount: call('agents:remove-account'),
   },
   accounts: {
     list: call('accounts:list'),

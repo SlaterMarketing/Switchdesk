@@ -291,7 +291,9 @@ const fmtCost = (n) => (!n ? '$0' : n < 0.01 ? '<$0.01' : n >= 100 ? `$${Math.ro
 
 function usageLabel(key) {
   if (key.startsWith('claude:')) return multiAccount() ? `Claude · ${accountName(key.slice(7))}` : 'Claude';
-  return agentInfo(key).label || key;
+  const [id, account] = key.split(':');
+  const label = agentInfo(id).label || id;
+  return account ? `${label} · ${agentAccountName(id, account)}` : agentAccounts(id).length > 1 ? `${label} · ${agentAccountName(id, 'default')}` : label;
 }
 
 function agoText(t) {

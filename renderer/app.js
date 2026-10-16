@@ -522,7 +522,7 @@ async function saveWorkspace() {
   const snapshot = {
     tabs: state.tabs.filter((x) => x.kind === 'file').map((x) => x.rel),
     active: t && t.kind === 'file' ? t.rel : null,
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined })),
     activeChat: activeChat()?.sessionId || null,
     savedAt: Date.now(),
   };

@@ -515,14 +515,14 @@ function denyPending(chat, message) {
   chat.approvals.clear();
 }
 
-async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent }) {
+async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent, agentAccount }) {
   const a = agents.AGENTS[agent] ? agents.AGENTS[agent] : agents.AGENTS.claude;
   agent = agents.AGENTS[agent] ? agent : 'claude';
   const bin = await agents.findBin(agent, settings);
   if (!bin) throw new Error(agent === 'claude' ? 'Claude Code is not installed. Open Settings → Setup to install it.' : `${a.label} isn't installed yet. Open Settings → Agents to install it.`);
-  if (a.key && !agents.readKey(settings, agent)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
+  if (a.key && !agents.readKey(settings, agent, agentAccount)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
   const dirs = [...ctx.extra];
-  const chat = { ctx, session: null, effort: effort || '', model: model || '', mode, turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, dirs };
+  const chat = { ctx, session: null, effort: effort || '', model: model || '', mode, turn: null, approvals: new Map(), cwd: chatCwd(ctx, cwd), account, agent, agentAccount, dirs };
   const key = chatKey(ctx, chatId);
   // Picking up a conversation another account had: give this account the latest transcript.
   if (sessionId && agent === 'claude') await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
@@ -535,7 +535,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     cwd: chat.cwd,
     dirs,
     rules: a.ownRulesFile ? projectRules(chat.cwd) : '',
-    env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model),
+    env: agent === 'claude' ? accounts.envFor(account) : agents.envFor(settings, agent, model, agentAccount),
     sessionId,
     resumeAt: agent === 'claude' ? resumeAt : null,
     model,
@@ -603,10 +603,11 @@ function beginSnapshot(ctx, chat) {
   return new MultiSnapshot([new TurnSnapshot(chat.cwd), ...extra.map((r) => new TurnSnapshot(r.dir, r.key))]).begin();
 }
 
-async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent }) {
+async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent, agentAccount }) {
   if (!ctx.workspace) throw new Error('Open a folder first.');
   if (!accounts.exists(settings, account)) account = folderAccount(ctx);
   agent = agents.AGENTS[agent] ? agent : 'claude';
+  agentAccount = agent !== 'claude' && agents.findAccount(settings, agent, agentAccount) ? agentAccount || agents.MAIN : agents.MAIN;
   const key = chatKey(ctx, chatId);
   let chat = chats.get(key);
   const restart =
@@ -616,6 +617,7 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
       agent !== chat.agent ||
       chat.dirs.join('\n') !== ctx.extra.join('\n') ||
       (agent === 'claude' && ((effort || '') !== chat.effort || account !== chat.account)) ||
+      (agent !== 'claude' && agentAccount !== (chat.agentAccount || agents.MAIN)) ||
       (agents.AGENTS[agent].kind === 'acp' && (model || '') !== chat.model));
   if (restart) {
     // Effort, account, the workspace's folders and (for ACP agents) model are fixed per process:
@@ -626,7 +628,7 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
     chats.delete(key);
     chat = null;
   }
-  if (!chat || !chat.session.alive) chat = await openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent });
+  if (!chat || !chat.session.alive) chat = await openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent, agentAccount });
   else await chat.session.setModel(model);
   const turn = { id: crypto.randomUUID(), snap: await beginSnapshot(ctx, chat), blocks: new Map() };
   chat.turn = turn;
@@ -699,11 +701,37 @@ function registerIpc() {
       hasKey: a.key ? !!agents.readKey(settings, id) : false,
       options: a.key ? agents.options(settings, id) : {},
       canLogin: !!a.login,
+      canAddAccounts: agents.canAddAccounts(id),
+      accounts: id === 'claude' ? [] : agents.accountsOf(settings, id).map((x) => ({ ...x, hasKey: a.key ? !!agents.readKey(settings, id, x.id) : false, options: a.key ? agents.options(settings, id, x.id) : {} })),
     }))
   );
-  handle('agents:status', async (ctx, id) => {
+  // Extra accounts for agents other than Claude: add, rename, remove.
+  handle('agents:add-account', async (ctx, id, name) => {
+    if (!agents.canAddAccounts(id)) throw new Error("This agent can't have more than one account.");
+    const x = await agents.createAccount(id, name);
+    settings.agentAccounts = { ...(settings.agentAccounts || {}), [id]: [...((settings.agentAccounts || {})[id] || []), x] };
+    saveSettings();
+    return x.id;
+  });
+  handle('agents:rename-account', (ctx, id, account, name) => {
+    name = String(name || '').trim().slice(0, 40);
+    if (!name) return false;
+    if (agents.isMainAccount(account)) settings.agentMainNames = { ...(settings.agentMainNames || {}), [id]: name };
+    else settings.agentAccounts = { ...(settings.agentAccounts || {}), [id]: ((settings.agentAccounts || {})[id] || []).map((x) => (x.id === account ? { ...x, name } : x)) };
+    saveSettings();
+    return true;
+  });
+  handle('agents:remove-account', async (ctx, id, account) => {
+    for (const [key, c] of [...chats]) if (c.agent === id && c.agentAccount === account) closeChat(key);
+    await agents.removeAccount(id, account);
+    settings.agentAccounts = { ...(settings.agentAccounts || {}), [id]: ((settings.agentAccounts || {})[id] || []).filter((x) => x.id !== account) };
+    saveSettings();
+    return true;
+  });
+  handle('agents:status', async (ctx, id, account) => {
     const a = agents.AGENTS[id];
     if (!a) return null;
+    const env = agents.envFor(settings, id, '', account);
     if (id === 'claude') {
       const s = await cli.cliStatus(settings.claudePath, accounts.envFor(folderAccount(ctx)));
       return { installed: s.found, path: s.path, version: s.version, loggedIn: !!(s.found && (s.auth ? s.auth.loggedIn : true)), detail: s.auth && s.auth.email ? s.auth.email : '' };
@@ -711,39 +739,45 @@ function registerIpc() {
     const bin = await agents.findBin(id, settings);
     if (!bin) return { installed: false };
     const version = await agents.version(bin);
-    if (a.key && !agents.readKey(settings, id)) return { installed: true, path: bin, version, loggedIn: false, detail: `Needs your ${a.key.name}` };
+    if (a.key && !agents.readKey(settings, id, account)) return { installed: true, path: bin, version, loggedIn: false, detail: `Needs your ${a.key.name}` };
     try {
       if (a.kind === 'codex') {
-        const r = await codexStatus(bin, {});
+        const r = await codexStatus(bin, env);
         return { installed: true, path: bin, version, loggedIn: r.loggedIn, detail: r.loggedIn ? [r.email || (r.method === 'apiKey' ? 'API key' : 'ChatGPT'), r.plan].filter(Boolean).join(' · ') : 'Not signed in' };
       }
       if (a.statusArgs) {
-        const r = await agents.cliStatus(bin, a.statusArgs);
+        const r = await agents.cliStatus(bin, a.statusArgs, env);
         return { installed: true, path: bin, version, loggedIn: r.loggedIn, detail: r.loggedIn ? r.detail.slice(0, 80) || 'Signed in' : 'Not signed in' };
       }
-      const r = await acpStatus(bin, a.args, agents.envFor(settings, id));
+      const r = await acpStatus(bin, a.args, env);
       return { installed: true, path: bin, version: version || r.version, loggedIn: r.loggedIn, detail: r.loggedIn ? (a.key ? 'API key saved' : 'Signed in') : a.key ? 'The key was not accepted' : 'Not signed in' };
     } catch (err) {
       return { installed: true, path: bin, version, loggedIn: false, detail: String(err.message || err).slice(0, 200) };
     }
   });
   // API key, base URL and default model for an API-key agent. A key of undefined keeps the saved one.
-  handle('agents:set-key', (ctx, id, { key, baseUrl, model } = {}) => {
+  handle('agents:set-key', (ctx, id, { key, baseUrl, model } = {}, account) => {
     const a = agents.AGENTS[id];
     if (!a || !a.key) return false;
-    const prev = (settings.apiKeys || {})[id] || {};
+    const main = agents.isMainAccount(account);
+    const prev = (main ? (settings.apiKeys || {})[id] : agents.findAccount(settings, id, account)) || {};
+    if (!main && !prev.id) return false;
     const sealed = key === undefined ? { key: prev.key, enc: prev.enc } : agents.sealKey(String(key).trim()) || { key: '', enc: false };
-    settings.apiKeys = { ...(settings.apiKeys || {}), [id]: { ...sealed, baseUrl: (baseUrl || '').trim(), model: (model || '').trim() } };
+    const next = { ...sealed, baseUrl: (baseUrl || '').trim(), model: (model || '').trim() };
+    if (main) settings.apiKeys = { ...(settings.apiKeys || {}), [id]: next };
+    else settings.agentAccounts = { ...(settings.agentAccounts || {}), [id]: settings.agentAccounts[id].map((x) => (x.id === account ? { ...x, ...next } : x)) };
     saveSettings();
     return true;
   });
   // Install and sign-in commands, which the app runs in its own terminal so you see everything.
-  handle('agents:command', async (ctx, id, what) => {
+  handle('agents:command', async (ctx, id, what, account) => {
     const a = agents.AGENTS[id];
     if (!a) return null;
     if (what === 'install') return a.install ? a.install() : null;
     const bin = await agents.findBin(id, settings);
-    if (what === 'login' && a.login) return bin ? agents.commandLine(bin, a.login) : null;
+    const home = agents.homeVar(id);
+    const env = home && !agents.isMainAccount(account) ? { [home]: agents.envFor(settings, id, '', account)[home] } : {};
+    if (what === 'login' && a.login) return bin ? agents.withEnv(agents.commandLine(bin, a.login), env) : null;
     return null;
   });
   handle('agents:models', async (ctx, id) => {
@@ -752,28 +786,36 @@ function registerIpc() {
     return bin ? codexModels(bin).catch(() => []) : [];
   });
   // Past conversations an agent keeps for this folder, and one of them as messages.
+  // Each account keeps its own conversations (API-key agents share one history), so ask each one.
   handle('agents:sessions', async (ctx, id) => {
     const a = agents.AGENTS[id];
     if (!a || id === 'claude' || !ctx.workspace) return [];
     const bin = await agents.findBin(id, settings);
-    if (!bin || (a.key && !agents.readKey(settings, id))) return [];
-    const env = agents.envFor(settings, id);
-    const rows = a.kind === 'codex' ? await codexSessions(bin, env, ctx.workspace) : await acpSessions(bin, a.args, env, ctx.workspace, a.authMethod);
-    return rows.map((r) => ({ ...r, agent: id }));
+    if (!bin) return [];
+    const list = agents.homeVar(id) ? agents.accountsOf(settings, id) : [agents.accountsOf(settings, id).find((x) => agents.readKey(settings, id, x.id))].filter(Boolean);
+    const all = await Promise.all(
+      list.map(async (x) => {
+        if (a.key && !agents.readKey(settings, id, x.id)) return [];
+        const env = agents.envFor(settings, id, '', x.id);
+        const rows = await (a.kind === 'codex' ? codexSessions(bin, env, ctx.workspace) : acpSessions(bin, a.args, env, ctx.workspace, a.authMethod)).catch(() => []);
+        return rows.map((r) => ({ ...r, agent: id, agentAccount: agents.homeVar(id) ? x.id : undefined }));
+      })
+    );
+    return all.flat();
   });
-  handle('agents:history', async (ctx, id, sessionId) => {
+  handle('agents:history', async (ctx, id, sessionId, account) => {
     const a = agents.AGENTS[id];
     if (!a || id === 'claude') return null;
     const bin = await agents.findBin(id, settings);
     if (!bin) return null;
-    const env = agents.envFor(settings, id);
+    const env = agents.envFor(settings, id, '', account);
     return a.kind === 'codex' ? codexHistory(bin, env, sessionId) : acpHistory(bin, a.args, env, ctx.workspace, a.authMethod, sessionId);
   });
   // Codex can use an OpenAI API key instead of a ChatGPT sign-in; Codex stores it itself.
-  handle('agents:codex-key', async (ctx, key) => {
+  handle('agents:codex-key', async (ctx, key, account) => {
     const bin = await agents.findBin('codex', settings);
     if (!bin) throw new Error("Codex isn't installed.");
-    const env = await cli.childEnv();
+    const env = await cli.childEnv(agents.envFor(settings, 'codex', '', account));
     return new Promise((resolve) => {
       const child = require('child_process').spawn(bin, ['login', '--with-api-key'], { env, windowsHide: true, shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin) });
       let out = '';
@@ -1505,6 +1547,7 @@ app.on('web-contents-created', (_e, contents) => {
 app.whenReady().then(() => {
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
+  agents.setAccountsBase(path.join(app.getPath('userData'), 'agent-accounts'));
   usage.setBaseDir(app.getPath('userData'));
   codebase.setBaseDir(app.getPath('userData'));
   loadSettings();
