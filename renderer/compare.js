@@ -142,7 +142,7 @@ function renderCompareBar() {
   const pill = (c) => {
     const n = (c.wtChanges || []).length;
     const gone = c.worktree && c.worktree.removed;
-    const what = c.making ? 'copying…' : c.busy ? 'working…' : gone ? 'discarded' : c.merged ? 'merged' : n ? `${n} file${n > 1 ? 's' : ''}` : c.usage.turns ? 'no changes' : 'waiting';
+    const what = c.making ? 'copying…' : c.busy ? 'working…' : gone ? 'discarded' : c.merged ? 'merged' : n ? `${n} file${n > 1 ? 's' : ''}` : c.usage.turns || c.sessionId ? 'no changes' : 'waiting';
     return h(
       'button',
       {

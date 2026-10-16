@@ -1,4 +1,4 @@
-/* global $, h, state, monaco, editor, activeTab, activateTab, renderMarkdown, modal, openFile, chats, switchChat, agentLabel */
+/* global $, h, state, monaco, editor, activeTab, activateTab, renderMarkdown, modal, openFile, chats, switchChat, agentLabel, toast, send, setMode, queueSaveWorkspace */
 'use strict';
 
 // ------------------------------------------------------------------ plans as documents
@@ -19,6 +19,7 @@ function attachPlanModel(t) {
   t.model = monaco.editor.createModel(t.plan.text, 'markdown');
   t.model.onDidChangeContent(() => {
     t.plan.text = t.model.getValue();
+    queueSaveWorkspace();
     if (t.plan.preview && activeTab() === t) renderPlanPreview(t);
   });
 }
@@ -44,6 +45,7 @@ function openPlanDoc(markdown, { onBuild, onKeep, chat, path } = {}) {
       t.plan.state = label;
       t.plan.status = status || t.plan.status || 'building';
       refresh();
+      queueSaveWorkspace();
     },
     // The agent's own to-do list while it builds (TodoWrite, or ACP and Codex plan updates).
     todos: (list) => {
@@ -207,4 +209,56 @@ function keepPlanningPrompt(t) {
     t.plan.onKeep(box.value.trim());
   });
   box.focus();
+}
+
+// ------------------------------------------------------------------ plans across restarts
+//
+// Open plan tabs are saved with the folder's workspace. After a restart the agent's turn that
+// proposed the plan is gone, so Build it and Keep planning send a new message to the plan's chat.
+
+function planSnapshot() {
+  return state.tabs
+    .filter((t) => t.kind === 'plan')
+    .slice(-10)
+    .map((t) => {
+      const chat = chats.find((c) => c.id === t.plan.chatId);
+      const p = t.plan;
+      return { text: p.text.slice(0, 200000), state: p.state, status: p.status, path: p.path || null, live: p.live, session: chat ? chat.sessionId || null : p.session || null, active: activeTab() === t };
+    });
+}
+
+function restorePlans(list) {
+  let active = null;
+  for (const s of list || []) {
+    if (!s || !s.text) continue;
+    const chatFor = () => chats.find((c) => s.session && c.sessionId === s.session) || null;
+    let doc;
+    const job = () => ({ started: false, todos: (l) => doc.todos(l), say: (text, status) => doc.resolve(text, status) });
+    const onBuild = () => {
+      const chat = chatFor();
+      if (!chat) return toast('The chat this plan came from isn’t open any more.');
+      if (chat.busy) return toast(`${agentLabel(chat)} is still working in that chat.`);
+      switchChat(chat.id);
+      chat.planBuildNext = job();
+      send(`Build this plan now. Follow it step by step:\n\n${doc.text()}`, 'agent', 'Build the plan', chat);
+      setMode('agent');
+      doc.resolve('Approved. Building it now.', 'building');
+    };
+    const onKeep = (feedback) => {
+      const chat = chatFor();
+      if (!chat) return toast('The chat this plan came from isn’t open any more.');
+      switchChat(chat.id);
+      send(`Keep planning.${feedback ? ' My feedback: ' + feedback : ''} Here is the plan as it stands:\n\n${doc.text()}\n\nRevise it and present it again.`, 'plan', feedback ? `Keep planning: ${feedback}` : 'Keep planning', chat);
+      doc.resolve('Sent back for revision.', 'sent');
+    };
+    doc = openPlanDoc(s.text, { onBuild, onKeep, chat: chatFor(), path: s.path });
+    const t = state.tabs[state.tabs.length - 1];
+    t.plan.session = s.session;
+    // A build that was running when the app closed can't be followed any more.
+    t.plan.state = s.status === 'building' ? 'Was building when Switchdesk closed.' : s.state || '';
+    t.plan.status = s.status === 'building' ? 'error' : s.status || '';
+    t.plan.live = s.live || null;
+    if (s.active) active = t;
+  }
+  return active;
 }

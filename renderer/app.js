@@ -533,8 +533,10 @@ async function saveWorkspace() {
     side: side.rel || null,
     panel: state.sidePanel || 'explorer',
     draft: $('#input').value.slice(0, 20000),
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined, compare: c.compare || undefined, comparePrompt: (c.compare && (compareGroups.get(c.compare) || {}).prompt) || undefined, merged: c.merged || undefined })),
     activeChat: activeChat()?.sessionId || null,
+    plans: planSnapshot(),
+    planActive: !!(t && t.kind === 'plan'),
     savedAt: Date.now(),
   };
   const all = { ...(state.settings.workspaces || {}), [state.folder.root]: snapshot };
@@ -554,6 +556,14 @@ async function restoreWorkspace(root) {
       } catch {
         /* transcript deleted */
       }
+      // Chats that were compared still show their bar together.
+      const chat = c.compare && chats.find((x) => x.sessionId === c.sessionId);
+      if (chat) {
+        chat.compare = c.compare;
+        chat.merged = c.merged || false;
+        if (!compareGroups.has(c.compare)) compareGroups.set(c.compare, { prompt: c.comparePrompt || '' });
+        if (chat.worktree) refreshWorktree(chat);
+      }
     }
   }
   if (!chats.length) createChat();
@@ -563,7 +573,9 @@ async function restoreWorkspace(root) {
     for (const rel of saved.tabs || []) if (state.fileSet.has(rel)) await openFile(rel);
     for (const x of state.tabs) if (x.kind === 'file' && saved.views && saved.views[x.rel]) x.viewState = saved.views[x.rel];
     const t = (saved.active && state.tabs.find((x) => x.kind === 'file' && x.rel === saved.active)) || [...state.tabs].reverse().find((x) => x.kind === 'file');
-    if (t) {
+    const plan = restorePlans(saved.plans);
+    if (plan && saved.planActive) activateTab(plan.id);
+    else if (t) {
       state.activeTab = null; // so activating it applies the saved place instead of saving the current one over it
       activateTab(t.id);
     }
