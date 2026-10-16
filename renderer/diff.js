@@ -8,9 +8,9 @@
 
 function openDiff(change) {
   const source = change.source || 'claude';
-  const id = `d:${source === 'git' ? 'git' : source === 'worktree' ? 'wt:' + change.turnId : change.turnId}:${change.rel}`;
+  const id = `d:${source === 'git' ? 'git' : source === 'worktree' ? 'wt:' + change.turnId : source === 'compare' ? 'cmp:' + (change.key || '') : change.turnId}:${change.rel}`;
   let t = state.tabs.find((x) => x.id === id);
-  if (t && (source === 'git' || source === 'worktree')) {
+  if (t && (source === 'git' || source === 'worktree' || source === 'compare')) {
     // Git diffs always show the current state, so rebuild them.
     t.original.setValue(change.before);
     t.modified.setValue(change.after);
@@ -35,6 +35,15 @@ function openDiff(change) {
 
 function renderDiffBar(t) {
   const git = t.change.source === 'git';
+  // Read-only comparisons: a commit's change, or two files side by side.
+  if (t.change.source === 'compare') {
+    $('#diff-title').textContent = t.change.title || t.rel;
+    $('#diff-hint').textContent = t.change.hint || '';
+    $('#diff-undo').classList.add('hidden');
+    $('#diff-keep').textContent = 'Close';
+    queueHunkWidgets();
+    return;
+  }
   if (t.change.source === 'worktree') {
     // Read-only: the copy's changes come into your folder through Merge in the chat.
     $('#diff-title').textContent = `${t.rel} · in Claude's copy`;
@@ -122,7 +131,7 @@ function renderHunkWidgets() {
   ed.changeViewZones((acc) => {
     for (const id of hunkZones) acc.removeZone(id);
     hunkZones = [];
-    if (!t || t.kind !== 'diff' || t.change.undone || t.change.source === 'worktree') return;
+    if (!t || t.kind !== 'diff' || t.change.undone || t.change.source === 'worktree' || t.change.source === 'compare') return;
     const git = t.change.source === 'git';
     for (const c of diffEditor.getLineChanges() || []) {
       const after = c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber : c.modifiedStartLineNumber - 1;

@@ -61,9 +61,15 @@ async function settingsGeneral(body, close) {
   theme.addEventListener('change', save);
   pathInput.addEventListener('change', save);
   const signedIn = status.found && (status.auth ? status.auth.loggedIn : true);
+  const blame = h('input', { type: 'checkbox', checked: s.blame !== false });
+  blame.addEventListener('change', async () => {
+    state.settings = await desk.setSettings({ blame: blame.checked });
+    blame.checked ? showBlame() : clearBlame();
+  });
   body.replaceChildren(
     h('h3', {}, 'General'),
     field('Theme', theme),
+    h('label', { class: 'perm-toggle' }, blame, h('div', {}, h('b', {}, 'Show who last changed each line'), h('div', { class: 'muted small' }, "The author, when and the commit message, at the end of the line you're on (git blame)."))),
     field('Claude Code location', pathInput, 'Leave blank and Switchdesk finds it for you.'),
     h(
       'div',

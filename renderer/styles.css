@@ -324,6 +324,9 @@ body.mac #titlebar { padding-left: 78px; }
 
 /* Keep/Undo buttons live in view zones, which Monaco layers under the text; lift them so they can be clicked. */
 .monaco-editor .view-zones { z-index: 2; }
+/* …but empty zones (the space Monaco leaves for code lenses like Accept current) let clicks through. */
+.monaco-editor .view-zones > div { pointer-events: none; }
+.monaco-editor .view-zones > div * { pointer-events: auto; }
 
 /* inline review in the editor */
 .rv-add { background: rgba(63, 185, 80, 0.14); }
@@ -593,3 +596,21 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .meaning-snippet { font-family: var(--mono); font-size: 11px; color: var(--text-dim); padding: 0 10px 0 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #status-index { color: var(--text-dim); }
 .set-box .error { color: var(--err); }
+
+/* git: blame, conflicts, history, pull requests */
+.blame-after::after { content: var(--blame); margin-left: 3em; color: var(--text-dim); opacity: 0.7; font-style: italic; white-space: pre; pointer-events: none; }
+#status-blame { cursor: pointer; color: var(--text-dim); }
+.conflict-current { background: rgba(63, 185, 80, 0.12); }
+.conflict-incoming { background: rgba(78, 161, 255, 0.14); }
+.conflict-base { background: rgba(139, 139, 139, 0.12); }
+.conflict-marker { background: rgba(139, 139, 139, 0.22); }
+.conflict-marker.current { background: rgba(63, 185, 80, 0.3); }
+.conflict-marker.incoming { background: rgba(78, 161, 255, 0.3); }
+.git-st.st-C { color: var(--err); }
+.git-op { margin: 0 10px 8px; padding: 8px; border: 1px solid var(--warn); border-radius: 6px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.git-history-head { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+.git-log-commit { padding: 4px 10px; cursor: pointer; }
+.git-log-commit:hover { background: var(--bg-hover); }
+.git-log-commit .subject { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.git-commit-files { padding-left: 10px; }
+.pr-body { width: 100%; margin-top: 8px; font-family: var(--mono); font-size: 12px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; box-sizing: border-box; }

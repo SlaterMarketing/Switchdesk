@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const cli = require('./claude-cli');
 const { ChatSession } = require('./session');
-const { TurnSnapshot, MultiSnapshot, git, writeTree, diffTrees, blob } = require('./snapshots');
+const { TurnSnapshot, MultiSnapshot, git, writeTree, diffTrees, blob, isGitRepo, gitRoot } = require('./snapshots');
 const gitops = require('./gitops');
 const terminal = require('./terminal');
 const config = require('./config');
@@ -921,21 +921,79 @@ function registerIpc() {
   });
 
   // Source control
-  handle('git:status', (ctx) => (ctx.workspace ? gitops.status(ctx.workspace) : { repo: false }));
-  handle('git:head', (ctx, rel) => gitops.headContent(ctx.workspace, rel));
-  handle('git:commit', (ctx, message) => gitops.commitAll(ctx.workspace, message));
-  handle('git:checkout', (ctx, branch, create) => gitops.checkout(ctx.workspace, branch, create));
-  handle('git:sync', (ctx, action) => gitops.sync(ctx.workspace, action));
-  handle('git:discard', async (ctx, rel, wasUntracked) => {
+  // The repository the Git panel shows: the main folder's, or another folder of the workspace
+  // picked in the panel. Per-file commands take the file's workspace path and use its own repo.
+  const gitCwd = (ctx) => (ctx.gitRepo && roots(ctx).some((r) => r.dir === ctx.gitRepo) ? ctx.gitRepo : ctx.workspace);
+  const gitPrefix = (ctx) => {
+    const r = roots(ctx).find((x) => x.dir === gitCwd(ctx));
+    return r && r.key ? r.key + '/' : '';
+  };
+  const fileRepo = (ctx, rel) => {
     const abs = resolveInWorkspace(ctx, rel);
-    if (wasUntracked) {
-      await git(ctx.workspace, ['rm', '--cached', '--ignore-unmatch', '-q', '--', rel]).catch(() => {});
-      await fsp.rm(abs, { force: true });
-    }
-    else await git(ctx.workspace, ['checkout', 'HEAD', '--', rel]);
+    return { cwd: path.dirname(abs), name: path.basename(abs), abs };
+  };
+  handle('git:repos', async (ctx) => {
+    const out = [];
+    for (const r of roots(ctx)) if (await isGitRepo(r.dir)) out.push({ dir: r.dir, name: r.name, current: r.dir === gitCwd(ctx) });
+    return out;
   });
-  handle('git:init', (ctx) => git(ctx.workspace, ['init']));
-  handle('git:suggest', async (ctx) => gitops.suggestMessage(ctx.workspace, await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
+  handle('git:use', (ctx, dir) => {
+    ctx.gitRepo = dir;
+  });
+  handle('git:status', async (ctx) => {
+    if (!ctx.workspace) return { repo: false };
+    const s = await gitops.status(gitCwd(ctx));
+    const prefix = gitPrefix(ctx);
+    if (s.files) for (const f of s.files) f.path = prefix + f.rel;
+    return s;
+  });
+  handle('git:head', (ctx, rel) => {
+    const f = fileRepo(ctx, rel);
+    return gitops.headContent(f.cwd, './' + f.name);
+  });
+  handle('git:commit', (ctx, message) => gitops.commitAll(gitCwd(ctx), message));
+  handle('git:checkout', (ctx, branch, create) => gitops.checkout(gitCwd(ctx), branch, create));
+  handle('git:sync', (ctx, action) => gitops.sync(gitCwd(ctx), action));
+  handle('git:discard', async (ctx, rel, wasUntracked) => {
+    const f = fileRepo(ctx, rel);
+    if (wasUntracked) {
+      await git(f.cwd, ['rm', '--cached', '--ignore-unmatch', '-q', '--', f.name]).catch(() => {});
+      await fsp.rm(f.abs, { force: true });
+    } else await git(f.cwd, ['checkout', 'HEAD', '--', f.name]);
+  });
+  handle('git:init', (ctx) => git(gitCwd(ctx), ['init']));
+  handle('git:suggest', async (ctx) => gitops.suggestMessage(gitCwd(ctx), await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
+  // Merge conflicts
+  handle('git:abort', (ctx) => gitops.abortOperation(gitCwd(ctx)));
+  handle('git:continue', (ctx) => gitops.continueOperation(gitCwd(ctx)));
+  handle('git:resolved', (ctx, rel) => {
+    const f = fileRepo(ctx, rel);
+    return gitops.markResolved(f.cwd, f.name);
+  });
+  // Blame and history
+  handle('git:blame', async (ctx, rel) => {
+    const f = fileRepo(ctx, rel);
+    return (await isGitRepo(f.cwd)) ? gitops.blame(f.cwd, f.name) : null;
+  });
+  handle('git:log', async (ctx, opts = {}) => {
+    if (opts.rel) {
+      const f = fileRepo(ctx, opts.rel);
+      return gitops.log(f.cwd, { ...opts, rel: f.name });
+    }
+    return gitops.log(gitCwd(ctx), opts);
+  });
+  // A commit's files, with paths from the top of the repository.
+  handle('git:commit-files', async (ctx, sha, rel) => {
+    const cwd = rel ? fileRepo(ctx, rel).cwd : gitCwd(ctx);
+    return { files: await gitops.commitFiles(cwd, sha), top: await gitRoot(cwd) };
+  });
+  // A file as it was at a commit. top-relative paths come from git:commit-files.
+  handle('git:file-at', async (ctx, rev, rel, opts = {}) => {
+    if (opts.top) return gitops.fileAt(opts.near ? fileRepo(ctx, opts.near).cwd : gitCwd(ctx), rev, rel);
+    const f = fileRepo(ctx, rel);
+    return gitops.fileAt(f.cwd, rev, './' + f.name);
+  });
+  handle('git:pr', async (ctx) => gitops.suggestPullRequest(gitCwd(ctx), await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
 
   // Terminal
   // Terminal ids are per window in the app, so they're prefixed with the window's here.

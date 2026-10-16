@@ -41,6 +41,8 @@ async function init() {
   wireAutocomplete();
   wireIntel();
   wireCodebase();
+  wireConflicts();
+  wireBlame();
   wireDiff();
   wireReview();
   wirePreview();

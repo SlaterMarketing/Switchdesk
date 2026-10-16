@@ -205,4 +205,4 @@ class MultiSnapshot {
   }
 }
 
-module.exports = { TurnSnapshot, MultiSnapshot, within, git, isGitRepo, writeTree, diffTrees, blob };
+module.exports = { TurnSnapshot, MultiSnapshot, within, git, isGitRepo, gitRoot, writeTree, diffTrees, blob };
