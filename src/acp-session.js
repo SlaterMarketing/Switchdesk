@@ -128,7 +128,10 @@ class AcpSession {
       this.modes = (r && r.modes && r.modes.availableModes) || [];
       this.currentMode = r && r.modes ? r.modes.currentModeId : null;
       await this.applyMode();
-      this.shape.init(this.sessionId, this.model || '');
+      this.readModels(r);
+      await this.applyModel();
+      this.shape.init(this.sessionId, this.model || this.currentModel || '');
+      if (this.modelOptions.length) this.shape.emit({ type: 'system', subtype: 'models', models: this.modelOptions, current: this.currentModel });
     } catch (err) {
       this.dispose();
       if (err.code === NOT_SIGNED_IN) throw new Error(`${this.label} isn't signed in yet. Open Settings → Agents to sign in or add an API key.`);
@@ -147,6 +150,35 @@ class AcpSession {
       this.currentMode = want;
     } catch {
       /* keep the current mode */
+    }
+  }
+
+  // The models the agent offers for this session (Cursor lists them), so the app's Model menu can show them.
+  readModels(r) {
+    this.modelOptions = [];
+    this.currentModel = null;
+    const opt = r && Array.isArray(r.configOptions) && r.configOptions.find((o) => o.category === 'model' || o.id === 'model');
+    if (opt) {
+      const flat = (list) => (list || []).flatMap((o) => (Array.isArray(o.options) ? flat(o.options) : [o]));
+      this.modelConfigId = opt.id;
+      this.modelOptions = flat(opt.options).filter((o) => o && o.value != null).map((o) => ({ id: String(o.value), label: o.name || String(o.value) }));
+      this.currentModel = opt.currentValue != null ? String(opt.currentValue) : null;
+    } else if (r && r.models && Array.isArray(r.models.availableModels)) {
+      this.modelConfigId = null;
+      this.modelOptions = r.models.availableModels.map((m) => ({ id: m.modelId, label: m.name || m.modelId }));
+      this.currentModel = r.models.currentModelId || null;
+    }
+  }
+
+  async applyModel() {
+    const want = this.model;
+    if (!want || want === this.currentModel || !this.modelOptions.some((m) => m.id === want)) return;
+    try {
+      if (this.modelConfigId) await this.rpc.request('session/set_config_option', { sessionId: this.sessionId, configId: this.modelConfigId, value: want }, 15000);
+      else await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: want }, 15000);
+      this.currentModel = want;
+    } catch {
+      /* keep the agent's own default */
     }
   }
 
@@ -179,7 +211,15 @@ class AcpSession {
         if (r && r.usage) this.shape.usage({ input: r.usage.inputTokens || 0, output: r.usage.outputTokens || 0 });
         this.finish(r && r.stopReason === 'refusal' ? `${this.label} declined to answer.` : null);
       })
-      .catch((err) => this.finish(err.code === NOT_SIGNED_IN ? `${this.label} isn't signed in. Open Settings → Agents.` : String(err.message || err)));
+      .catch((err) => this.finish(err.code === NOT_SIGNED_IN ? `${this.label} isn't signed in. Open Settings → Agents.` : this.explain(String(err.message || err))));
+  }
+
+  // Cursor sometimes rejects its own default model ("Auto", sent as "default[]") for an account.
+  explain(message) {
+    if (!/model name is not valid|model not found/i.test(message)) return message;
+    const current = this.modelOptions.find((m) => m.id === this.currentModel);
+    const name = current ? current.label : this.currentModel || 'the default model';
+    return `${this.label} wouldn't run ${name} for your account right now (it said: ${message.trim()}). Pick another model from the Model menu below and send your message again.${this.modelOptions.length ? '' : ' If the menu is empty, choose a model in ' + this.label + ' itself first.'}`;
   }
 
   finish(error) {

@@ -446,6 +446,11 @@ function handleEvent(chat, ev) {
         chat.sessionId = ev.session_id;
         rememberSlashCommands(ev.slash_commands);
         chat.usage.model = ev.model || chat.usage.model;
+      } else if (ev.subtype === 'models') {
+        // The models this agent offers (Cursor lists them per session) fill the Model menu.
+        const id = agentOf(chat);
+        agentState.models.set(id, ev.models || []);
+        if (chat === activeChat()) renderModelPicker();
       } else if (ev.subtype === 'api_retry' && turn) {
         appendChat(h('div', { class: 'notice' }, `API ${ev.error || 'error'}, retrying (attempt ${ev.attempt}/${ev.max_retries})…`), chat);
       } else if (ev.subtype === 'notice' && turn) {
