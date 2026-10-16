@@ -106,6 +106,15 @@ function readPlan(file) {
       const overview = field('overview');
       if (overview && !text.includes(overview)) text = `${overview}\n\n${text}`;
       if (name && !/^#\s/.test(text)) text = `# ${name}\n\n${text}`;
+      // Its to-dos become a checklist at the end, which the plan tab shows as the to-do list.
+      const todos = [];
+      for (const line of fm[1].split(/\r?\n/)) {
+        if (/^\s*-\s+id:/.test(line)) todos.push({});
+        const f = /^\s+(content|status):\s*(.*)$/.exec(line);
+        if (f && todos.length) todos[todos.length - 1][f[1]] = f[2].trim().replace(/^["']|["']$/g, '');
+      }
+      const items = todos.filter((t) => t.content).map((t) => `- [${/complete|done/.test(t.status || '') ? 'x' : ' '}] ${t.content}`);
+      if (items.length && !/^#{1,3}\s+to-?dos/im.test(text)) text = `${text.trimEnd()}\n\n## To-dos\n\n${items.join('\n')}\n`;
     }
     return text.trim() ? text : null;
   } catch {
@@ -305,6 +314,14 @@ class AcpSession {
         this.tools.set(u.toolCallId, merged);
         if (!prev || u.rawInput || u.locations || u.title) s.tool(u.toolCallId, toolFor(merged).name, toolFor(merged).input); // fills in the row as details arrive
         if (u.status === 'completed' || u.status === 'failed') this.toolDone(u.toolCallId, merged);
+        break;
+      }
+      case 'plan': {
+        // The agent's to-do list, shown like Claude's (and in the plan tab while it builds).
+        const todos = (u.entries || []).map((e) => ({ content: e.content, status: e.status === 'in_progress' || e.status === 'completed' ? e.status : 'pending' }));
+        this.planSeq = (this.planSeq || 0) + 1;
+        s.tool(`todos-${this.planSeq}`, 'TodoWrite', { todos });
+        s.toolResult(`todos-${this.planSeq}`, 'Updated');
         break;
       }
       case 'usage_update':

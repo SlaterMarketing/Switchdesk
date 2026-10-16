@@ -145,6 +145,14 @@ class CodexSession {
       case 'item/completed':
         this.itemCompleted(p.item);
         break;
+      case 'turn/plan/updated': {
+        const st = { inProgress: 'in_progress', in_progress: 'in_progress', completed: 'completed' };
+        const todos = (p.plan || []).map((x) => ({ content: x.step, status: st[x.status] || 'pending' }));
+        this.planSeq = (this.planSeq || 0) + 1;
+        s.tool(`todos-${this.planSeq}`, 'TodoWrite', { todos });
+        s.toolResult(`todos-${this.planSeq}`, 'Updated');
+        break;
+      }
       case 'thread/tokenUsage/updated': {
         const last = p.tokenUsage?.last;
         if (last) s.usage({ input: last.inputTokens + (last.cachedInputTokens || 0), output: last.outputTokens });

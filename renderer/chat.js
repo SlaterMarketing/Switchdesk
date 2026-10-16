@@ -655,6 +655,7 @@ function handleAssistant(chat, turn, msg) {
   for (const b of msg.content || []) {
     if (b.type === 'tool_use') {
       turn.replyTexts = [];
+      if (turn.planBuild && b.name === 'TodoWrite' && b.input && Array.isArray(b.input.todos)) turn.planBuild.todos(b.input.todos);
       if (turn.planBuild && b.name !== 'ExitPlanMode' && (EDIT_TOOLS.has(b.name) || /^(Bash|PowerShell|shell|execute|edit|write)/i.test(b.name))) turn.planBuild.started = true;
       if (HIDDEN_TOOLS.has(b.name)) continue;
       let row = turn.tools.get(b.id);
@@ -798,15 +799,15 @@ function offerPlan(chat, turn) {
   if (!doc && (reply.length < 200 || !/^\s*(#{1,4}\s|\d+[.)]\s|[-*]\s)/m.test(reply))) return;
   const plan = doc ? doc.text : reply;
   const where = doc && doc.path ? ` (it's also saved at ${doc.path})` : '';
-  planCard(chat, { plan }, (input, job) => ((chat.planBuildNext = job), send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat)), (message) => send(message, 'plan', 'Keep planning', chat), turn);
+  planCard(chat, { plan, path: doc && doc.path }, (input, job) => ((chat.planBuildNext = job), send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat)), (message) => send(message, 'plan', 'Keep planning', chat), turn);
 }
 
 // A turn that was meant to build a plan ended. If the agent stopped before changing anything
 // (usually to ask something), say so where you're looking, so it doesn't look like Build did nothing.
 function planBuildEnded(chat, build, failed) {
-  if (build.started) return build.say('Built. The changes are in the chat.');
-  if (failed) return build.say('Approved, but the build stopped with an error. See the chat.');
-  build.say(`Approved, but ${agentLabel(chat)} stopped to ask you something before building. Answer it in the chat.`);
+  if (build.started) return build.say('Built. The changes are in the chat.', 'built');
+  if (failed) return build.say('Approved, but the build stopped with an error. See the chat.', 'error');
+  build.say(`Approved, but ${agentLabel(chat)} stopped to ask you something before building. Answer it in the chat.`, 'waiting');
   appendChat(h('div', { class: 'notice plan-wait' }, `${agentLabel(chat)} hasn't started building the plan yet. It's waiting on your answer above. Reply to carry on.`), chat);
 }
 
@@ -820,11 +821,11 @@ function planCard(chat, input, allow, deny, turnArg) {
   renderMarkdown(body, plan);
   const card = h('div', { class: 'card plan' }, h('h4', {}, 'Plan ready for review'), body);
   let decided = false;
-  const done = (text) => {
+  const done = (text, status) => {
     decided = true;
     card.classList.add('resolved');
     $('.actions', card).replaceChildren(h('button', { class: 'btn small', onclick: () => doc.open() }, 'Open plan'), h('span', { class: 'resolution' }, text));
-    doc.resolve(text);
+    doc.resolve(text, status);
   };
   const build = () => {
     if (decided) return;
@@ -833,7 +834,7 @@ function planCard(chat, input, allow, deny, turnArg) {
     if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
     // Show the build in the chat it belongs to, so it's clear the click did something.
     if (chat.id !== activeChatId) switchChat(chat.id);
-    const job = { started: false, say: (text) => (doc.resolve(text), $('.resolution', card) && ($('.resolution', card).textContent = text)) };
+    const job = { started: false, todos: (list) => doc.todos(list), say: (text, status) => (doc.resolve(text, status), $('.resolution', card) && ($('.resolution', card).textContent = text)) };
     // The agent's turn ended before you chose (it was stopped, or the request was dropped), so
     // there's nobody waiting for the approval: ask for the build as a new message instead.
     const stale = !turnArg && turn && chat.turn !== turn;
@@ -850,7 +851,7 @@ function planCard(chat, input, allow, deny, turnArg) {
     }
     desk.chatSetMode(chat.id, 'agent');
     setMode('agent');
-    done(edited !== plan ? 'Approved with your edits. Building it now.' : 'Approved. Building it now.');
+    done(edited !== plan ? 'Approved with your edits. Building it now.' : 'Approved. Building it now.', 'building');
   };
   const keepPlanning = (feedback) => {
     if (decided) return;
@@ -859,10 +860,10 @@ function planCard(chat, input, allow, deny, turnArg) {
     const why = `The user wants to keep planning.${feedback ? ' Their feedback: ' + feedback : ''}${changed} Revise the plan and present it again.`;
     deny(why);
     if (followUp) send(why, 'plan', feedback ? `Keep planning: ${feedback}` : 'Keep planning', chat);
-    done('Sent back for revision.');
+    done('Sent back for revision.', 'sent');
   };
   // The plan opens as its own editable tab, like Cursor.
-  const doc = openPlanDoc(plan, { onBuild: build, onKeep: keepPlanning });
+  const doc = openPlanDoc(plan, { onBuild: build, onKeep: keepPlanning, chat, path: input.planFilePath || input.path || null });
   const feedback = h('textarea', { rows: 2, placeholder: 'What should change? (for Keep planning)', class: 'hidden' });
   card.append(
     feedback,
@@ -1149,6 +1150,9 @@ function updateSendButton() {
   btn.title = stopping ? 'Stop' : busy ? 'Queue this message (Enter)' : 'Send (Enter)';
 }
 
+// Plans end with their steps as a checklist, which the plan tab shows as its to-do list.
+const PLAN_TODOS = '\n\n[When you write the plan, end it with a "## To-dos" section: a short "- [ ] …" checklist of the concrete steps, one line each.]';
+
 function buildPrompt(text) {
   const code = state.chips.filter((c) => c.kind !== 'image');
   if (!code.length) return text;
@@ -1202,6 +1206,7 @@ async function send(textOverride, modeOverride, display, target) {
   }
   if (asTyped) prompt = text;
   else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
+  else if (mode === 'plan') prompt += PLAN_TODOS;
   else if (mode === 'debug') prompt = await debugModePrompt(chat, prompt);
   const codeChips = state.chips.filter((c) => c.kind !== 'image');
   const shown = display || (codeChips.length ? `${text}\n\n${codeChips.map((c) => `📎 ${chipLabel(c)}`).join('\n')}` : text);
