@@ -32,7 +32,7 @@ function paletteCommands() {
     ['Switch Light/Dark Theme', '', toggleTheme],
     ['Settings', '⌘,', () => openSettings()],
     ['Settings: Agents', '', () => openSettings('agents')],
-    ['Settings: Claude Accounts', '', () => openSettings('accounts')],
+    ['Settings: Accounts', '', () => openSettings('accounts')],
     ['Settings: Instructions', '', () => openSettings('instructions')],
     ['Settings: Permissions', '', () => openSettings('permissions')],
     ['Settings: MCP Servers', '', () => openSettings('mcp')],

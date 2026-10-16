@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, chats, activeChat, createChat, isPristine, appendChat, renderChatTabs, renderAccountPill, openSettings, field, newTerminal, toggleTerminal, queueSaveWorkspace,
-   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli, switchChat, renderPast, agentLabel */
+   acct, multiAccount, accountName, chatAccount, accountStatus, accountDetail, switchChatAccount, setAccounts, checkCli, switchChat, renderPast, agentLabel, claudeAccountsBox */
 'use strict';
 
 // ------------------------------------------------------------------ agents
@@ -147,8 +147,7 @@ function fillAgentMenu(menu, fresh) {
           h('b', {}, `${ruled ? '✓ ' : ''}Always use ${accountName(currentAccount)} in ${folder.name}`)
         )
       : null,
-    h('button', { onclick: () => (close(), openSettings('agents')) }, h('b', {}, hidden ? `Set up more agents (${hidden} more)…` : 'Agent settings…')),
-    h('button', { onclick: () => (close(), openSettings('accounts')) }, h('b', {}, 'Add or manage Claude accounts…')),
+    h('button', { onclick: () => (close(), openSettings('agents')) }, h('b', {}, hidden ? `Set up more agents (${hidden} more), or add accounts…` : 'Agents and accounts…')),
   ];
   menu.replaceChildren(...items.filter(Boolean));
 }
@@ -161,23 +160,36 @@ async function chooseAgent(id, account) {
 }
 
 // Another account of the same agent. Its conversations are kept by that account, so a chat with
-// history carries on in a new tab that's given the conversation so far, like switching agents.
+// history carries on in the same tab, with the new account given the conversation so far.
 async function switchAgentAccount(chat, account) {
   const id = agentOf(chat);
-  if (!isPristine(chat) || chat.worktree) {
-    const from = chat;
-    chat = createChat();
-    chat.agent = id;
-    chat.handoff = handoffNote(from, `This conversation started on another ${agentInfo(id).label} account, and you're taking it over. Here it is so far, so you can carry on. The files are as they were left.`);
-    chat.title = from.title;
-    chat.el.replaceChildren(h('div', { class: 'notice' }, `Carrying on from "${from.title}" on ${agentAccountName(id, account)}. It gets the conversation so far along with your next message. The other chat stays in its tab.`));
-  }
+  if (!isPristine(chat) && !handOverInPlace(chat, `This conversation started on another ${agentInfo(id).label} account, and you're taking it over. Here it is so far, so you can carry on. The files are as they were left.`, `Carrying on on ${agentAccountName(id, account)}. It gets the conversation so far along with your next message.`)) return;
   chat.agentAccount = account;
   renderChatTabs();
   renderAgentPicker();
   queueSaveWorkspace();
   const s = await agentStatus(id, false, account);
   if (!s.installed || !s.loggedIn) openSettings('agents');
+}
+
+// Moves a chat with history to another agent or account without leaving the tab: the old
+// conversation ends, and the next message starts a new one that's given everything so far.
+function handOverInPlace(chat, intro, notice) {
+  if (chat.busy) {
+    toast(`${agentLabel(chat)} is still working. Stop it or wait for it to finish, then switch.`);
+    return false;
+  }
+  const note = handoffNote(chat, intro);
+  desk.chatClose(chat.id);
+  chat.sessionId = null;
+  chat.resumeAt = null;
+  chat.lastReply = null;
+  chat.usage.context = 0;
+  chat.handoff = note || null;
+  // Rewinding to a message from before the switch would need the old conversation, which is closed.
+  for (const b of chat.el.querySelectorAll('.rewind-btn')) b.remove();
+  appendChat(h('div', { class: 'notice handover' }, notice), chat);
+  return true;
 }
 
 function renderModelPicker() {
@@ -218,20 +230,14 @@ function saveModelChoice(value) {
   }
 }
 
-// Picking an agent: a fresh chat switches over; a chat with history opens a new tab, since a
-// conversation can't move between vendors.
+// Picking an agent: the chat stays in its tab. One with history carries on, with the new agent
+// given the conversation so far along with your next message.
 async function pickAgent(id, account) {
-  let chat = activeChat();
+  const chat = activeChat();
   if (!chat || agentOf(chat) === id) return;
-  if (!isPristine(chat) || chat.worktree) {
-    // Hand the conversation over: a new tab on the other agent, which gets it with the first message.
-    const from = chat;
-    chat = createChat();
-    chat.handoff = handoffNote(from);
-    if (chat.handoff) {
-      chat.title = from.title;
-      chat.el.replaceChildren(h('div', { class: 'notice' }, `Carrying on from your ${agentLabel(from)} chat "${from.title}". ${agentInfo(id).label} gets the conversation so far along with your next message. The ${agentLabel(from)} chat stays in its tab.`));
-    } else toast(`New chat on ${agentInfo(id).label}. Your other chat is still in its tab.`);
+  if (!isPristine(chat)) {
+    const from = agentLabel(chat);
+    if (!handOverInPlace(chat, null, `Switched from ${from} to ${agentInfo(id).label}. It gets the conversation so far along with your next message, and the files are as ${from} left them.`)) return;
   }
   chat.agent = id;
   chat.agentAccount = account && account !== 'default' ? account : undefined;
@@ -284,8 +290,7 @@ async function settingsAgents(body, close) {
       $('.agent-dot', card).className = `agent-dot ${s.installed && s.loggedIn ? 'ok' : s.installed ? 'warn' : 'bad'}`;
       statusEl.textContent = !s.installed ? 'Not installed.' : `${s.version ? s.version + ' · ' : ''}${s.detail || (s.loggedIn ? 'Ready' : 'Not signed in')}`;
       const btns = [];
-      if (a.id === 'claude') btns.push(h('button', { class: 'btn small', onclick: () => openSettings('accounts') }, 'Claude accounts'));
-      else {
+      if (a.id !== 'claude') {
         if (!s.installed)
           btns.push(
             h('button', {
@@ -314,14 +319,18 @@ async function settingsAgents(body, close) {
     });
     if (a.key) card.append(keyForm(a, rerender));
     if (a.id === 'codex') card.append(codexKeyForm(rerender));
-    if (a.canAddAccounts) card.append(agentAccountsBox(a, rerender, close));
+    if (a.id === 'claude') card.append(claudeAccountsBox(rerender));
+    else if (a.canAddAccounts) card.append(agentAccountsBox(a, rerender, close));
+    card.dataset.agent = a.id;
     return card;
   });
+  const scroll = (body.closest('.settings-body') || body).scrollTop;
   body.replaceChildren(
     h('h3', {}, 'Agents'),
     h('p', { class: 'muted small' }, 'Pick the agent for each chat in the chat box. Each one is the official app from its maker, running on this computer with your own sign-in or API key. Switchdesk never sees your logins, and API keys are stored encrypted on this computer.'),
     ...cards
   );
+  (body.closest('.settings-body') || body).scrollTop = scroll; // a change on one card keeps your place
 }
 
 // The key form for an API-key agent's account (the main one unless account says otherwise).

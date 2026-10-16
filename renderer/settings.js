@@ -9,7 +9,6 @@
 const SETTINGS_SECTIONS = [
   ['general', 'General'],
   ['agents', 'Agents'],
-  ['accounts', 'Claude accounts'],
   ['instructions', 'Instructions'],
   ['permissions', 'Permissions'],
   ['mcp', 'MCP servers'],
@@ -35,10 +34,14 @@ function openSettings(section = 'general') {
     h('div', { class: 'settings-card' }, h('div', { class: 'settings-top' }, h('b', {}, 'Settings'), h('span', { class: 'spacer' }), h('button', { class: 'icon-btn', title: 'Close', onclick: close }, '✕')), h('div', { class: 'settings-main' }, nav, body))
   );
   const show = (id) => {
+    const focus = id === 'accounts' ? 'claude' : null; // accounts live with their agent now
+    if (focus) id = 'agents';
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage }[id];
-    render(body, close).catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
+    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage }[id];
+    render(body, close)
+      .then(() => focus && $(`.agent-card[data-agent="${focus}"]`, body)?.scrollIntoView({ block: 'start' }))
+      .catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
   };
   document.body.append(root);
   addEventListener('keydown', onKey);

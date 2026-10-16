@@ -33,7 +33,7 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 | Qwen | Your Alibaba Cloud API key | `qwen --acp` |
 | DeepSeek | Your DeepSeek API key, through Qwen Code | `qwen --acp` |
 
-Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the new one picks up the conversation where the last left off.
+Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the new one picks up the conversation where the last left off, in the same tab.
 
 Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
 
@@ -68,7 +68,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
   - **Always allowed commands** (`npm test`, `git *`) and **always blocked commands** (`rm -rf`, `git push`). A chained command (`a && b`) is allowed only if every part is, and blocked if any part is. Blocked commands stay blocked even when prompts are skipped.
   - **Always allow** on an approval card saves the rule for every agent.
   - Ask and Plan modes stay read-only: file edits there always ask (except an agent's own plan file). Your rules for commands and the web still apply, and commands that only look (`ls`, `git log`, `Get-ChildItem`, `rg`) run without asking, so planning doesn't stop for every search.
-- **Settings** (`Ctrl+,`): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
+- **Settings** (`Ctrl+,`, or File → Settings…): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
 - **Context**
   - `@` in the chat box mentions a file or folder. `@codebase` finds the parts of the project your message is about and attaches them, so the agent starts in the right place. `@changes` attaches your uncommitted changes, `@terminal` the terminal's recent output (or what's selected in it), and `@` followed by a web address fetches that page and attaches its text.
   - `Ctrl+L` adds the editor selection to the chat.
@@ -89,7 +89,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Run tests from the editor:** **Run test** and **Run all tests** appear above tests in JavaScript and TypeScript (Vitest, Jest, Mocha or `node --test`) and Python (pytest, or unittest). Each test shows ✓ or ✗ on its line, and a failure has **Fix with the agent**.
 - **Custom keyboard shortcuts** (Settings → Keyboard): change any shortcut by pressing the new keys. The menus and the command palette show your choice.
 - **History:** the Chats tab lists your past conversations for the open folder from every agent that keeps them (Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek), each tagged with its agent, including ones started in the terminal. Click one to read it and carry on.
-- **Hand a chat to another agent:** switch agents in the middle of a chat and the new agent gets the conversation so far, so it carries on where the last one left off. The files stay as they were.
+- **Hand a chat to another agent:** switch agents (or accounts) in the middle of a chat and it carries on in the same tab: a note marks the switch, and the new agent gets the conversation so far with your next message. The files stay as they were.
 - **One set of rules for every agent:** Settings → Instructions has "Use one file for every agent", which keeps your project rules in `AGENTS.md` and points `CLAUDE.md` at it. Codex, Copilot, Cursor and Kimi read `AGENTS.md` themselves; Switchdesk gives it to Gemini, Qwen and DeepSeek.
 - **Command palette** (`Ctrl+Shift+P`): every command, setting page, agent, account and recent folder, searchable by typing.
 - **Light/dark switch:** the sun/moon button in the title bar. Settings also has a System option.
@@ -105,7 +105,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
   - **Gemini** runs Google's Gemini CLI with your Gemini API key. (Google doesn't allow third-party apps to use a Google-account sign-in.)
   - **Qwen** and **DeepSeek** run Qwen Code (open source) with your Alibaba Cloud or DeepSeek API key. The API address and model can be changed, so other OpenAI-compatible providers work too.
   - Every agent gets the same chat panel, modes, approval cards, changes card, inline review, queue and parallel copies. API keys are stored encrypted with your operating system's keychain.
-- **Several Claude accounts** (Settings → Accounts): stay signed in to a personal and a work account at the same time. Each folder uses your default account unless you tie it to another. The agent menu in the chat box lists each signed-in account with its email, so you can switch any chat at any time and the conversation carries on. The terminal, commit messages and the Settings pages follow the folder's account.
+- **Several Claude accounts** (Settings → Agents, under Claude): stay signed in to a personal and a work account at the same time. Each folder uses your default account unless you tie it to another. The agent menu in the chat box lists each signed-in account with its email, so you can switch any chat at any time and the conversation carries on. The terminal, commit messages and the Settings pages follow the folder's account.
 - **Several accounts for every agent** (Settings → Agents → Accounts): add a second Codex, Copilot, Cursor or Kimi sign-in, or a second API key for Gemini, Qwen or DeepSeek, such as a work and a personal one. Each account keeps its own sign-in, and the agent menu lists them all, so you can switch a chat between them and the conversation carries on.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.
 
