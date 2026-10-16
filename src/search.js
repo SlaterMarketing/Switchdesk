@@ -87,4 +87,44 @@ async function search(root, files, query, opts = {}) {
   return { results, truncated, count };
 }
 
-module.exports = { search };
+// Replace across files: every match in each listed file except the ones in skip ("rel:line:col").
+// With a regular expression, $1 and the rest work as in String.replace. Returns each file's text
+// before and after, so the change can be undone.
+async function replace(root, rels, query, replacement, opts = {}) {
+  const absOf = typeof root === 'function' ? root : (rel) => path.join(root, rel);
+  let re;
+  try {
+    re = buildRegex(query, opts);
+  } catch (e) {
+    return { error: `Invalid regular expression: ${e.message}` };
+  }
+  const skip = new Set(opts.skip || []);
+  const files = [];
+  for (const rel of rels) {
+    const abs = absOf(rel);
+    let before;
+    try {
+      before = await fs.readFile(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    let count = 0;
+    // Line by line, so a skipped match is found by the same line and column the panel showed.
+    const parts = before.split(/(\r?\n)/);
+    for (let i = 0, line = 1; i < parts.length; i += 2, line++) {
+      parts[i] = parts[i].replace(re, (...m) => {
+        const offset = m.find((x) => typeof x === 'number'); // after the groups (and before named groups)
+        if (typeof offset !== 'number' || m[0].length === 0 || skip.has(`${rel}:${line}:${offset + 1}`)) return m[0];
+        count++;
+        return opts.regex ? m[0].replace(new RegExp(re.source, re.flags.replace('g', '')), replacement) : replacement;
+      });
+    }
+    if (!count) continue;
+    const after = parts.join('');
+    await fs.writeFile(abs, after, 'utf8');
+    files.push({ rel, count, before, after });
+  }
+  return { files };
+}
+
+module.exports = { search, replace };

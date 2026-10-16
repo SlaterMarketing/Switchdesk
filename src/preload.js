@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('desk', {
   onSettingsChanged: on('settings-changed'),
   listFiles: call('files:list'),
   searchFiles: call('files:search'),
+  replaceInFiles: call('files:replace'),
   readFile: call('file:read'),
   writeFile: call('file:write'),
   revealFile: call('file:reveal'),

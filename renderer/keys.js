@@ -8,7 +8,7 @@
 // everything else is caught here before the editor sees the key.
 
 // Commands the app menu runs: the menu's own accelerator changes with them (main.js).
-const MENU_COMMANDS = new Set(['New Window', 'Open Folder…', 'Save', 'Close Tab', 'Command Palette', 'Go to File…', 'Search in Files', 'New Chat', 'New Chat in Its Own Copy', 'Add Selection to Chat', 'Edit Selection with the Agent', 'Cycle Mode', 'Toggle Sidebar', 'Toggle Terminal', 'Split Editor', 'Show Source Control', 'Preview', 'Settings']);
+const MENU_COMMANDS = new Set(['New Window', 'Open Folder…', 'Save', 'Close Tab', 'Command Palette', 'Go to File…', 'Search in Files', 'Replace in Files', 'New Chat', 'New Chat in Its Own Copy', 'Add Selection to Chat', 'Edit Selection with the Agent', 'Cycle Mode', 'Toggle Sidebar', 'Toggle Terminal', 'Split Editor', 'Show Source Control', 'Preview', 'Settings']);
 
 // "⌘⇧N" (the palette's notation) → "Ctrl+Shift+N", or "Cmd+Shift+N" on a Mac.
 function shortcutFromSymbols(sym) {

@@ -971,6 +971,7 @@ function registerIpc() {
   handle('window:new', (ctx, dir) => newWindow(dir));
   handle('files:list', (ctx) => listFiles(ctx));
   handle('files:search', async (ctx, query, opts) => (ctx.workspace ? search.search((rel) => resolveInWorkspace(ctx, rel), await listFiles(ctx), query, { ...opts, group: ctx.id }) : { results: [] }));
+  handle('files:replace', async (ctx, rels, query, replacement, opts) => (ctx.workspace ? search.replace((rel) => resolveInWorkspace(ctx, rel), rels, query, replacement, opts || {}) : { files: [] }));
   handle('file:read', async (ctx, rel) => {
     const abs = resolveInWorkspace(ctx, rel);
     const st = await fsp.stat(abs);
@@ -1533,6 +1534,7 @@ function buildMenu() {
         { label: 'Command Palette…', accelerator: accel('Command Palette', 'CmdOrCtrl+Shift+P'), click: menuCmd('palette') },
         { label: 'Quick Open File', accelerator: accel('Go to File…', 'CmdOrCtrl+P'), click: menuCmd('quick-open') },
         { label: 'Search in Files', accelerator: accel('Search in Files', 'CmdOrCtrl+Shift+F'), click: menuCmd('search') },
+        { label: 'Replace in Files', accelerator: accel('Replace in Files', 'CmdOrCtrl+Shift+H'), click: menuCmd('replace') },
         { label: 'New Chat', accelerator: accel('New Chat', 'CmdOrCtrl+N'), click: menuCmd('new-chat') },
         { label: 'New Chat in Its Own Copy', accelerator: accel('New Chat in Its Own Copy', 'CmdOrCtrl+Alt+N'), click: menuCmd('new-copy-chat') },
         { label: 'Add Selection to Chat', accelerator: accel('Add Selection to Chat', 'CmdOrCtrl+L'), click: menuCmd('add-selection') },

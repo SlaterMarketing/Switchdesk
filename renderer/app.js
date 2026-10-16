@@ -1057,6 +1057,7 @@ function wire() {
     else if (cmd === 'compare') compareActiveWith();
     else if (cmd === 'source-control') showSidePanel('git');
     else if (cmd === 'search') openSearch();
+    else if (cmd === 'replace') openReplace();
     else if (cmd === 'settings') openSettings();
     else if (cmd === 'preview') openPreview();
     else if (cmd === 'new-copy-chat') newChatInCopy();
