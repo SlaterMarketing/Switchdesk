@@ -95,6 +95,16 @@ contextBridge.exposeInMainWorld('desk', {
     diff: call('git:diff'),
   },
   fetchPage: call('web:fetch'),
+  complete: {
+    status: call('complete:status'),
+    request: call('complete:request'),
+    accepted: call('complete:accepted'),
+    close: call('complete:close'),
+    signIn: call('complete:sign-in'),
+    signInFinish: call('complete:sign-in-finish'),
+    signOut: call('complete:sign-out'),
+    onStatus: on('complete-status'),
+  },
   usage: { record: call('usage:record'), limits: call('usage:limits'), summary: call('usage:summary') },
 
   term: {

@@ -18,6 +18,7 @@ const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const usage = require('./usage');
 const webpage = require('./webpage');
+const autocomplete = require('./autocomplete');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
@@ -925,6 +926,76 @@ function registerIpc() {
   handle('term:kill', (ctx, id) => terminal.kill(termId(ctx, id)));
 
   // Settings page
+  // ---------- tab autocomplete
+  let copilotMissingAt = 0; // don't look for the language server on every keystroke when it isn't there
+  const copilotUsable = async () => {
+    if (autocomplete.copilot.lsp) return autocomplete.copilot.status.signedIn;
+    if (Date.now() - copilotMissingAt < 60000) return false;
+    try {
+      await autocomplete.startCopilot(settings, app.getVersion());
+      return autocomplete.copilot.status.signedIn;
+    } catch {
+      copilotMissingAt = Date.now();
+      return false;
+    }
+  };
+  const fimProvider = (id) => {
+    const key = agents.readKey(settings, id);
+    if (!key) return null;
+    return { id, label: agents.AGENTS[id].label, key, baseUrl: agents.options(settings, id).baseUrl, fetch: net.fetch.bind(net) };
+  };
+  const completeEngine = async () => {
+    const want = (settings.autocomplete && settings.autocomplete.engine) || 'auto';
+    if (want === 'off') return null;
+    if (want === 'copilot') return (await copilotUsable()) ? 'copilot' : null;
+    if (want === 'deepseek' || want === 'qwen') return fimProvider(want) ? want : null;
+    if (await copilotUsable()) return 'copilot';
+    return ['deepseek', 'qwen'].find((id) => fimProvider(id)) || null;
+  };
+  autocomplete.copilot.onStatus = (st) => broadcast('complete-status', st);
+  handle('complete:status', async () => {
+    const script = await autocomplete.findServer((settings.agentPaths || {})['copilot-language-server']);
+    if (script) await autocomplete.startCopilot(settings, app.getVersion()).catch(() => {});
+    return {
+      engine: (settings.autocomplete && settings.autocomplete.engine) || 'auto',
+      active: await completeEngine(),
+      copilot: { installed: !!script, ...autocomplete.copilot.status },
+      keys: { deepseek: !!agents.readKey(settings, 'deepseek'), qwen: !!agents.readKey(settings, 'qwen') },
+      install: autocomplete.INSTALL,
+    };
+  });
+  handle('complete:request', async (ctx, doc) => {
+    const engine = await completeEngine();
+    if (!engine) return { items: [] };
+    let abs;
+    try {
+      abs = resolveInWorkspace(ctx, doc.rel);
+    } catch {
+      return { items: [] };
+    }
+    const full = { ...doc, uri: pathToFileURL(abs).href };
+    if (engine === 'copilot') {
+      autocomplete.addFolder(ctx.workspace);
+      return autocomplete.copilotComplete(settings, app.getVersion(), full).catch(() => ({ items: [] }));
+    }
+    if (ctx.fimAbort) ctx.fimAbort.abort();
+    const ctl = (ctx.fimAbort = new AbortController());
+    return autocomplete.fimComplete(fimProvider(engine), full, ctl.signal).catch(() => ({ items: [] }));
+  });
+  handle('complete:accepted', (ctx, command) => autocomplete.accepted(command));
+  handle('complete:close', (ctx, rel) => {
+    try {
+      autocomplete.closeDoc(pathToFileURL(resolveInWorkspace(ctx, rel)).href);
+    } catch {}
+  });
+  handle('complete:sign-in', async () => {
+    const r = await autocomplete.signInStart(settings, app.getVersion());
+    if (r.verificationUri) shell.openExternal(r.verificationUri);
+    return r;
+  });
+  handle('complete:sign-in-finish', (ctx, command) => autocomplete.signInFinish(command));
+  handle('complete:sign-out', () => autocomplete.signOut());
+
   handle('usage:record', (ctx, key, turn) => usage.record(key, turn));
   handle('usage:limits', (ctx, key, windows) => usage.setLimits(key, windows));
   handle('usage:summary', () => usage.summary());
@@ -1176,6 +1247,7 @@ app.whenReady().then(() => {
 
 // Quitting keeps the list of open windows; closing windows one by one doesn't.
 app.on('before-quit', () => {
+  if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();
   rememberWindows();
   quitting = true;
 });

@@ -565,3 +565,8 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .usage-table tr:first-child th { color: var(--text-dim); font-size: 11px; }
 .usage-table td { font-variant-numeric: tabular-nums; }
 #status-limit { cursor: pointer; }
+
+/* Autocomplete */
+#status-complete { cursor: pointer; }
+#status-complete.dim { opacity: 0.6; }
+.device-code { font: 600 22px var(--mono); letter-spacing: 3px; color: var(--text-strong); }

@@ -37,6 +37,7 @@ function paletteCommands() {
     ['Settings: Permissions', '', () => openSettings('permissions')],
     ['Settings: MCP Servers', '', () => openSettings('mcp')],
     ['Usage and Limits', '', () => openSettings('usage')],
+    ['Settings: Autocomplete', '', () => openSettings('autocomplete')],
     ['Check for Updates', '', () => desk.checkUpdates()],
     ...MODES.map((m) => [`Mode: ${MODE_LABEL[m]}`, '', () => setMode(m)]),
   ];

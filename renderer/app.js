@@ -135,7 +135,7 @@ function createEditors() {
     renderLineHighlight: 'all',
     padding: { top: 8 },
   };
-  editor = monaco.editor.create($('#editor'), { ...common, model: null });
+  editor = monaco.editor.create($('#editor'), { ...common, model: null, inlineSuggest: { enabled: true, mode: 'subwordSmart' } });
   diffEditor = monaco.editor.createDiffEditor($('#diff-editor'), { ...common, readOnly: true, renderSideBySide: true, originalEditable: false });
   applyTheme();
 

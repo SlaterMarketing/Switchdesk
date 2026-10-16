@@ -36,6 +36,7 @@ async function init() {
   checkCli({ showSetupIfNeeded: true });
   await loadMonaco();
   createEditors();
+  wireAutocomplete();
   wireDiff();
   wireReview();
   wirePreview();
