@@ -17,6 +17,15 @@ async function findPython(root, settings) {
   const local = isWin ? ['.venv\\Scripts\\python.exe', 'venv\\Scripts\\python.exe', 'env\\Scripts\\python.exe'] : ['.venv/bin/python', 'venv/bin/python', 'env/bin/python'];
   for (const rel of local) if (root && fs.existsSync(path.join(root, rel))) return path.join(root, rel);
   if (settings.pythonPath && fs.existsSync(settings.pythonPath)) return settings.pythonPath;
+  // PATH first, the way a terminal would pick it (an activated env, pyenv, conda), then the usual places.
+  const env = await cli.childEnv();
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  for (const dir of (env[pathKey] || '').split(path.delimiter))
+    for (const name of isWin ? ['python.exe'] : ['python3', 'python']) {
+      const p = dir && path.join(dir, name);
+      // Skip Windows' Microsoft Store placeholder, which only offers to install Python.
+      if (p && fs.existsSync(p) && !/WindowsApps/i.test(p)) return p;
+    }
   return agents.findCommand(isWin ? ['python', 'py'] : ['python3', 'python']);
 }
 

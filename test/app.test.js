@@ -223,7 +223,9 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   assert.equal(await w.$$eval('#nb-view .nb-cell', (e) => e.length), 5);
   assert.match(await w.$eval('#nb-view .nb-md', (e) => e.innerHTML), /<h1[^>]*>Sales<\/h1>/);
   await w.click('#nb-bar button:has-text("Run all")');
-  await w.waitForSelector('#nb-view .nb-out.error', { timeout: 90000 });
+  await w.waitForSelector('#nb-view .nb-out.error', { timeout: 90000 }).catch(async (err) => {
+    throw new Error(`${err.message}\n${await w.$eval('#nb-view', (e) => e.innerText.slice(0, 600))}`);
+  });
   const outs = await w.$$eval('#nb-view .nb-outputs', (e) => e.map((x) => x.innerText));
   assert.match(outs[0], /hello[\s\S]*42/);
   assert.match(outs[1], /cell/);
