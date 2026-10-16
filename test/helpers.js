@@ -43,13 +43,14 @@ function gitEnv() {
   return { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
 }
 
+// The real Claude Code is left off PATH, so the tests behave the same with or without it installed.
 async function launch(p, folder) {
   const exe = require('electron'); // the path to Electron's binary
   const app = await _electron.launch({
     executablePath: exe,
     args: [ROOT, '--no-sandbox'],
     cwd: ROOT,
-    env: { ...gitEnv(), HOME: p.home, PATH: FAKES + path.delimiter + process.env.PATH, SWITCHDESK_USER_DATA: p.userData, FAKE_AGENT_DIR: p.agentDir, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+    env: { ...gitEnv(), HOME: p.home, PATH: [FAKES, ...process.env.PATH.split(path.delimiter).filter((d) => !fs.existsSync(path.join(d, 'claude')))].join(path.delimiter), SWITCHDESK_USER_DATA: p.userData, FAKE_AGENT_DIR: p.agentDir, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
     timeout: 60000,
   });
   const w = await app.firstWindow();
@@ -57,8 +58,6 @@ async function launch(p, folder) {
   w.on('pageerror', (e) => e.message !== 'Canceled' && errors.push(process.env.TEST_STACKS ? e.stack : e.message));
   w.on('dialog', (d) => d.accept()); // confirm() boxes get Yes
   await w.waitForFunction(() => window.monaco && typeof state !== 'undefined' && state.settings && typeof setFolder === 'function', null, { timeout: 60000 });
-  // With no Claude Code on the machine (as on GitHub), the first-run setup covers the window.
-  await w.addStyleTag({ content: '.setup-backdrop { display: none !important; }' });
   if (folder) await openFolder(w, folder);
   return { app, w, errors };
 }

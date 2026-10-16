@@ -878,8 +878,30 @@ async function checkCli({ showSetupIfNeeded = false } = {}) {
   renderAccountPill();
   el.style.cursor = signedIn ? 'default' : 'pointer';
   $('#cli-check').textContent = '';
-  if (showSetupIfNeeded && !signedIn) showSetup();
+  if (showSetupIfNeeded && !signedIn) setupIfNoAgent();
   return { ...s, signedIn };
+}
+
+// The Claude setup only opens on its own when no other agent is ready: someone who uses Cursor or
+// Copilot (or said they'd use another agent) isn't asked to install Claude Code every time.
+async function setupIfNoAgent() {
+  if (state.settings.skipClaudeSetup) return;
+  const last = state.settings.lastAgent;
+  if (last && last !== 'claude') return;
+  for (const a of agentState.list) {
+    if (a.id === 'claude') continue;
+    const st = await agentStatus(a.id);
+    if (st && st.installed && st.loggedIn) {
+      // New chats start on the agent that works.
+      state.settings.lastAgent = a.id;
+      desk.setSettings({ lastAgent: a.id });
+      for (const c of chats) if (isPristine(c) && agentOf(c) === 'claude') c.agent = a.id;
+      renderChatTabs();
+      renderAgentPicker();
+      return;
+    }
+  }
+  showSetup();
 }
 
 // First-run setup: install Claude Code and sign in, without touching a terminal.
@@ -907,7 +929,7 @@ async function showSetup() {
       step1,
       step2,
       log,
-      h('div', { class: 'setup-foot' }, h('button', { class: 'btn', title: 'Codex, Kimi, Gemini, Qwen or DeepSeek', onclick: () => (close(), openSettings('agents')) }, 'Use another agent instead'), finish)
+      h('div', { class: 'setup-foot' }, h('button', { class: 'btn', title: 'Codex, Kimi, Gemini, Qwen or DeepSeek', onclick: () => (close(), (state.settings.skipClaudeSetup = true), desk.setSettings({ skipClaudeSetup: true }), openSettings('agents')) }, 'Use another agent instead'), finish)
     )
   );
   document.body.append(root);

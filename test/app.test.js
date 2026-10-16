@@ -33,6 +33,15 @@ appTest('opens a folder and a file', async ({ w }) => {
   assert.match(await w.evaluate(() => editor.getValue()), /function total/);
 });
 
+appTest('without Claude Code, a signed-in agent is used instead of the setup screen', async ({ w }) => {
+  await until(w, () => typeof cliState !== 'undefined' && cliState);
+  // Where Claude Code is installed anyway (found through the login shell), there's nothing to check.
+  if (await w.evaluate(() => cliState.found)) return;
+  await until(w, () => state.settings.lastAgent && state.settings.lastAgent !== 'claude');
+  assert.equal(await w.$('.setup-backdrop'), null);
+  assert.notEqual(await w.evaluate(() => agentOf(activeChat())), 'claude');
+});
+
 appTest('replaces across files and undoes', async ({ w, dir }) => {
   await w.evaluate(() => openReplace());
   await w.fill('#search-query', 'price');
