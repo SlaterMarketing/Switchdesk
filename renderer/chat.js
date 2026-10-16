@@ -526,12 +526,10 @@ function handleEvent(chat, ev) {
     case 'rate_limit_event': {
       const w = ev.rate_limit_info?.unifiedWindows;
       if (w) {
-        const parts = [];
-        if (w.five_hour) parts.push(`5h ${Math.round(w.five_hour.utilization * 100)}%`);
-        if (w.seven_day) parts.push(`7d ${Math.round(w.seven_day.utilization * 100)}%`);
-        noteAccountUsage(chat, parts.join(' · '));
         const win = (x) => x && { pct: Math.round(x.utilization * 100), resetsAt: x.resets_at || x.resetsAt || null };
-        desk.usage.limits(usageKey(chat), { short: win(w.five_hour), long: win(w.seven_day) });
+        const windows = { short: win(w.five_hour), long: win(w.seven_day), at: Date.now() };
+        noteAccountUsage(chat, windows);
+        desk.usage.limits(usageKey(chat), windows);
       }
       break;
     }

@@ -682,3 +682,13 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .key-chip.key-recording { border-color: var(--accent); color: var(--accent); }
 .key-clash { color: var(--warn); font-size: 11px; }
 .test-output { max-height: 55vh; overflow: auto; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+/* plan limit meter in the status bar */
+#status-limit { display: inline-flex; align-items: center; gap: 8px; }
+.limit-who { color: var(--text-dim); }
+.limit-meter { display: inline-flex; align-items: center; gap: 4px; }
+.limit-label { color: var(--text-dim); }
+.limit-track { width: 36px; height: 5px; border-radius: 3px; background: var(--bg-active); overflow: hidden; }
+.limit-fill { display: block; height: 100%; background: var(--ok); border-radius: 3px; }
+.limit-meter.high .limit-fill { background: var(--warn); }
+.limit-meter.full .limit-fill { background: var(--err); }
+.limit-meter.full .limit-pct { color: var(--err); }

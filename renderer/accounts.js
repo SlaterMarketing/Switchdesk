@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, modal, chats, activeChat, appendChat, openSettings, checkCli, queueSaveWorkspace, renderAgentButton */
+/* global $, h, state, desk, toast, modal, chats, activeChat, appendChat, openSettings, checkCli, queueSaveWorkspace, renderAgentButton, usageKey, usageLabel, resetText */
 'use strict';
 
 // ------------------------------------------------------------------ Claude accounts
@@ -41,24 +41,34 @@ function accountDetail(auth) {
 
 // ---------- usage in the status bar (the account itself is picked in the agent menu, agents.js)
 
+// A small meter for the plan limits of the chat's agent and account: the 5-hour window and the week,
+// as the agent last reported them. Hover for every account's; click for Settings → Usage.
 function renderAccountPill() {
   const chat = activeChat();
-  const isClaude = !chat || !chat.agent || chat.agent === 'claude';
   renderAgentButton();
-  if (!isClaude) {
-    const u = acct.usage.get(`agent:${usageKey(chat)}`);
-    return ($('#status-limit').textContent = u ? `${usageLabel(usageKey(chat))} usage ${u}` : '');
-  }
-  const id = chatAccount(chat);
-  const usage = acct.usage.get(id);
-  $('#status-limit').textContent = usage ? `${multiAccount() ? accountName(id) + ' usage' : 'Usage'} ${usage}` : '';
+  const el = $('#status-limit');
+  const key = chat ? usageKey(chat) : `claude:${acct.folderAccount}`;
+  const u = acct.usage.get(key);
+  if (!u || !(u.short || u.long)) return el.replaceChildren(), (el.title = '');
+  const bar = (label, w) =>
+    w && h('span', { class: `limit-meter${w.pct >= 95 ? ' full' : w.pct >= 80 ? ' high' : ''}` }, h('span', { class: 'limit-label' }, label), h('span', { class: 'limit-track' }, h('span', { class: 'limit-fill', style: `width:${Math.min(100, Math.max(2, w.pct))}%` })), h('span', { class: 'limit-pct' }, `${w.pct}%`));
+  el.replaceChildren(h('span', { class: 'limit-who' }, usageLabel(key)), bar('5h', u.short), bar('7d', u.long));
+  const when = (w) => (w && resetText(w.resetsAt) ? ` (${resetText(w.resetsAt)})` : '');
+  const lines = [...acct.usage.entries()].filter(([, x]) => x && (x.short || x.long)).map(([k, x]) => `${usageLabel(k)}: ${[x.short ? `5 hours ${x.short.pct}%${when(x.short)}` : '', x.long ? `week ${x.long.pct}%${when(x.long)}` : ''].filter(Boolean).join(', ')}`);
+  el.title = `Plan limits used, as last reported:\n${lines.join('\n')}\n\nClick for Settings → Usage.`;
 }
 
-// Rate-limit use arrives on each chat's events; it belongs to that chat's account.
-function noteAccountUsage(chat, text) {
-  const id = chat.agent && chat.agent !== 'claude' ? `agent:${usageKey(chat)}` : chatAccount(chat);
-  acct.usage.set(id, text);
+// Rate-limit use arrives on each chat's events; it belongs to that chat's agent and account.
+function noteAccountUsage(chat, windows) {
+  acct.usage.set(usageKey(chat), windows);
   if (chat === activeChat()) renderAccountPill();
+}
+
+// What each account last reported, so the meter shows before the first message.
+async function loadUsageLimits() {
+  const s = await desk.usage.summary().catch(() => null);
+  for (const [k, v] of Object.entries((s && s.limits) || {})) if (!acct.usage.has(k)) acct.usage.set(k, v);
+  renderAccountPill();
 }
 
 async function switchChatAccount(chat, id) {

@@ -31,6 +31,7 @@ async function init() {
   $('#status-perms').addEventListener('click', () => openSettings('permissions'));
   renderPermissionBadge();
   await loadAccounts();
+  loadUsageLimits();
   await loadAgents();
   setMode(state.settings.mode || 'agent');
   $('#effort-select').value = state.settings.effort || '';
