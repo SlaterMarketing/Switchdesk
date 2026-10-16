@@ -69,10 +69,10 @@ class ClaudeShape {
   }
 
   // Plan-usage windows, shown in the status bar like Claude's 5-hour and weekly use.
-  limits(shortPct, longPct) {
+  limits(shortPct, longPct, shortResets, longResets) {
     const w = {};
-    if (shortPct != null) w.five_hour = { utilization: shortPct / 100 };
-    if (longPct != null) w.seven_day = { utilization: longPct / 100 };
+    if (shortPct != null) w.five_hour = { utilization: shortPct / 100, resetsAt: shortResets || undefined };
+    if (longPct != null) w.seven_day = { utilization: longPct / 100, resetsAt: longResets || undefined };
     this.emit({ type: 'rate_limit_event', rate_limit_info: { unifiedWindows: w } });
   }
 

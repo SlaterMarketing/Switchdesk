@@ -461,6 +461,8 @@ function handleEvent(chat, ev) {
         if (w.five_hour) parts.push(`5h ${Math.round(w.five_hour.utilization * 100)}%`);
         if (w.seven_day) parts.push(`7d ${Math.round(w.seven_day.utilization * 100)}%`);
         noteAccountUsage(chat, parts.join(' · '));
+        const win = (x) => x && { pct: Math.round(x.utilization * 100), resetsAt: x.resets_at || x.resetsAt || null };
+        desk.usage.limits(usageKey(chat), { short: win(w.five_hour), long: win(w.seven_day) });
       }
       break;
     }
@@ -474,6 +476,7 @@ function handleEvent(chat, ev) {
         chat.usage.context = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
         if (ev.message.model) chat.usage.model = ev.message.model;
         if (chat.id === activeChatId) renderChatMeta();
+        if (turn) turn.lastUsage = u;
       }
       if (turn) handleAssistant(chat, turn, ev.message || {});
       break;
@@ -500,6 +503,7 @@ function handleEvent(chat, ev) {
     case 'result':
       if (ev.session_id) chat.sessionId = ev.session_id;
       chat.usage.turns++;
+      recordUsage(chat, ev);
       if (chat.id === activeChatId) renderChatMeta();
       if (turn) {
         if (turn.interrupted) appendChat(h('div', { class: 'notice' }, turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
@@ -1010,7 +1014,7 @@ function updateSendButton() {
 function buildPrompt(text) {
   const code = state.chips.filter((c) => c.kind !== 'image');
   if (!code.length) return text;
-  const ctx = code.map((c) => (c.kind === 'element' ? c.context : `Context from \`${c.rel}\` lines ${c.start}-${c.end}:\n\`\`\`${c.lang}\n${c.text}\n\`\`\``)).join('\n\n');
+  const ctx = code.map((c) => (c.kind === 'element' || c.kind === 'context' ? c.context : `Context from \`${c.rel}\` lines ${c.start}-${c.end}:\n\`\`\`${c.lang}\n${c.text}\n\`\`\``)).join('\n\n');
   return `${ctx}\n\n${text}`;
 }
 
@@ -1031,6 +1035,7 @@ async function send(textOverride, modeOverride, display) {
   // Enter with an empty box while Claude works: send the next queued message right away.
   if (!text && !images.length && chat.busy && chat.queue.length) return sendNow(chat, 0);
   if (!text && !images.length) return;
+  if (!textOverride && state.chips.some((c) => c.loading)) return toast('Still loading the page. One moment.');
   const mode = modeOverride || state.mode;
   const slash = !textOverride && /^\/[\w:.-]+/.exec(text);
   if (slash && SLASH_LOCAL.has(slash[0].slice(1))) {
@@ -1195,7 +1200,55 @@ desk.onApproval(handleApproval);
 // ------------------------------------------------------------------ chips (code context and images)
 
 function chipLabel(c) {
+  if (c.kind === 'context') return `${c.icon} ${c.label}`;
   return c.kind === 'element' ? `⌖ ${c.label}` : `${c.rel}:${c.start}-${c.end}`;
+}
+
+// ------------------------------------------------------------------ usage ledger (Settings → Usage)
+function usageKey(chat) {
+  return chat.agent && chat.agent !== 'claude' ? chat.agent : `claude:${chatAccount(chat)}`;
+}
+
+// Claude Code reports the whole turn's tokens and cost; other agents report tokens as they go.
+function recordUsage(chat, ev) {
+  const u = ev.usage || (chat.turn && chat.turn.lastUsage);
+  if (!u && !ev.total_cost_usd) return;
+  const input = u ? (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) : 0;
+  desk.usage.record(usageKey(chat), { input, output: (u && u.output_tokens) || 0, cost: ev.total_cost_usd || 0 }).catch(() => {});
+}
+
+// @changes, @terminal and @<web address> attach their content to the message as a chip.
+async function attachMention(it) {
+  const add = (chip) => (state.chips.push(chip), renderChips(), chip);
+  if (it.id === 'changes') {
+    const diff = await desk.git.diff().catch(() => '');
+    if (!diff) return toast('There are no uncommitted changes to attach.');
+    const cut = diff.length > 60000;
+    return add({ kind: 'context', icon: '±', label: 'Uncommitted changes', context: `My uncommitted changes (git diff against HEAD)${cut ? ', cut short' : ''}:\n\`\`\`diff\n${diff.slice(0, 60000)}\n\`\`\`` });
+  }
+  if (it.id === 'terminal') {
+    const t = terms.find((x) => x.id === activeTermId) || terms[terms.length - 1];
+    const out = t && terminalText(t, 200);
+    if (!out) return toast(t ? 'The terminal is empty.' : 'Open a terminal first.');
+    return add({ kind: 'context', icon: '›_', label: `Terminal${terms.length > 1 ? ' ' + t.title : ''}`, context: `Recent output from my terminal${t.title ? ` (${t.title})` : ''}:\n\`\`\`\n${out}\n\`\`\`` });
+  }
+  if (it.id === 'url') {
+    let host = it.name;
+    try {
+      host = new URL(it.name).host;
+    } catch {}
+    const chip = add({ kind: 'context', icon: '🌐', label: `Loading ${host}…`, loading: true, context: '' });
+    try {
+      const page = await desk.fetchPage(it.name);
+      chip.loading = false;
+      chip.label = (page.title || host).slice(0, 60);
+      chip.context = `The web page ${page.url}${page.title ? ` ("${page.title}")` : ''}${page.truncated ? ', cut short' : ''}:\n\`\`\`\n${page.text}\n\`\`\``;
+    } catch (e) {
+      state.chips.splice(state.chips.indexOf(chip), 1);
+      toast(`Couldn't fetch ${host}: ${String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+    }
+    renderChips();
+  }
 }
 
 function renderChips() {
@@ -1203,7 +1256,7 @@ function renderChips() {
     ...state.chips.map((c, i) =>
       c.kind === 'image'
         ? h('span', { class: 'chip image' }, h('img', { src: `data:${c.mediaType};base64,${c.data}` }), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
-        : h('span', { class: `chip${c.kind === 'element' ? ' element' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
+        : h('span', { class: `chip${c.kind === 'element' || c.kind === 'context' ? ' element' : ''}${c.loading ? ' loading' : ''}`, title: (c.text || c.context).slice(0, 500) }, chipLabel(c), h('button', { title: 'Remove', onclick: () => (state.chips.splice(i, 1), renderChips()) }, '×'))
     )
   );
   updateSendButton();

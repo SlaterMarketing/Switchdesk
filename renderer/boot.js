@@ -27,6 +27,7 @@ async function init() {
   wireGit();
   wireSearch();
   wireAgents();
+  $('#status-limit').addEventListener('click', () => openSettings('usage'));
   await loadAccounts();
   await loadAgents();
   setMode(state.settings.mode || 'agent');
@@ -35,6 +36,8 @@ async function init() {
   checkCli({ showSetupIfNeeded: true });
   await loadMonaco();
   createEditors();
+  wireAutocomplete();
+  wireIntel();
   wireDiff();
   wireReview();
   wirePreview();

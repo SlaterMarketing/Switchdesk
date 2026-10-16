@@ -127,7 +127,12 @@ async function findBin(id, settings) {
   const override = (settings.agentPaths || {})[id];
   if (override && fs.existsSync(override)) return override;
   for (const p of a.extraPaths ? a.extraPaths() : []) if (p && fs.existsSync(p)) return p;
-  for (const name of a.bins) {
+  return findCommand(a.bins);
+}
+
+// The first of these commands found in the usual install folders or on PATH.
+async function findCommand(names) {
+  for (const name of names) {
     for (const p of candidates(name)) if (fs.existsSync(p)) return p;
     const env = await cli.childEnv();
     const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
@@ -196,4 +201,4 @@ function version(bin) {
   });
 }
 
-module.exports = { AGENTS, findBin, readKey, sealKey, options, envFor, commandLine, version, cliStatus };
+module.exports = { AGENTS, findBin, findCommand, readKey, sealKey, options, envFor, commandLine, version, cliStatus };

@@ -16,6 +16,10 @@ const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
+const usage = require('./usage');
+const webpage = require('./webpage');
+const autocomplete = require('./autocomplete');
+const { LangServers } = require('./langservers');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
@@ -57,6 +61,7 @@ function saveSettings() {
 // Each window has its own workspace: a main folder, plus any extra folders added to it. Files in an
 // extra folder show up in the app as "⟦name⟧/path", and agents get the folders' absolute paths.
 
+let langServers = null; // set once IPC is wired; stopped on quit
 const contexts = new Map(); // webContents id -> { id, win, workspace, extra, watchers, start }
 const NO_WINDOW = { id: 0, win: null, workspace: null, extra: [], watchers: [] };
 const ctxOf = (e) => contexts.get(e.sender.id) || NO_WINDOW;
@@ -923,6 +928,143 @@ function registerIpc() {
   handle('term:kill', (ctx, id) => terminal.kill(termId(ctx, id)));
 
   // Settings page
+  // ---------- code intelligence (language servers)
+  const langs = new LangServers({
+    find: agents.findCommand,
+    env: () => cli.childEnv(),
+    version: app.getVersion(),
+    onDiagnostics: (file, diagnostics) => {
+      for (const ctx of contexts.values()) if (inWorkspace(ctx, file)) sendTo(ctx, 'lsp-diagnostics', { rel: relOf(ctx, file), diagnostics });
+    },
+  });
+  langServers = langs;
+  const langOpts = () => [settings.langServerPaths || {}, settings.langServersOff || []];
+  const fileIn = (ctx, rel) => {
+    try {
+      return resolveInWorkspace(ctx, rel);
+    } catch {
+      return null;
+    }
+  };
+  // Locations come back as file URIs: turn them into the window's paths, or say they're outside.
+  const toPlaces = (ctx, r) =>
+    (Array.isArray(r) ? r : r ? [r] : [])
+      .map((l) => {
+        const uri = l.targetUri || l.uri;
+        const range = l.targetSelectionRange || l.targetRange || l.range;
+        let file;
+        try {
+          file = require('url').fileURLToPath(uri);
+        } catch {
+          return null;
+        }
+        return { rel: inWorkspace(ctx, file) ? relOf(ctx, file) : null, file, range };
+      })
+      .filter(Boolean);
+  handle('lsp:status', () => langs.status(...langOpts()));
+  handle('lsp:open', async (ctx, rel, languageId, text) => {
+    const file = fileIn(ctx, rel);
+    if (!file) return null;
+    const root = rootOf(ctx, file).dir;
+    return langs.open({ file, languageId, text, root }, ...langOpts()).catch((e) => ({ error: String(e.message || e).replace(/^Request initialize failed with message: /, '') }));
+  });
+  handle('lsp:change', (ctx, rel, text) => {
+    const file = fileIn(ctx, rel);
+    if (file) langs.change(file, text);
+  });
+  handle('lsp:close', (ctx, rel) => {
+    const file = fileIn(ctx, rel);
+    if (file) langs.close(file);
+  });
+  handle('lsp:request', async (ctx, rel, method, params) => {
+    const file = fileIn(ctx, rel);
+    if (!file) return null;
+    const r = await langs.request(file, method, params);
+    return /definition|references|implementation/i.test(method) ? toPlaces(ctx, r) : r;
+  });
+  handle('lsp:restart', () => langs.stopAll());
+
+  // ---------- tab autocomplete
+  let copilotMissingAt = 0; // don't look for the language server on every keystroke when it isn't there
+  const copilotUsable = async () => {
+    if (autocomplete.copilot.lsp) return autocomplete.copilot.status.signedIn;
+    if (Date.now() - copilotMissingAt < 60000) return false;
+    try {
+      await autocomplete.startCopilot(settings, app.getVersion());
+      return autocomplete.copilot.status.signedIn;
+    } catch {
+      copilotMissingAt = Date.now();
+      return false;
+    }
+  };
+  const fimProvider = (id) => {
+    const key = agents.readKey(settings, id);
+    if (!key) return null;
+    return { id, label: agents.AGENTS[id].label, key, baseUrl: agents.options(settings, id).baseUrl, fetch: net.fetch.bind(net) };
+  };
+  const completeEngine = async () => {
+    const want = (settings.autocomplete && settings.autocomplete.engine) || 'auto';
+    if (want === 'off') return null;
+    if (want === 'copilot') return (await copilotUsable()) ? 'copilot' : null;
+    if (want === 'deepseek' || want === 'qwen') return fimProvider(want) ? want : null;
+    if (await copilotUsable()) return 'copilot';
+    return ['deepseek', 'qwen'].find((id) => fimProvider(id)) || null;
+  };
+  autocomplete.copilot.onStatus = (st) => broadcast('complete-status', st);
+  handle('complete:status', async () => {
+    const script = await autocomplete.findServer((settings.agentPaths || {})['copilot-language-server']);
+    if (script) await autocomplete.startCopilot(settings, app.getVersion()).catch(() => {});
+    return {
+      engine: (settings.autocomplete && settings.autocomplete.engine) || 'auto',
+      active: await completeEngine(),
+      copilot: { installed: !!script, ...autocomplete.copilot.status },
+      keys: { deepseek: !!agents.readKey(settings, 'deepseek'), qwen: !!agents.readKey(settings, 'qwen') },
+      install: autocomplete.INSTALL,
+    };
+  });
+  handle('complete:request', async (ctx, doc) => {
+    const engine = await completeEngine();
+    if (!engine) return { items: [] };
+    let abs;
+    try {
+      abs = resolveInWorkspace(ctx, doc.rel);
+    } catch {
+      return { items: [] };
+    }
+    const full = { ...doc, uri: pathToFileURL(abs).href };
+    if (engine === 'copilot') {
+      autocomplete.addFolder(ctx.workspace);
+      return autocomplete.copilotComplete(settings, app.getVersion(), full).catch(() => ({ items: [] }));
+    }
+    if (ctx.fimAbort) ctx.fimAbort.abort();
+    const ctl = (ctx.fimAbort = new AbortController());
+    return autocomplete.fimComplete(fimProvider(engine), full, ctl.signal).catch(() => ({ items: [] }));
+  });
+  handle('complete:accepted', (ctx, command) => autocomplete.accepted(command));
+  handle('complete:close', (ctx, rel) => {
+    try {
+      autocomplete.closeDoc(pathToFileURL(resolveInWorkspace(ctx, rel)).href);
+    } catch {}
+  });
+  handle('complete:sign-in', async () => {
+    const r = await autocomplete.signInStart(settings, app.getVersion());
+    if (r.verificationUri) shell.openExternal(r.verificationUri);
+    return r;
+  });
+  handle('complete:sign-in-finish', (ctx, command) => autocomplete.signInFinish(command));
+  handle('complete:sign-out', () => autocomplete.signOut());
+
+  handle('usage:record', (ctx, key, turn) => usage.record(key, turn));
+  handle('usage:limits', (ctx, key, windows) => usage.setLimits(key, windows));
+  handle('usage:summary', () => usage.summary());
+  handle('git:diff', async (ctx) => {
+    if (!ctx.workspace) return '';
+    let diff = await git(ctx.workspace, ['diff', 'HEAD', '--no-color']).catch(() => '');
+    const untracked = await git(ctx.workspace, ['ls-files', '--others', '--exclude-standard']).catch(() => '');
+    if (untracked.trim()) diff += `\n\nNew files, not yet tracked:\n${untracked.trim()}`;
+    return diff.trim();
+  });
+  handle('web:fetch', (ctx, url) => webpage.fetchPage(net.fetch.bind(net), url));
   handle('cfg:memory', (ctx) => config.memoryFiles(ctx.workspace, folderAcct(ctx)));
   handle('cfg:rules-shared', (ctx) => config.rulesShared(ctx.workspace));
   handle('cfg:share-rules', (ctx) => (ctx.workspace ? config.shareRules(ctx.workspace) : null));
@@ -1137,6 +1279,7 @@ app.on('web-contents-created', (_e, contents) => {
 app.whenReady().then(() => {
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
+  usage.setBaseDir(app.getPath('userData'));
   loadSettings();
   nativeTheme.themeSource = settings.theme || 'system';
   protocol.handle('app', (req) => {
@@ -1162,6 +1305,8 @@ app.whenReady().then(() => {
 
 // Quitting keeps the list of open windows; closing windows one by one doesn't.
 app.on('before-quit', () => {
+  if (langServers) langServers.stopAll();
+  if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();
   rememberWindows();
   quitting = true;
 });
