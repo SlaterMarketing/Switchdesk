@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme, screen } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -276,8 +276,33 @@ function saveExtra(ctx) {
 // The folders open in windows, so the app reopens them all next time.
 function rememberWindows() {
   if (quitting) return;
+  for (const c of contexts.values()) noteBounds(c);
   settings.openWindows = [...contexts.values()].map((c) => c.workspace).filter(Boolean);
   saveSettings();
+}
+
+// Where each folder's window was (size, position, maximised), so it reopens there after a restart
+// or an update instead of stacked on top of the others.
+function noteBounds(ctx) {
+  const win = ctx.win;
+  if (!win || win.isDestroyed() || win.isMinimized() || !ctx.workspace) return;
+  const maximized = win.isMaximized() || win.isFullScreen();
+  const prev = (settings.windowBounds || {})[ctx.workspace];
+  // A maximised window keeps the size it had before, for when it's restored.
+  const b = maximized && prev ? prev : win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
+  const all = { ...(settings.windowBounds || {}) };
+  delete all[ctx.workspace];
+  all[ctx.workspace] = { x: b.x, y: b.y, width: b.width, height: b.height, maximized };
+  // The 50 folders used most recently.
+  settings.windowBounds = Object.fromEntries(Object.entries(all).slice(-50));
+}
+
+// Saved bounds for a folder, if they're still on a connected screen.
+function savedBounds(dir) {
+  const b = dir && (settings.windowBounds || {})[dir];
+  if (!b || !(b.width > 0 && b.height > 0)) return null;
+  const visible = screen.getAllDisplays().some(({ workArea: a }) => b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y >= a.y - 10 && b.y < a.y + a.height - 60);
+  return visible ? b : null;
 }
 
 // ---------- sessions (Claude Code's own transcripts) ----------
@@ -833,7 +858,11 @@ function registerIpc() {
   handle('window:titlebar-colors', (ctx, color, symbolColor) => {
     if (ctx.win && process.platform !== 'darwin' && ctx.win.setTitleBarOverlay) ctx.win.setTitleBarOverlay({ color, symbolColor, height: 38 });
   });
-  handle('update:install', (ctx) => updater.installNow());
+  handle('update:install', () => {
+    rememberWindows(); // installing closes every window: keep them, and where they were
+    quitting = true;
+    updater.installNow();
+  });
   handle('update:check', (ctx) => updater.checkNow());
   // Flash the taskbar button (bounce the Dock on macOS) until you come back to the app.
   handle('window:flash', (ctx) => {
@@ -1269,12 +1298,13 @@ protocol.registerSchemesAsPrivileged([
 
 // A new window. start is the folder it opens with; null opens an empty window.
 function createWindow(start) {
-  const focused = BrowserWindow.getFocusedWindow();
-  const at = focused && !focused.isMaximized() ? focused.getBounds() : null;
+  const saved = savedBounds(start);
+  const focused = saved ? null : BrowserWindow.getFocusedWindow();
+  const at = saved || (focused && !focused.isMaximized() ? focused.getBounds() : null);
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    ...(at ? { x: at.x + 28, y: at.y + 28, width: at.width, height: at.height } : {}),
+    ...(at ? { x: at.x + (saved ? 0 : 28), y: at.y + (saved ? 0 : 28), width: at.width, height: at.height } : {}),
     minWidth: 900,
     minHeight: 560,
     title: 'Switchdesk',
@@ -1292,8 +1322,16 @@ function createWindow(start) {
       webviewTag: true, // the preview pane
     },
   });
+  if (saved && saved.maximized) win.maximize();
   const ctx = { id: win.webContents.id, win, workspace: null, extra: [], watchers: [], start: start || null };
   contexts.set(ctx.id, ctx);
+  let boundsTimer = null;
+  const boundsChanged = () => {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => !quitting && (noteBounds(ctx), saveSettings()), 800);
+  };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize']) win.on(ev, boundsChanged);
+  win.on('close', () => (clearTimeout(boundsTimer), !quitting && noteBounds(ctx)));
   win.loadURL('app://desk/renderer/index.html');
   win.on('focus', () => win.flashFrame(false));
   win.on('page-title-updated', (e) => e.preventDefault()); // the title names the window's folder
