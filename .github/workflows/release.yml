@@ -1,5 +1,6 @@
-# Builds the Windows installer and publishes it as a GitHub Release when a version tag is pushed.
-# The app checks these releases for updates (see src/updater.js).
+# Builds the installers for Windows, macOS and Linux and publishes them as one GitHub Release
+# when a version tag is pushed (or when started by hand). The app checks these releases for
+# updates (see src/updater.js).
 name: Release
 
 on:
@@ -11,21 +12,15 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  # Tag the version in package.json (when started by hand) and create its release up front, as a
+  # draft. Each platform's build uploads into it; if it didn't exist yet, parallel uploads could
+  # each create their own copy. It stays a draft until the files are there, so the app never sees
+  # a release without its latest.yml.
+  prepare:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # Tag the version in package.json (when started by hand) and create its release up front, as
-      # a draft. electron-builder uploads files in parallel; if the release didn't exist yet, each
-      # upload could create its own copy of it. It stays a draft until every file is there, so the
-      # app never sees a release without its latest.yml.
       - name: Create the tag and release
-        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -35,11 +30,63 @@ jobs:
             git push origin "$tag"
           fi
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --notes "Switchdesk $tag"
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Apple Silicon and Intel, each as a .dmg (to install) and a .zip (what updates read). Signed
+  # ad hoc, not with a Developer ID, so the first open needs right-click → Open.
+  mac:
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The terminal's native module for both kinds of Mac, not just the runner's.
+      - run: npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15
+      - run: npx electron-builder --mac --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+  linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder --linux --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish once Windows is there (most people's), even if a Mac or Linux build failed: those can
+  # be rebuilt into the same release.
+  publish:
+    needs: [windows, mac, linux]
+    if: always() && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
       - name: Publish the release
-        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "v$(node -p "require('./package.json').version")" --draft=false --latest

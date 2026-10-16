@@ -101,18 +101,25 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Several Claude accounts** (Settings → Accounts): stay signed in to a personal and a work account at the same time. Each folder uses your default account unless you tie it to another. The agent menu in the chat box lists each signed-in account with its email, so you can switch any chat at any time and the conversation carries on. The terminal, commit messages and the Settings pages follow the folder's account.
 - **Model and effort pickers:** Opus, Sonnet, Haiku and Fable, and Low to Max effort.
 
-## Install (Windows, no terminal needed)
+## Install (no terminal needed)
 
-1. Download **Switchdesk-Setup-x.y.z.exe** from the [latest release](https://github.com/SlaterMarketing/switchdesk/releases/latest) and run it. It installs for your user (no admin rights), adds Desktop and Start Menu shortcuts, and opens the app.
-2. On first launch, a setup screen offers **Install Claude Code** (Anthropic's official installer) and **Sign in with Claude**, which opens your browser. When both are ticked, click **Start using Switchdesk**. If you'd rather start with Codex, Kimi or an API key, choose **Use another agent instead**.
+Download from the [latest release](https://github.com/SlaterMarketing/switchdesk/releases/latest):
 
-Uninstall it from Windows Settings → Apps like any other app.
+- **Windows:** **Switchdesk-Setup-x.y.z.exe**. It installs for your user (no admin rights), adds Desktop and Start Menu shortcuts, and opens the app. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
+- **Mac:** **Switchdesk-x.y.z-mac-arm64.dmg** for Apple Silicon (M1 and later) or **…-mac-x64.dmg** for Intel. Drag Switchdesk to Applications. It isn't signed with an Apple Developer ID, so the first time, right-click it and choose **Open** (on recent macOS: try to open it, then System Settings → Privacy & Security → **Open Anyway**).
+- **Linux:** **Switchdesk-x.y.z-linux-x86_64.AppImage**. Make it executable (`chmod +x`) and run it.
+
+Then:
+
+1. On first launch, a setup screen offers **Install Claude Code** (Anthropic's official installer) and **Sign in with Claude**, which opens your browser. When both are ticked, click **Start using Switchdesk**. If you'd rather start with Codex, Kimi or an API key, choose **Use another agent instead**.
+
+Uninstall it like any other app (on Windows, from Settings → Apps).
 
 ## Updates
 
-The app checks this repo's Releases at start-up and every four hours, downloads new versions in the background, and shows **Restart to update** in the status bar. Help → Check for Updates checks straight away. If you ignore the button, the update installs the next time you quit.
+The app checks this repo's Releases at start-up and every four hours, downloads new versions in the background, and shows **Restart to update** in the status bar. Help → Check for Updates checks straight away. If you ignore the button, the update installs the next time you quit. On a Mac, macOS only lets signed apps update themselves, so the status bar says when a new version is out and opens its download page.
 
-To publish a new version: `npm run release`. That bumps the patch version, tags it and pushes, and the GitHub Action in `.github/workflows/release.yml` builds the Windows installer and publishes the release. You can also bump the version in `package.json`, push, and run the **Release** action by hand from the Actions tab.
+To publish a new version: `npm run release`. That bumps the patch version, tags it and pushes, and the GitHub Action in `.github/workflows/release.yml` builds the Windows, Mac and Linux installers and publishes the release. You can also bump the version in `package.json`, push, and run the **Release** action by hand from the Actions tab.
 
 ## Requirements (running from source)
 
@@ -129,11 +136,10 @@ npm start
 ## Build an installer
 
 ```
-npm run dist:win     # Windows installer in dist/ (GitHub Actions builds the released one)
+npm run dist:win     # Windows installer in dist/ (GitHub Actions builds the released ones)
 npm run dist:mac     # needs a Mac
+npm run dist:linux   # AppImage
 ```
-
-The build is unsigned, so the first install shows "Windows protected your PC". Click **More info**, then **Run anyway**. Updates after that install without the warning.
 
 ## How it works
 

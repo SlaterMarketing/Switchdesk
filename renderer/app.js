@@ -1046,10 +1046,16 @@ function wire() {
       el.textContent = `⬆ Restart to update to ${u.version}`;
       el.className = 'ready';
       el.title = 'Installs the update and reopens Switchdesk';
+    } else if (u.state === 'available') {
+      el.textContent = `⬆ Switchdesk ${u.version} is out`;
+      el.className = 'ready';
+      el.dataset.url = u.url;
+      el.title = 'Opens the download page';
     } else el.className = 'hidden';
   });
   $('#status-update').addEventListener('click', () => {
     if (!$('#status-update').classList.contains('ready')) return;
+    if ($('#status-update').dataset.url) return desk.openExternal($('#status-update').dataset.url);
     if (chats.some((c) => c.busy) && !confirm('Claude is still working in a chat. Restart and update anyway?')) return;
     desk.installUpdate();
   });

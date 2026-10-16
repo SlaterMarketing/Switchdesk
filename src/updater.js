@@ -15,9 +15,12 @@ function load() {
   } catch {
     return null;
   }
-  updater.autoDownload = true;
-  updater.autoInstallOnAppQuit = true;
-  updater.on('update-available', (info) => notify({ state: 'downloading', version: info.version }));
+  // The Mac build isn't signed with an Apple Developer ID, and macOS only installs updates in
+  // place for signed apps, so on a Mac a new version is announced with a link to download it.
+  const announceOnly = process.platform === 'darwin';
+  updater.autoDownload = !announceOnly;
+  updater.autoInstallOnAppQuit = !announceOnly;
+  updater.on('update-available', (info) => notify(announceOnly ? { state: 'available', version: info.version, url: `https://github.com/SlaterMarketing/switchdesk/releases/tag/v${info.version}` } : { state: 'downloading', version: info.version }));
   updater.on('download-progress', (p) => notify({ state: 'downloading', percent: Math.round(p.percent) }));
   updater.on('update-downloaded', (info) => notify({ state: 'ready', version: info.version }));
   updater.on('update-not-available', () => {
