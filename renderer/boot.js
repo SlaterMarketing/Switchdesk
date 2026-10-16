@@ -52,6 +52,7 @@ async function init() {
   wireCompare();
   wireOpinion();
   wireSchedules();
+  wireNotebooks();
   wireDiff();
   wireReview();
   wirePreview();

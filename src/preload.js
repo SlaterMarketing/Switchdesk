@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('desk', {
   listFiles: call('files:list'),
   searchFiles: call('files:search'),
   replaceInFiles: call('files:replace'),
+  notebook: { start: call('nb:start'), send: call('nb:send'), stop: call('nb:stop'), installCommand: call('nb:install-command'), onEvent: on('nb-event') },
   readFile: call('file:read'),
   writeFile: call('file:write'),
   revealFile: call('file:reveal'),

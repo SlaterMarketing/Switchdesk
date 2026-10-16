@@ -207,6 +207,7 @@ function activateTab(id) {
   $('#diff-editor').classList.toggle('hidden', !isDiff);
   $('#diff-bar').classList.toggle('hidden', !isDiff);
   showPlan(t);
+  showNotebook(t);
   if (t && (t.kind === 'file' || t.kind === 'plan')) {
     editor.setModel(t.model);
     if (t.viewState) editor.restoreViewState(t.viewState);
@@ -229,6 +230,7 @@ function closeTab(id) {
   if (t.dirty && !confirm(`${t.rel} has unsaved changes. Close anyway?`)) return;
   state.tabs.splice(i, 1);
   sideTabClosed(t);
+  notebookClosed(t);
   if (t.kind === 'file' || t.kind === 'plan') t.model.dispose();
   else if (t.kind === 'preview') $('#preview').classList.add('hidden');
   else {
@@ -245,6 +247,7 @@ function closeTab(id) {
       $('#diff-editor').classList.add('hidden');
       $('#diff-bar').classList.add('hidden');
       $('#editor').classList.remove('hidden');
+      showNotebook(null);
     }
   }
   renderTabs();
@@ -303,6 +306,7 @@ async function readFileTab(rel) {
 async function saveActive(tab) {
   const t = tab && tab.kind ? tab : sideEditor && sideEditor.hasTextFocus() ? sideTab() : activeTab();
   if (!t || t.kind !== 'file') return;
+  if (isNotebook(t) && t.nb && !t.nb.json) writeNotebook(t);
   await desk.writeFile(t.rel, t.model.getValue());
   t.savedVersion = t.model.getAlternativeVersionId();
   t.dirty = false;

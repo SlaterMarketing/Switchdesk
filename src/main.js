@@ -7,6 +7,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const cli = require('./claude-cli');
+const jupyter = require('./jupyter');
 const { ChatSession } = require('./session');
 const { TurnSnapshot, MultiSnapshot, git, writeTree, diffTrees, blob, isGitRepo, gitRoot } = require('./snapshots');
 const gitops = require('./gitops');
@@ -973,6 +974,13 @@ function registerIpc() {
   handle('window:new', (ctx, dir) => newWindow(dir));
   handle('files:list', (ctx) => listFiles(ctx));
   handle('files:search', async (ctx, query, opts) => (ctx.workspace ? search.search((rel) => resolveInWorkspace(ctx, rel), await listFiles(ctx), query, { ...opts, group: ctx.id }) : { results: [] }));
+  // Notebooks: one kernel per open notebook (jupyter.js).
+  handle('nb:start', (ctx, rel, kernel) =>
+    jupyter.start(ctx, rel, { abs: resolveInWorkspace(ctx, rel), root: ctx.workspace, kernel, settings, send: (m) => sendTo(ctx, 'nb-event', { rel, ...m }) })
+  );
+  handle('nb:send', (ctx, rel, cmd) => jupyter.command(ctx, rel, cmd));
+  handle('nb:stop', (ctx, rel) => jupyter.stop(ctx, rel));
+  handle('nb:install-command', async (ctx) => jupyter.installCommand((await jupyter.findPython(ctx.workspace, settings)) || (process.platform === 'win32' ? 'python' : 'python3')));
   handle('files:replace', async (ctx, rels, query, replacement, opts) => (ctx.workspace ? search.replace((rel) => resolveInWorkspace(ctx, rel), rels, query, replacement, opts || {}) : { files: [] }));
   handle('file:read', async (ctx, rel) => {
     const abs = resolveInWorkspace(ctx, rel);
@@ -1438,6 +1446,7 @@ function createWindow(start) {
     terminal.killWhere(`${ctx.id}:`);
     if (ctx.debug) ctx.debug.stop();
     previewBridge.forget(ctx);
+    jupyter.stopAll(ctx);
     stopWatchers(ctx);
     if (loginCtx === ctx && loginHandle) loginHandle.cancel();
     contexts.delete(ctx.id);

@@ -46,7 +46,8 @@
     "asarUnpack": [
       "node_modules/@lydell/**",
       "node_modules/pdfjs-dist/legacy/build/**",
-      "src/preview-mcp.js"
+      "src/preview-mcp.js",
+      "src/kernel-bridge.py"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

@@ -201,3 +201,46 @@ appTest('a scheduled task runs on its own in a copy of the folder', async ({ w, 
   await w.evaluate(() => checkSchedules());
   assert.equal(await w.evaluate(() => chats.filter((c) => c.scheduled).length), 1);
 });
+
+appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ w, dir }) => {
+  const cell = (cell_type, source, extra = {}) => ({ cell_type, id: Math.random().toString(16).slice(2, 10), metadata: {}, source, ...extra });
+  const nbFile = {
+    cells: [
+      cell('markdown', ['# Sales\n', 'Some **notes**.']),
+      cell('code', ['x = 6 * 7\n', 'print("hello")\n', 'x'], { outputs: [], execution_count: null }),
+      cell('code', ['from IPython.display import HTML\n', 'HTML("<table><tr><td>cell</td></tr></table>")'], { outputs: [], execution_count: null }),
+      cell('code', ['1 / 0'], { outputs: [], execution_count: null }),
+      cell('code', ['print("never")'], { outputs: [], execution_count: null }),
+    ],
+    metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } },
+    nbformat: 4,
+    nbformat_minor: 5,
+  };
+  fs.writeFileSync(path.join(dir, 'sales.ipynb'), JSON.stringify(nbFile, null, 1));
+  await w.evaluate(() => refreshFiles());
+  await w.evaluate(() => openFile('sales.ipynb'));
+  await w.waitForSelector('#nb-view .nb-cell.code .monaco-editor', { timeout: 15000 });
+  assert.equal(await w.$$eval('#nb-view .nb-cell', (e) => e.length), 5);
+  assert.match(await w.$eval('#nb-view .nb-md', (e) => e.innerHTML), /<h1[^>]*>Sales<\/h1>/);
+  await w.click('#nb-bar button:has-text("Run all")');
+  await w.waitForSelector('#nb-view .nb-out.error', { timeout: 90000 });
+  const outs = await w.$$eval('#nb-view .nb-outputs', (e) => e.map((x) => x.innerText));
+  assert.match(outs[0], /hello[\s\S]*42/);
+  assert.match(outs[1], /cell/);
+  assert.match(outs[2], /ZeroDivisionError/);
+  assert.equal(outs[3], '', 'running stops at the error');
+  assert.match(await w.$eval('#nb-bar', (e) => e.innerText), /Python 3.*Idle/);
+  // The outputs are in the file once saved.
+  await w.evaluate(() => saveActive());
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'sales.ipynb'), 'utf8'));
+  assert.equal(saved.cells[1].execution_count, 1);
+  assert.deepEqual(saved.cells[1].outputs[0], { output_type: 'stream', name: 'stdout', text: ['hello\n'] });
+  assert.equal(saved.cells[1].outputs[1].data['text/plain'], '42');
+  // A new cell, typed and run with Shift+Enter; the kernel remembers x.
+  await w.click('#nb-view .nb-adder button:has-text("Code")');
+  await w.keyboard.type('print(x + 1)');
+  await w.keyboard.press('Shift+Enter');
+  await until(w, () => /43/.test(document.querySelectorAll('#nb-view .nb-outputs')[4]?.innerText || ''), null, 30000).catch(async () => {
+    throw new Error('outputs: ' + (await w.$$eval('#nb-view .nb-outputs', (e) => e.map((x) => x.innerText).join(' | '))));
+  });
+});
