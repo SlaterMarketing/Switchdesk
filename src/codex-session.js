@@ -139,7 +139,7 @@ class CodexSession {
       }
       case 'account/rateLimits/updated': {
         const r = p.rateLimits || {};
-        s.limits(r.primary ? r.primary.usedPercent : null, r.secondary ? r.secondary.usedPercent : null);
+        s.limits(r.primary ? r.primary.usedPercent : null, r.secondary ? r.secondary.usedPercent : null, r.primary && r.primary.resetsAt, r.secondary && r.secondary.resetsAt);
         break;
       }
       case 'error':

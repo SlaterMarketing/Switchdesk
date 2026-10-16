@@ -16,6 +16,8 @@ const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
+const usage = require('./usage');
+const webpage = require('./webpage');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
@@ -923,6 +925,17 @@ function registerIpc() {
   handle('term:kill', (ctx, id) => terminal.kill(termId(ctx, id)));
 
   // Settings page
+  handle('usage:record', (ctx, key, turn) => usage.record(key, turn));
+  handle('usage:limits', (ctx, key, windows) => usage.setLimits(key, windows));
+  handle('usage:summary', () => usage.summary());
+  handle('git:diff', async (ctx) => {
+    if (!ctx.workspace) return '';
+    let diff = await git(ctx.workspace, ['diff', 'HEAD', '--no-color']).catch(() => '');
+    const untracked = await git(ctx.workspace, ['ls-files', '--others', '--exclude-standard']).catch(() => '');
+    if (untracked.trim()) diff += `\n\nNew files, not yet tracked:\n${untracked.trim()}`;
+    return diff.trim();
+  });
+  handle('web:fetch', (ctx, url) => webpage.fetchPage(net.fetch.bind(net), url));
   handle('cfg:memory', (ctx) => config.memoryFiles(ctx.workspace, folderAcct(ctx)));
   handle('cfg:rules-shared', (ctx) => config.rulesShared(ctx.workspace));
   handle('cfg:share-rules', (ctx) => (ctx.workspace ? config.shareRules(ctx.workspace) : null));
@@ -1137,6 +1150,7 @@ app.on('web-contents-created', (_e, contents) => {
 app.whenReady().then(() => {
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
+  usage.setBaseDir(app.getPath('userData'));
   loadSettings();
   nativeTheme.themeSource = settings.theme || 'system';
   protocol.handle('app', (req) => {

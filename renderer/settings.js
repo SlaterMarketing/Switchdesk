@@ -13,6 +13,7 @@ const SETTINGS_SECTIONS = [
   ['instructions', 'Instructions'],
   ['permissions', 'Permissions'],
   ['mcp', 'MCP servers'],
+  ['usage', 'Usage'],
 ];
 
 function openSettings(section = 'general') {
@@ -32,7 +33,7 @@ function openSettings(section = 'general') {
   const show = (id) => {
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, accounts: settingsAccounts, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, usage: settingsUsage }[id];
     render(body, close).catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
   };
   document.body.append(root);
@@ -207,5 +208,78 @@ async function settingsMcp(body) {
         : h('div', { class: 'muted small' }, raw && !/No MCP servers/i.test(raw) ? raw.slice(0, 400) : 'No MCP servers yet.')
     ),
     h('div', { class: 'set-box' }, h('b', {}, 'Add a server'), h('div', { class: 'row' }, name, transport), target, h('div', { class: 'row' }, h('span', { class: 'spacer' }), addBtn), out)
+  );
+}
+
+// ------------------------------------------------------------------ usage
+
+const fmtTokens = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const fmtCost = (n) => (!n ? '$0' : n < 0.01 ? '<$0.01' : n >= 100 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`);
+
+function usageLabel(key) {
+  if (key.startsWith('claude:')) return multiAccount() ? `Claude · ${accountName(key.slice(7))}` : 'Claude';
+  return agentInfo(key).label || key;
+}
+
+function agoText(t) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const hrs = Math.round(m / 60);
+  return hrs < 48 ? `${hrs} hour${hrs > 1 ? 's' : ''} ago` : `${Math.round(hrs / 24)} days ago`;
+}
+
+function resetText(at) {
+  if (!at) return '';
+  const t = typeof at === 'number' ? (at < 1e12 ? at * 1000 : at) : Date.parse(at);
+  if (!t || t < Date.now()) return '';
+  const d = new Date(t);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return `resets ${sameDay ? '' : d.toLocaleDateString(undefined, { weekday: 'short' }) + ' '}${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+async function settingsUsage(body) {
+  await loadAccounts();
+  const { keys, limits } = await desk.usage.summary();
+  const all = [...new Set([...Object.keys(limits), ...Object.keys(keys)])].sort((a, b) => ((keys[b] && keys[b].month.input + keys[b].month.output) || 0) - ((keys[a] && keys[a].month.input + keys[a].month.output) || 0));
+  const bar = (label, w) =>
+    w &&
+    h(
+      'div',
+      { class: 'usage-limit' },
+      h('span', {}, label),
+      h('div', { class: `usage-bar${w.pct >= 90 ? ' high' : w.pct >= 70 ? ' mid' : ''}` }, h('i', { style: `width:${Math.min(100, Math.max(0, w.pct))}%` })),
+      h('span', { class: 'muted small' }, `${w.pct}% used${resetText(w.resetsAt) ? ' · ' + resetText(w.resetsAt) : ''}`)
+    );
+  const boxes = all.map((key) => {
+    const k = keys[key];
+    const lim = limits[key];
+    const isClaude = key.startsWith('claude:');
+    const hasCost = k && k.month.cost > 0;
+    const row = (label, get) => h('tr', {}, h('th', {}, label), ...['today', 'week', 'month'].map((r) => h('td', {}, get(k[r]))));
+    return h(
+      'div',
+      { class: 'set-box' },
+      h('div', { class: 'row' }, h('b', {}, usageLabel(key)), h('span', { class: 'spacer' }), lim ? h('span', { class: 'muted small' }, `Plan limits as of ${agoText(lim.at)}`) : null),
+      lim ? bar('5-hour window', lim.short) : null,
+      lim ? bar('Weekly', lim.long) : null,
+      k
+        ? h(
+            'table',
+            { class: 'usage-table' },
+            h('tr', {}, h('th', {}), h('th', {}, 'Today'), h('th', {}, 'Last 7 days'), h('th', {}, 'Last 30 days')),
+            row('Turns', (x) => String(x.turns)),
+            row('Tokens in', (x) => fmtTokens(x.input)),
+            row('Tokens out', (x) => fmtTokens(x.output)),
+            hasCost ? row(isClaude ? 'Cost at API prices' : 'Cost', (x) => fmtCost(x.cost)) : null
+          )
+        : h('div', { class: 'muted small' }, 'No chats in Switchdesk yet.'),
+      hasCost && isClaude ? h('div', { class: 'muted small' }, 'On a Claude plan your plan covers this. The cost shows what the same use would come to on an API key.') : null
+    );
+  });
+  body.replaceChildren(
+    h('h3', {}, 'Usage'),
+    h('p', { class: 'muted small' }, "What each agent and Claude account has used in Switchdesk. Tokens in includes the conversation each turn re-reads. Plan limits are as the agent last reported them, so they update after each chat turn."),
+    ...(boxes.length ? boxes : [h('div', { class: 'muted small' }, 'Nothing yet. Usage shows here once you’ve chatted with an agent.')])
   );
 }

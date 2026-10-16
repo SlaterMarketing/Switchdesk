@@ -36,6 +36,7 @@ function paletteCommands() {
     ['Settings: Instructions', '', () => openSettings('instructions')],
     ['Settings: Permissions', '', () => openSettings('permissions')],
     ['Settings: MCP Servers', '', () => openSettings('mcp')],
+    ['Usage and Limits', '', () => openSettings('usage')],
     ['Check for Updates', '', () => desk.checkUpdates()],
     ...MODES.map((m) => [`Mode: ${MODE_LABEL[m]}`, '', () => setMode(m)]),
   ];

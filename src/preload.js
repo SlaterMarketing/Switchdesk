@@ -92,7 +92,10 @@ contextBridge.exposeInMainWorld('desk', {
     discard: call('git:discard'),
     init: call('git:init'),
     suggest: call('git:suggest'),
+    diff: call('git:diff'),
   },
+  fetchPage: call('web:fetch'),
+  usage: { record: call('usage:record'), limits: call('usage:limits'), summary: call('usage:summary') },
 
   term: {
     create: call('term:create'),

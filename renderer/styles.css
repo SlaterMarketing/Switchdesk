@@ -488,6 +488,7 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 #preview-empty h2 { color: var(--text-strong); font-weight: 600; margin: 0 0 6px; }
 #preview-empty .recent { display: block; margin: 8px auto 0; background: none; border: none; color: var(--accent); cursor: pointer; font: 12px var(--mono); }
 .chip.element { color: var(--accent); }
+.chip.loading { opacity: 0.6; }
 
 /* own copies (parallel agents) */
 #worktree-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev); font-size: 12px; flex: none; }
@@ -551,3 +552,16 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .palette-item { display: flex; align-items: center; gap: 8px; }
 .palette-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-item kbd { font-size: 11px; color: var(--text-dim); }
+
+/* Settings → Usage */
+.usage-limit { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+.usage-bar { height: 6px; border-radius: 3px; background: var(--bg-hover); overflow: hidden; }
+.usage-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.usage-bar.mid i { background: #f59e0b; }
+.usage-bar.high i { background: #ef4444; }
+.usage-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.usage-table th, .usage-table td { text-align: right; padding: 3px 8px; font-weight: normal; }
+.usage-table th:first-child { text-align: left; color: var(--text-dim); }
+.usage-table tr:first-child th { color: var(--text-dim); font-size: 11px; }
+.usage-table td { font-variant-numeric: tabular-nums; }
+#status-limit { cursor: pointer; }

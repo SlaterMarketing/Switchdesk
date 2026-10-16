@@ -633,21 +633,42 @@ function updateMention() {
     mention = { kind: 'slash', start: 0, items, index: 0 };
     return renderMention();
   }
-  const m = /(^|\s)@([\w./-]*)$/.exec(before);
-  if (!m || !state.files.length) {
+  const m = /(^|\s)@([^\s@]*)$/.exec(before);
+  if (!m) {
     mention = null;
     pop.classList.add('hidden');
     return;
   }
   const q = m[2].toLowerCase();
-  const items = state.files
-    .map((f) => ({ f, score: fuzzyScore(f.toLowerCase(), q) }))
-    .filter((x) => x.score > -1)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12)
-    .map((x) => x.f);
+  // Things to attach besides files: what's changed, the terminal, a web page.
+  const extras = mentionExtras(m[2]);
+  const folders = [...new Set(state.files.flatMap((f) => f.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/') + '/')))];
+  const items = /^https?:/i.test(m[2])
+    ? extras
+    : [
+        ...extras,
+        ...[...folders, ...state.files]
+          .map((f) => ({ f, score: fuzzyScore(f.toLowerCase().replace(/\/$/, ''), q) - (f.endsWith('/') ? 1 : 0) }))
+          .filter((x) => x.score > -1)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 12)
+          .map((x) => x.f),
+      ];
   mention = { kind: 'file', start: pos - m[2].length - 1, items, index: 0 };
   renderMention();
+}
+
+const MENTION_EXTRAS = [
+  { id: 'changes', name: 'changes', icon: '±', desc: 'Your uncommitted changes (git diff)' },
+  { id: 'terminal', name: 'terminal', icon: '›_', desc: 'Recent output from the terminal' },
+  { id: 'web', name: 'web', icon: '🌐', desc: 'A web page. Type or paste its address' },
+];
+
+function mentionExtras(typed) {
+  if (/^https?:\/\/\S+\.\S+/i.test(typed)) return [{ id: 'url', name: typed, icon: '🌐', desc: 'Fetch this page and attach it' }];
+  if (/^https?:/i.test(typed)) return [];
+  const q = typed.toLowerCase();
+  return MENTION_EXTRAS.filter((x) => !q || x.name.startsWith(q) || (x.id === 'changes' && 'git'.startsWith(q)));
 }
 
 function renderMention() {
@@ -658,8 +679,10 @@ function renderMention() {
     ...mention.items.map((it, i) =>
       h(
         'div',
-        { class: `pop-item${mention.kind === 'slash' ? ' slash' : ''}${i === mention.index ? ' active' : ''}`, onmousedown: (e) => (e.preventDefault(), pickMention(it)) },
-        mention.kind === 'slash' ? [h('b', {}, '/' + it.name), it.desc ? h('span', { class: 'desc' }, it.desc) : null] : it
+        { class: `pop-item${mention.kind === 'slash' || typeof it === 'object' ? ' slash' : ''}${i === mention.index ? ' active' : ''}`, onmousedown: (e) => (e.preventDefault(), pickMention(it)) },
+        mention.kind === 'slash' || typeof it === 'object'
+          ? [h('b', {}, (mention.kind === 'slash' ? '/' : it.icon + ' ') + it.name), it.desc ? h('span', { class: 'desc' }, it.desc) : null]
+          : it
       )
     )
   );
@@ -669,6 +692,18 @@ function renderMention() {
 function pickMention(it) {
   const input = $('#input');
   const pos = input.selectionStart;
+  if (mention.kind === 'file' && typeof it === 'object') {
+    // "@web" waits for an address; the others become attachments and leave the text alone.
+    const insert = it.id === 'web' ? '@https://' : '';
+    input.value = input.value.slice(0, mention.start) + insert + input.value.slice(pos);
+    const caret = mention.start + insert.length;
+    input.setSelectionRange(caret, caret);
+    mention = null;
+    $('#mention-popup').classList.add('hidden');
+    input.focus();
+    if (it.id === 'web') return updateMention();
+    return attachMention(it);
+  }
   const insert = mention.kind === 'slash' ? '/' + it.name + ' ' : '@' + it + ' ';
   input.value = input.value.slice(0, mention.start) + insert + input.value.slice(pos);
   const caret = mention.start + insert.length;

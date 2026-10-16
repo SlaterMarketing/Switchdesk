@@ -58,7 +58,7 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Git panel** (`Ctrl+Shift+G`): changed files with diffs against the last commit, discard, commit (with a ✨ button that asks Claude Haiku to write the message), branches, push and pull.
 - **Settings** (`Ctrl+,`): your CLAUDE.md instructions (this project and all projects), saved permission rules, and MCP servers. These are Claude Code's own files, so they apply in the terminal too.
 - **Context**
-  - `@` in the chat box mentions a file.
+  - `@` in the chat box mentions a file or folder. `@changes` attaches your uncommitted changes, `@terminal` the terminal's recent output (or what's selected in it), and `@` followed by a web address fetches that page and attaches its text.
   - `Ctrl+L` adds the editor selection to the chat.
   - `Ctrl+K` edits the selection in place.
 - **Search in files** (`Ctrl+Shift+F`): every file in the project, with match case, whole word, regex, and a files-to-include filter. Click a result to jump to it.
@@ -72,7 +72,8 @@ Switchdesk was called Claude Desk until version 0.8. It isn't made by or affilia
 - **Command palette** (`Ctrl+Shift+P`): every command, setting page, agent, account and recent folder, searchable by typing.
 - **Light/dark switch:** the sun/moon button in the title bar. Settings also has a System option.
 - **Taskbar flash:** when Claude finishes or needs you while the app is in the background, its taskbar button flashes (the Dock icon bounces on macOS) until you come back.
-- **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage.
+- **Status bar:** shows the CLI version, how you're signed in, and your 5-hour and 7-day usage. Click the usage to open Settings → Usage.
+- **Usage page** (Settings → Usage): tokens and turns for each agent and Claude account today, this week and this month, Claude's cost at API prices, and each plan's 5-hour and weekly limits with when they reset.
 - **Agents:** pick the agent for each chat from the menu in the chat box. It lists only the agents that are installed and signed in (or have a key), and each Claude account separately. Settings → Agents installs each one and signs it in (in the app's terminal, so you see exactly what runs), or takes an API key.
   - **Claude** runs Claude Code with your Claude plan.
   - **Codex** runs OpenAI's Codex CLI with your ChatGPT plan or an OpenAI API key. The model list comes from Codex itself.
