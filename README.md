@@ -137,7 +137,6 @@ The build is unsigned, so the first install shows "Windows protected your PC". C
 
 ## Limits
 
-- There's no Cursor-style Tab autocomplete, because Claude Code doesn't offer it.
 - In a folder that isn't a git repository, Undo only covers files changed by Edit and Write. The git panel can turn the folder into a repository in one click.
 - The app isn't code-signed (that needs a paid certificate).
 - In Plan mode, Claude's question cards send your answer back as text.

@@ -523,17 +523,26 @@ footer .legal { max-width: 46em; }
           <div><h3>Quick to drive</h3><p>Everything is a keystroke away.</p></div>
           <div class="feats">
             <div class="feat"><h4>Command palette</h4><p><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds every command, settings page, agent, account and recent folder as you type.</p></div>
-            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, <kbd>Ctrl</kbd> <kbd>L</kbd> to add a selection, <kbd>Ctrl</kbd> <kbd>K</kbd> to edit it in place, or paste a screenshot.</p></div>
+            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, folder, web page, your uncommitted changes or terminal output. <kbd>Ctrl</kbd> <kbd>L</kbd> adds a selection and <kbd>Ctrl</kbd> <kbd>K</kbd> edits it in place.</p></div>
             <div class="feat"><h4>Chat tabs</h4><p>Run several conversations side by side, each with its own agent. A spinner shows which ones are working.</p></div>
             <div class="feat"><h4>Slash commands</h4><p>Type <kbd>/</kbd> for Claude Code's commands, including your own commands and skills.</p></div>
           </div>
         </div>
         <div class="group">
+          <div><h3>A real code editor</h3><p>For the moments you'd rather type the code yourself.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Tab autocomplete</h4><p>Grey suggestions as you type, accepted with Tab. It runs GitHub's Copilot language server (Copilot Free works) or your DeepSeek or Qwen key.</p></div>
+            <div class="feat"><h4>Code intelligence</h4><p>Go to definition, hover, completions and find references for TypeScript, JavaScript, Python, Go, Rust and C/C++, from the same language servers other editors use.</p></div>
+            <div class="feat"><h4>Errors as you type</h4><p>Problems are underlined in the editor and counted in the status bar. <kbd>F8</kbd> jumps to the next one.</p></div>
+            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
+          </div>
+        </div>
+        <div class="group">
           <div><h3>The rest of the desk</h3><p>The tools you'd otherwise keep in other windows.</p></div>
           <div class="feats">
-            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
             <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
             <div class="feat"><h4>Live preview</h4><p>Your site in a tab beside the code. Pick an element on the page and attach it, with a screenshot, to the chat.</p></div>
+            <div class="feat"><h4>Usage at a glance</h4><p>Tokens and turns for each agent and account by day, week and month, plus each plan's limits and when they reset.</p></div>
             <div class="feat"><h4>Updates itself</h4><p>New versions download in the background and install with one click, or the next time you quit.</p></div>
           </div>
         </div>
@@ -561,7 +570,7 @@ footer .legal { max-width: 46em; }
         <div>
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
           <h3>No account, no telemetry server</h3>
-          <p>There's nothing to sign up for. The app talks to the agents you pick and to GitHub for updates.</p>
+          <p>There's nothing to sign up for. The app talks only to the agents and services you choose, and to GitHub for updates.</p>
         </div>
       </div>
     </div>
@@ -602,7 +611,7 @@ footer .legal { max-width: 46em; }
         </div>
         <div>
           <details><summary>Is it affiliated with Anthropic, OpenAI, GitHub or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
-          <details><summary>Does it have Tab autocomplete?</summary><p>Not yet. Switchdesk is built around agent chats, and the agents' CLIs don't offer inline completions.</p></details>
+          <details><summary>Does it have Tab autocomplete?</summary><p>Yes. It runs GitHub's own Copilot language server signed in with your GitHub account, and Copilot Free works. You can use your DeepSeek or Qwen API key instead. Pick the engine in Settings → Autocomplete.</p></details>
           <details><summary>Was this called Claude Desk?</summary><p>Yes. It was renamed Switchdesk in version 0.8, when it grew beyond Claude Code. Existing installs update on their own.</p></details>
           <details><summary>Can I share it with my team on my plan?</summary><p>Each person should sign in with their own plan or API key. That's how the agents' terms expect them to be used, and it's how Switchdesk is designed.</p></details>
         </div>
