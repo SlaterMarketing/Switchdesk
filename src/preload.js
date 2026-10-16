@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('desk', {
 
   listSessions: call('sessions:list'),
   loadSession: call('sessions:load'),
+  loadSubagent: call('sessions:subagent'),
 
   chatSend: call('chat:send'),
   chatInterrupt: call('chat:interrupt'),

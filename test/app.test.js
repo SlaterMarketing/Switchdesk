@@ -57,6 +57,33 @@ appTest('replaces across files and undoes', async ({ w, dir }) => {
   assert.match(fs.readFileSync(path.join(dir, 'lib', 'price.js'), 'utf8'), /const price/);
 });
 
+appTest('Claude carries on after its background subagents, and a subagent opens to show its work', async ({ w, p }) => {
+  await w.evaluate((bin) => desk.setSettings({ claudePath: bin }).then((s) => (state.settings = s)), path.join(__dirname, 'fake-claude', 'claude'));
+  await chatWith(w, 'claude', 'plan');
+  await sendMessage(w, 'plan the empty cart fix');
+  // Claude's first turn ends while its subagent runs in the background.
+  await w.waitForSelector('.notice.waiting', { timeout: 30000 });
+  assert.match(await w.$eval('.tool', (e) => e.innerText), /Find the cart code/);
+  // When it finishes, Claude carries on by itself, and its plan reaches the chat.
+  await w.waitForSelector('.card.plan .plan-summary', { timeout: 30000 });
+  assert.match(await w.$eval('.card.plan', (e) => e.innerText), /Guard the empty cart/);
+  assert.equal(await w.$$eval('.notice.waiting', (e) => e.length), 0);
+  // The subagent's row opens its task, thinking, tools and report.
+  await w.click('.tool .head:has-text("Find the cart code")');
+  await w.waitForSelector('.sub-view .sub-result', { timeout: 10000 });
+  const view = await w.$eval('.sub-view', (e) => e.innerText);
+  assert.match(view, /Find where the cart total is worked out/);
+  assert.match(view, /Read cart\.js/);
+  assert.match(view, /Finished · 1 step/);
+  assert.match(view, /in total\(\)/);
+  await w.click('.sub-view button:has-text("Back to chat")');
+  assert.equal(await w.$$eval('.sub-view', (e) => e.length), 0);
+  await w.click('.card.plan button:has-text("Build it")');
+  await idle(w);
+  const answers = fs.readFileSync(path.join(p.agentDir, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(answers[0].answer.behavior, 'allow', 'the plan was approved, not turned away');
+});
+
 appTest('a plan opens as a document with its to-dos, and Build it builds it', async ({ w, p }) => {
   await autoAllow(w);
   await chatWith(w, 'cursor', 'plan');

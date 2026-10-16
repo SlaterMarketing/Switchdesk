@@ -50,6 +50,7 @@ function isPristine(chat) {
 }
 
 function switchChat(id) {
+  if (activeChatId !== id) closeSubagent();
   activeChatId = id;
   for (const c of chats) c.el.classList.toggle('hidden', c.id !== id);
   renderChatTabs();
@@ -305,10 +306,10 @@ function renderPast(chat, msgs) {
       renderMarkdown(el, m.text);
       appendChat(el, chat);
     } else if (m.role === 'tool' && !HIDDEN_TOOLS.has(m.name)) {
-      const tool = toolRow(m.name, m.input);
+      const tool = toolRow(m.name, m.input, m.id, chat);
       tool.el.classList.remove('running');
       appendChat(tool.el, chat);
-    }
+    } else if (m.role === 'tool-result') pastSubagent(chat, m);
   }
 }
 
@@ -388,7 +389,7 @@ function toolLabel(name, input = {}) {
   }
 }
 
-function toolRow(name, input) {
+function toolRow(name, input, id, chat) {
   const head = h('div', { class: 'head' }, h('span', { class: 'icon' }, TOOL_ICON[name] || '•'), h('span', { class: 'label' }));
   const out = h('div', { class: 'out' });
   const el = h('div', { class: 'tool running' }, head, out);
@@ -406,13 +407,29 @@ function toolRow(name, input) {
       }
     },
   };
+  if ((name === 'Task' || name === 'Agent') && chat) linkSubagent(chat, id, row);
   head.addEventListener('click', () => {
+    if (row.sub) return openSubagent(row.sub);
     const rel = toRel(row.input.file_path || row.input.notebook_path);
     if (rel && state.fileSet.has(rel) && !out.textContent) return openFile(rel);
     el.classList.toggle('open');
   });
   row.setInput(input);
   return row;
+}
+
+function toolResult(row, b, r) {
+  if (row.sub) return subagentResult(row.sub, b, r);
+  row.el.classList.remove('running');
+  if (b.is_error) row.el.classList.add('error');
+  if (r && r.structuredPatch && EDIT_TOOLS.has(row.name)) {
+    const s = patchStats(r.structuredPatch);
+    if (s.add || s.del) $('.label', row.el).append(' ', h('span', { class: 'stat-add' }, `+${s.add}`), ' ', h('span', { class: 'stat-del' }, `−${s.del}`));
+  } else if (row.name !== 'TodoWrite' && row.name !== 'Read') {
+    const text = resultText(b.content);
+    if (text) $('.out', row.el).textContent = (isShell(row.name) ? `$ ${row.input.command}\n` : '') + text.slice(0, 20000);
+  }
+  if (b.is_error) $('.out', row.el).textContent = resultText(b.content).slice(0, 4000);
 }
 
 function resultText(content) {
@@ -469,6 +486,19 @@ function startTurn(chat, shown, mode, images, rwText) {
   };
   chat.cleanupNext = false;
   chat.planBuildNext = null;
+  chat.lastMode = mode;
+  chat.busy = true;
+  renderChatTabs();
+  if (chat.id === activeChatId) setRunning(true), renderQueue();
+}
+
+// Claude's own turn after its background subagents finished: like one you sent, minus the message.
+function startBackgroundTurn(chat) {
+  waitingForBackground(chat, false);
+  const mode = chat.lastMode || 'agent';
+  appendChat(h('div', { class: 'notice' }, 'Claude is carrying on with what its background subagents reported.'), chat);
+  chat.turn = { bubble: null, mode, blocks: new Map(), tools: new Map(), streamedMsgIds: new Set(), autoEdits: mode === 'agent' || mode === 'auto' || mode === 'debug', started: Date.now(), background: true, planBuild: (chat.bgCarry && chat.bgCarry.planBuild) || null };
+  chat.bgCarry = null;
   chat.busy = true;
   renderChatTabs();
   if (chat.id === activeChatId) setRunning(true), renderQueue();
@@ -501,7 +531,10 @@ function queueRender(chat, block) {
 }
 
 function handleEvent(chat, ev) {
-  if (ev.parent_tool_use_id) return; // subagent internals stay folded under the Task row
+  if (ev.parent_tool_use_id) return subagentEvent(chat, ev); // shown when you open its row (subagents.js)
+  if (ev.type === 'system' && /^(task_|background_tasks)/.test(ev.subtype || '')) subagentStatus(chat, ev);
+  // Claude carrying on by itself after its background subagents finished.
+  if (ev.type === 'system' && ev.subtype === 'background_turn') return !chat.turn && startBackgroundTurn(chat);
   const turn = chat.turn;
   switch (ev.type) {
     case 'system':
@@ -556,18 +589,7 @@ function handleEvent(chat, ev) {
       for (const b of ev.message?.content || []) {
         if (b.type !== 'tool_result') continue;
         const row = turn.tools.get(b.tool_use_id);
-        if (!row) continue;
-        row.el.classList.remove('running');
-        if (b.is_error) row.el.classList.add('error');
-        const r = ev.tool_use_result;
-        if (r && r.structuredPatch && EDIT_TOOLS.has(row.name)) {
-          const s = patchStats(r.structuredPatch);
-          if (s.add || s.del) $('.label', row.el).append(' ', h('span', { class: 'stat-add' }, `+${s.add}`), ' ', h('span', { class: 'stat-del' }, `−${s.del}`));
-        } else if (row.name !== 'TodoWrite' && row.name !== 'Read') {
-          const text = resultText(b.content);
-          if (text) $('.out', row.el).textContent = (isShell(row.name) ? `$ ${row.input.command}\n` : '') + text.slice(0, 20000);
-        }
-        if (b.is_error) $('.out', row.el).textContent = resultText(b.content).slice(0, 4000);
+        if (row) toolResult(row, b, ev.tool_use_result);
       }
       break;
     case 'result':
@@ -583,6 +605,13 @@ function handleEvent(chat, ev) {
           const denied = (ev.permission_denials || []).length;
           appendChat(h('div', { class: 'turn-foot' }, `${secs}s · ${ev.num_turns || 1} step${ev.num_turns === 1 ? '' : 's'}${denied ? ` · ${denied} action${denied > 1 ? 's' : ''} denied` : ''}`), chat);
         }
+      }
+      // Subagents still running in the background: Claude carries on when they finish.
+      if (turn && !turn.interrupted && !ev.is_error && runningInBackground(chat)) {
+        chat.bgCarry = { planBuild: turn.planBuild };
+        endTurn(chat);
+        waitingForBackground(chat, true);
+        break;
       }
       if (turn && turn.compact && !turn.interrupted && !ev.is_error) compactInto(chat, turn);
       if (turn && turn.mode === 'debug' && !turn.interrupted && !ev.is_error) debugModeCard(chat, turn);
@@ -617,7 +646,7 @@ function handleStream(chat, turn, e) {
     } else if (cb.type === 'tool_use') {
       turn.replyTexts = [];
       if (HIDDEN_TOOLS.has(cb.name)) return;
-      const row = toolRow(cb.name, {});
+      const row = toolRow(cb.name, {}, cb.id, chat);
       turn.tools.set(cb.id, row);
       appendChat(row.el, chat);
       turn.blocks.set(e.index, { kind: 'tool', row, json: '' });
@@ -661,7 +690,7 @@ function handleAssistant(chat, turn, msg) {
       if (HIDDEN_TOOLS.has(b.name)) continue;
       let row = turn.tools.get(b.id);
       if (!row) {
-        row = toolRow(b.name, b.input);
+        row = toolRow(b.name, b.input, b.id, chat);
         turn.tools.set(b.id, row);
         appendChat(row.el, chat);
       } else row.setInput(b.input);

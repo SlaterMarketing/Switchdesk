@@ -474,17 +474,43 @@ async function loadSession(ctx, id, cwd, account) {
     }
     if (ev.isSidechain || ev.isMeta) continue;
     if (ev.type === 'user') {
+      // A subagent's tool result names its own transcript, which its row opens.
+      const agentId = ev.toolUseResult && ev.toolUseResult.agentId;
+      if (agentId) for (const b of ev.message?.content || []) if (b.type === 'tool_result') messages.push({ role: 'tool-result', id: b.tool_use_id, agentId, text: ev.toolUseResult.isAsync ? '' : textOf(b.content) });
       const t = textOf(ev.message?.content).trim();
       if (t && !t.startsWith('<')) messages.push({ role: 'user', text: t.replace(/^\[Ask mode:[^\]]*\]\s*/, ''), after: lastReply });
     } else if (ev.type === 'assistant') {
       if (ev.uuid) lastReply = ev.uuid;
       for (const b of ev.message?.content || []) {
         if (b.type === 'text' && b.text.trim()) messages.push({ role: 'assistant', text: b.text, uuid: ev.uuid });
-        else if (b.type === 'tool_use') messages.push({ role: 'tool', name: b.name, input: b.input, uuid: ev.uuid });
+        else if (b.type === 'tool_use') messages.push({ role: 'tool', id: b.id, name: b.name, input: b.input, uuid: ev.uuid });
       }
     }
   }
   return messages;
+}
+
+// What a subagent of a past chat did, from its own transcript, as the events a live one sends.
+async function loadSubagent(ctx, sessionId, agentId, cwd, account) {
+  if (!/^[\w-]+$/.test(sessionId || '') || !/^[\w-]+$/.test(agentId || '')) return [];
+  if (!accounts.exists(settings, account)) account = folderAccount(ctx);
+  const file = path.join(accounts.projectDir(account, chatCwd(ctx, cwd)), sessionId, 'subagents', `agent-${agentId}.jsonl`);
+  let text;
+  try {
+    text = await fsp.readFile(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line of text.split('\n')) {
+    try {
+      const ev = JSON.parse(line);
+      if ((ev.type === 'assistant' || ev.type === 'user') && ev.message) out.push({ type: ev.type, message: ev.message, tool_use_result: ev.toolUseResult });
+    } catch {
+      /* partial line */
+    }
+  }
+  return out;
 }
 
 // ---------- chats (one persistent Claude Code process each) ----------
@@ -527,8 +553,12 @@ async function finishTurn(chatId, chat) {
   const turn = chat.turn;
   if (!turn) return;
   chat.turn = null;
+  // Claude ended its turn with background subagents still running: it carries on by itself when
+  // they finish (backgroundTurn).
+  if (chat.background) chat.backgroundOwed = true;
   let changes = [];
   try {
+    if (turn.snapReady) turn.snap = await turn.snapReady;
     changes = await turn.snap.changes();
   } catch (err) {
     console.error('snapshot diff failed', err);
@@ -584,6 +614,27 @@ async function rewindFolder(snaps, apply) {
   return [...files];
 }
 
+// Background subagents: Claude's turn can end while they run, and when they finish Claude starts a
+// new turn of its own, with nobody having sent anything. That turn gets a snapshot like any other,
+// so its edits show and its approvals (the plan, in Plan mode) reach the chat.
+function backgroundTurn(ctx, chatId, chat, ev) {
+  if (ev.parent_tool_use_id) return;
+  if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') chat.background = (ev.tasks || []).length;
+  const starts = (ev.type === 'system' && ev.subtype === 'init') || ev.type === 'stream_event' || ev.type === 'assistant';
+  if (chat.turn || !chat.backgroundOwed || !starts) return;
+  chat.backgroundOwed = false;
+  const touched = [];
+  const turn = { id: crypto.randomUUID(), snap: { touch: (abs) => touched.push(abs) }, blocks: new Map() };
+  // Edits made before the snapshot is ready are read first, as with any turn.
+  turn.snapReady = beginSnapshot(ctx, chat).then((snap) => {
+    touched.forEach((abs) => snap.touch(abs));
+    turn.snap = snap;
+    return snap;
+  });
+  chat.turn = turn;
+  sendTo(ctx, 'chat-event', { chatId, ev: { type: 'system', subtype: 'background_turn', turnId: turn.id } });
+}
+
 function denyPending(chat, message) {
   for (const resolve of chat.approvals.values()) resolve({ behavior: 'deny', message });
   chat.approvals.clear();
@@ -623,6 +674,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     mode,
     unrestricted: permissions.policyOf(settings).skipAll,
     onEvent: (ev) => {
+      backgroundTurn(ctx, chatId, chat, ev);
       trackStream(ctx, chat.turn, ev);
       sendTo(ctx, 'chat-event', { chatId, ev });
       if (ev.type === 'result') finishTurn(chatId, chat);
@@ -799,6 +851,7 @@ function registerIpc() {
     'file:reveal': null,
     'sessions:list': [],
     'sessions:load': [],
+    'sessions:subagent': [],
     'agents:sessions': [],
     'agents:history': [],
     'worktree:create': notOverSsh('Working in a copy of the folder'),
@@ -1207,6 +1260,7 @@ function registerIpc() {
 
   handle('sessions:list', (ctx) => listSessions(ctx));
   handle('sessions:load', (ctx, id, cwd, account) => loadSession(ctx, id, cwd, account));
+  handle('sessions:subagent', (ctx, id, agentId, cwd, account) => loadSubagent(ctx, id, agentId, cwd, account));
   // Parallel agents: chats working in their own copy of the project.
   const ownCopy = (wt) => {
     if (!worktrees.exists(wt)) throw new Error('This copy no longer exists.');

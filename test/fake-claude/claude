@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+// A stand-in for Claude Code's CLI (stream-json over stdin/stdout) for the app's tests. Every message
+// starts a background subagent and ends the turn while it runs, the way Claude does with
+// run_in_background; when the subagent finishes, it carries on by itself and proposes a plan with
+// ExitPlanMode, asking permission. What the app answers is appended to $FAKE_AGENT_DIR/claude.jsonl.
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const DIR = process.env.FAKE_AGENT_DIR || path.join(os.tmpdir(), 'switchdesk-fake-agent');
+fs.mkdirSync(DIR, { recursive: true });
+const arg = process.argv.slice(2);
+if (arg[0] === '--version') return console.log('2.1.0 (Claude Code)');
+if (arg[0] === 'auth') return console.log(JSON.stringify({ loggedIn: true, email: 'test@example.com', subscriptionType: 'pro' }));
+
+const log = (x) => fs.appendFileSync(path.join(DIR, 'claude.jsonl'), JSON.stringify(x) + '\n');
+const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+const SID = `fake-claude-${process.pid}`;
+const later = (ms) => new Promise((r) => setTimeout(r, ms));
+const pending = new Map();
+let n = 0;
+
+const init = () => out({ type: 'system', subtype: 'init', session_id: SID, model: 'fake-model', slash_commands: [] });
+const assistant = (content, parent = null) => out({ type: 'assistant', parent_tool_use_id: parent, session_id: SID, message: { id: `msg_${++n}`, role: 'assistant', content } });
+const toolResult = (id, content, extra = {}, parent = null) => out({ type: 'user', parent_tool_use_id: parent, session_id: SID, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] }, ...extra });
+const system = (subtype, o) => out({ type: 'system', subtype, session_id: SID, ...o });
+const result = (num) => out({ type: 'result', subtype: 'success', is_error: false, num_turns: num, duration_ms: 500, result: '', session_id: SID });
+const permission = (tool_name, input, tool_use_id) =>
+  new Promise((resolve) => {
+    const id = `req_${++n}`;
+    pending.set(id, resolve);
+    out({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name, input, tool_use_id } });
+  });
+
+async function turn(text) {
+  const t = `toolu_agent_${++n}`;
+  const task = `task_${n}`;
+  init();
+  assistant([{ type: 'text', text: 'One explorer is looking around. I will wait for its report before planning.' }, { type: 'tool_use', id: t, name: 'Agent', input: { description: 'Find the cart code', prompt: 'Find where the cart total is worked out and report the file.', subagent_type: 'Explore', run_in_background: true } }]);
+  system('background_tasks_changed', { tasks: [{ task_id: task, description: 'Find the cart code', subagent_type: 'Explore' }] });
+  system('task_started', { task_id: task, tool_use_id: t, description: 'Find the cart code', subagent_type: 'Explore', prompt: 'Find where the cart total is worked out and report the file.', is_backgrounded: true });
+  toolResult(t, 'Async agent launched successfully.', { tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1' } });
+  assistant([{ type: 'text', text: 'Waiting for the explorer.' }]);
+  result(2);
+  // The subagent at work, after Claude's turn ended.
+  await later(700);
+  assistant([{ type: 'thinking', thinking: 'The cart is probably in cart.js.' }, { type: 'tool_use', id: 'toolu_sub_read', name: 'Read', input: { file_path: path.join(process.cwd(), 'cart.js') } }], t);
+  toolResult('toolu_sub_read', fs.readFileSync(path.join(process.cwd(), 'cart.js'), 'utf8'), {}, t);
+  system('task_progress', { task_id: task, tool_use_id: t, description: 'Find the cart code', last_tool_name: 'Read' });
+  assistant([{ type: 'text', text: 'The total is worked out in cart.js, in total().' }], t);
+  await later(700);
+  system('task_updated', { task_id: task, patch: { status: 'completed' } });
+  system('task_notification', { task_id: task, tool_use_id: t, status: 'completed', summary: 'The total is worked out in cart.js, in total().' });
+  system('background_tasks_changed', { tasks: [] });
+  // Claude carries on by itself with the report.
+  init();
+  const p = `toolu_plan_${++n}`;
+  const input = { plan: '# Guard the empty cart\n\nReturn 0 from total() in cart.js when the cart is empty.' };
+  assistant([{ type: 'text', text: 'The explorer found it. Here is the plan.' }, { type: 'tool_use', id: p, name: 'ExitPlanMode', input }]);
+  const answer = await permission('ExitPlanMode', input, p);
+  log({ tool: 'ExitPlanMode', answer, after: text });
+  toolResult(p, answer.behavior === 'allow' ? 'User approved the plan.' : answer.message);
+  assistant([{ type: 'text', text: answer.behavior === 'allow' ? 'Plan approved.' : `Plan not approved: ${answer.message}` }]);
+  result(2);
+}
+
+let buf = '';
+process.stdin.on('data', (c) => {
+  buf += c;
+  let nl;
+  while ((nl = buf.indexOf('\n')) >= 0) {
+    const line = buf.slice(0, nl);
+    buf = buf.slice(nl + 1);
+    let m;
+    try {
+      m = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (m.type === 'control_request') out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } });
+    else if (m.type === 'control_response' && pending.has(m.response.request_id)) {
+      pending.get(m.response.request_id)(m.response.response);
+      pending.delete(m.response.request_id);
+    } else if (m.type === 'user') {
+      const c = m.message.content;
+      turn(typeof c === 'string' ? c : c.map((b) => b.text || '').join(''));
+    }
+  }
+});
+process.stdin.on('end', () => process.exit(0));
