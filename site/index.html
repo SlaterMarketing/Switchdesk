@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Switchdesk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Switchdesk is a free, open-source desktop editor that runs Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek through their own CLIs, signed in with your own plans and keys.">
+<meta name="theme-color" content="#111216">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="canonical" href="https://switchdesk.dev/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://switchdesk.dev/">
+<meta property="og:title" content="Switchdesk: one desk for every coding agent">
+<meta property="og:description" content="A free, open-source desktop editor for Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek. Your plans, your keys, their own CLIs.">
+<meta property="og:image" content="https://switchdesk.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one dark desk. A live app window is the hero; everything below is a quiet column
+   of plain sections, with teal and violet (the two arrows of the icon) as the only colour. */
+:root {
+  color-scheme: dark;
+  --bg: #111216;
+  --panel: #17181c;
+  --raise: #1f2026;
+  --line: #2a2b33;
+  --fg: #ececf1;
+  --muted: #9b9daa;
+  --faint: #6c6e7b;
+  --teal: #5eead4;
+  --blue: #3b82f6;
+  --violet: #a78bfa;
+  --indigo: #6366f1;
+  --add: rgba(94, 234, 212, .12);
+  --del: rgba(248, 113, 113, .12);
+  --red: #f87171;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --wrap: 1120px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--bg);
+}
+a { color: inherit; }
+::selection { background: var(--indigo); color: #fff; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; border-radius: 6px; }
+.wrap {
+  max-width: var(--wrap); margin: 0 auto;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+code, kbd, .mono { font-family: var(--mono); font-size: .88em; }
+kbd {
+  padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 5px; background: var(--raise); color: var(--fg); white-space: nowrap;
+}
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.02em; }
+p { margin: 0; }
+.eyebrow {
+  font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--teal);
+}
+.grad {
+  background: linear-gradient(100deg, var(--teal), var(--blue) 45%, var(--violet) 70%, var(--indigo));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Nav */
+.nav {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.nav .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 700 18px/1 var(--display); letter-spacing: -.01em; }
+.brand img { width: 28px; height: 28px; }
+.nav-links { display: flex; gap: 22px; margin-left: auto; font-size: 14px; }
+.nav-links a { text-decoration: none; color: var(--muted); }
+.nav-links a:hover { color: var(--fg); }
+.btn {
+  display: inline-flex; align-items: center; gap: 9px; text-decoration: none; cursor: pointer;
+  font: 600 15px/1 var(--body); padding: 13px 20px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--raise); color: var(--fg);
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.btn:hover { border-color: #3a3b45; transform: translateY(-1px); }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn.primary:hover { background: #fff; }
+.btn.small { padding: 9px 14px; font-size: 14px; border-radius: 8px; }
+.stars { font: 500 12px/1 var(--mono); color: var(--muted); padding-left: 9px; border-left: 1px solid var(--line); }
+.stars[hidden] { display: none !important; }
+
+/* Hero */
+.hero { padding-block: 72px 32px; text-align: left; }
+.hero-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 48px; align-items: end; }
+.hero h1 { font-size: clamp(44px, 7.4vw, 88px); line-height: .95; font-weight: 800; letter-spacing: -.035em; }
+.hero h1 .swap { display: block; }
+.lede { color: var(--muted); font-size: 18px; max-width: 34em; }
+.lede strong { color: var(--fg); font-weight: 500; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+.cta-note { margin-top: 12px; font-size: 13px; color: var(--faint); font-family: var(--mono); }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.pill {
+  font: 500 12px/1 var(--mono); padding: 7px 10px; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted); background: var(--panel);
+}
+.pill b { color: var(--teal); font-weight: 500; }
+
+/* Agent switcher row */
+.switcher { margin-top: 56px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.switcher .label { font: 500 12px/1 var(--mono); color: var(--faint); margin-right: 6px; text-transform: uppercase; letter-spacing: .1em; }
+.agent-chip {
+  font: 500 14px/1 var(--body); padding: 9px 14px; border-radius: 99px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.agent-chip:hover { color: var(--fg); border-color: #3a3b45; }
+.agent-chip[aria-pressed="true"] {
+  color: var(--bg); background: var(--fg); border-color: var(--fg);
+}
+
+/* App window */
+.window {
+  margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 40px 120px -40px rgba(99, 102, 241, .35), 0 20px 60px -30px rgba(94, 234, 212, .25);
+  font-size: 13px;
+}
+.titlebar {
+  display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 0 0 14px;
+  border-bottom: 1px solid var(--line); background: #141519; color: var(--muted);
+}
+.titlebar img { width: 16px; height: 16px; }
+.titlebar .menus { display: flex; gap: 14px; font-size: 12px; }
+.titlebar .search {
+  margin: 0 auto; width: min(340px, 40%); height: 24px; border-radius: 6px; border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 8px;
+  font-size: 11.5px; color: var(--faint); background: var(--panel);
+}
+.winctl { display: flex; height: 100%; }
+.winctl span { width: 44px; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
+.app { display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 380px); min-height: 470px; }
+.side { border-right: 1px solid var(--line); padding: 10px 0; }
+.side .tabs { display: flex; gap: 14px; padding: 0 14px 10px; font: 500 10.5px/1 var(--mono); letter-spacing: .08em; color: var(--faint); }
+.side .tabs b { color: var(--fg); font-weight: 500; }
+.tree div { padding: 4px 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree .dir { color: var(--faint); }
+.tree .in { padding-left: 28px; }
+.tree .on { background: var(--raise); color: var(--fg); }
+.tree .mod::after { content: "M"; float: right; color: var(--teal); font: 500 10px/1.9 var(--mono); }
+.editor { border-right: 1px solid var(--line); min-width: 0; display: flex; flex-direction: column; }
+.etabs { display: flex; border-bottom: 1px solid var(--line); font-size: 12px; }
+.etabs span { padding: 9px 14px; color: var(--faint); border-right: 1px solid var(--line); }
+.etabs .on { color: var(--fg); background: var(--bg); box-shadow: inset 0 2px 0 var(--teal); }
+pre.code {
+  margin: 0; padding: 12px 0; font: 12.5px/1.75 var(--mono); color: #c9cbd6; overflow: hidden; flex: 1; background: var(--bg);
+}
+pre.code span.l { display: block; padding: 0 14px 0 0; white-space: pre; }
+pre.code span.l::before { content: attr(data-n); display: inline-block; width: 40px; padding-right: 14px; text-align: right; color: #4a4c58; }
+pre.code .a { background: var(--add); }
+pre.code .a::before { color: var(--teal) !important; }
+pre.code .d { background: var(--del); text-decoration: line-through; text-decoration-color: rgba(248,113,113,.35); }
+.k { color: #c4a7ff; } .s { color: #7ee7c9; } .f { color: #8ab4ff; } .c { color: #5b5e6c; }
+.reviewbar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted); background: var(--panel);
+}
+.reviewbar .sp { margin-left: auto; }
+.mini { font: 500 11px/1 var(--body); padding: 5px 9px; border-radius: 5px; border: 1px solid var(--line); color: var(--fg); background: var(--raise); }
+.mini.ok { border-color: color-mix(in srgb, var(--teal) 50%, transparent); color: var(--teal); }
+.chat { display: flex; flex-direction: column; min-width: 0; }
+.ctabs { display: flex; gap: 6px; padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 11.5px; }
+.ctabs span { padding: 4px 9px; border-radius: 6px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctabs .on { background: var(--raise); color: var(--fg); }
+.msgs { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.user-msg { align-self: flex-end; max-width: 88%; background: var(--raise); padding: 9px 12px; border-radius: 10px; color: var(--fg); }
+.tool { display: flex; gap: 8px; align-items: baseline; font: 12px/1.4 var(--mono); color: var(--muted); }
+.tool i { font-style: normal; color: var(--faint); }
+.tool .p { color: var(--teal); } .tool .m { color: var(--red); }
+.switch-note {
+  display: flex; align-items: center; gap: 10px; font: 500 11px/1 var(--mono); color: var(--faint);
+}
+.switch-note::before, .switch-note::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.switch-note b { color: var(--violet); font-weight: 500; }
+.reply { color: #d4d5de; line-height: 1.55; }
+.reply code { background: var(--raise); padding: 1px 5px; border-radius: 4px; }
+.changes {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--muted);
+}
+.changes .sp { margin-left: auto; display: flex; gap: 6px; }
+.composer { margin: 0 12px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px 10px 8px; }
+.composer .ph { color: var(--faint); min-height: 34px; }
+.composer .row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.agent-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 6px;
+  background: color-mix(in srgb, var(--violet) 16%, transparent); color: var(--violet); font-weight: 600;
+}
+.mode-pill { padding: 4px 9px; border-radius: 6px; background: color-mix(in srgb, var(--teal) 14%, transparent); color: var(--teal); font-weight: 600; }
+.send { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--fg); color: var(--bg); font-size: 13px; }
+.statusbar {
+  display: flex; gap: 18px; padding: 6px 14px; border-top: 1px solid var(--line); background: #141519;
+  font: 11px/1.4 var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden;
+}
+.statusbar .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--teal); margin-right: 6px; }
+.statusbar .r { margin-left: auto; }
+.fade { animation: fade .35s ease both; }
+@keyframes fade { from { opacity: .25; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* Sections */
+section { padding-block: 96px 0; }
+.sec-head { display: grid; gap: 14px; max-width: 720px; margin-bottom: 40px; }
+.sec-head h2 { font-size: clamp(32px, 4.6vw, 52px); line-height: 1.02; font-weight: 700; }
+.sec-head p { color: var(--muted); font-size: 17px; max-width: 38em; }
+
+/* Agents table */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { text-align: left; padding: 16px 20px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 500 11.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--faint); background: #141519; }
+td:first-child { font: 600 16px/1.3 var(--display); white-space: nowrap; }
+td { color: var(--muted); font-size: 15px; }
+td code { color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, transparent); padding: 3px 7px; border-radius: 5px; white-space: nowrap; }
+.tag { font: 500 11px/1 var(--mono); padding: 4px 7px; border-radius: 5px; white-space: nowrap; }
+.tag.plan { color: var(--teal); border: 1px solid color-mix(in srgb, var(--teal) 35%, transparent); }
+.tag.key { color: var(--violet); border: 1px solid color-mix(in srgb, var(--violet) 35%, transparent); }
+.footnote { margin-top: 16px; color: var(--faint); font-size: 14px; max-width: 60em; }
+
+/* Modes */
+.modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.mode { padding: 26px 24px 28px; border-right: 1px solid var(--line); display: grid; gap: 10px; align-content: start; background: var(--panel); }
+.mode:last-child { border-right: 0; }
+.mode h3 { font-size: 26px; font-weight: 700; display: flex; align-items: baseline; gap: 10px; }
+.mode h3 small { font: 500 11px/1 var(--mono); color: var(--faint); letter-spacing: .06em; }
+.mode p { color: var(--muted); font-size: 15px; }
+.mode .flag { font: 500 12px/1.4 var(--mono); color: var(--teal); }
+.modes-note { margin-top: 14px; color: var(--faint); font-size: 14px; }
+
+/* Feature groups */
+.groups { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.group { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 40px; padding-block: 36px; border-bottom: 1px solid var(--line); }
+.group h3 { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.group > div:first-child p { color: var(--faint); margin-top: 10px; font-size: 15px; }
+.feats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 36px; }
+.feat h4 { margin: 0 0 4px; font: 600 16px/1.35 var(--body); color: var(--fg); }
+.feat p { color: var(--muted); font-size: 15px; }
+
+/* Trust */
+.trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.trust > div { padding: 28px 26px; border-right: 1px solid var(--line); display: grid; gap: 10px; align-content: start; background: var(--panel); }
+.trust > div:last-child { border-right: 0; }
+.trust h3 { font: 600 18px/1.3 var(--body); letter-spacing: 0; }
+.trust p { color: var(--muted); font-size: 15px; }
+.trust svg { width: 26px; height: 26px; }
+
+/* Open source */
+.oss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; }
+.oss .big { font: 800 clamp(56px, 9vw, 112px)/.9 var(--display); letter-spacing: -.04em; }
+.oss p { color: var(--muted); font-size: 17px; margin-top: 18px; max-width: 32em; }
+.term { border: 1px solid var(--line); border-radius: 12px; background: #0c0d10; overflow: hidden; min-width: 0; }
+.term .bar { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 500 11.5px/1 var(--mono); color: var(--faint); }
+.term pre { margin: 0; padding: 18px; font: 13.5px/1.9 var(--mono); color: #d4d5de; overflow-x: auto; }
+.term .pr { color: var(--teal); user-select: none; }
+.term .cm { color: var(--faint); }
+.copy { font: 500 11.5px/1 var(--mono); color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; cursor: pointer; }
+.copy:hover { color: var(--fg); }
+
+/* FAQ */
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; }
+details { border-bottom: 1px solid var(--line); padding-block: 18px; }
+summary { cursor: pointer; list-style: none; font: 600 17px/1.4 var(--body); display: flex; justify-content: space-between; gap: 16px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font: 400 22px/1 var(--mono); color: var(--faint); transition: transform .2s; }
+details[open] summary::after { transform: rotate(45deg); color: var(--teal); }
+details p { color: var(--muted); margin-top: 10px; font-size: 15px; max-width: 34em; }
+
+/* Final CTA + footer */
+.final { text-align: center; padding-block: 120px 100px; }
+.final img { width: 84px; height: 84px; margin: 0 auto 26px; display: block; }
+.final h2 { font-size: clamp(36px, 6vw, 68px); font-weight: 800; line-height: 1; }
+.final p { color: var(--muted); margin: 16px auto 0; max-width: 32em; font-size: 17px; }
+.final .cta { justify-content: center; }
+footer { border-top: 1px solid var(--line); padding-block: 32px 40px; color: var(--faint); font-size: 13.5px; }
+footer .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: start; }
+footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--fg); }
+footer .legal { max-width: 46em; }
+
+@media (max-width: 960px) {
+  .hero-top, .oss { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .app { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); }
+  .side { display: none; }
+  .modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mode:nth-child(2) { border-right: 0; }
+  .mode:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .group { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .trust { grid-template-columns: minmax(0, 1fr); }
+  .trust > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .trust > div:last-child { border-bottom: 0; }
+}
+@media (max-width: 720px) {
+  .nav-links { display: none; }
+  .nav .btn.small:not(.gh) { display: none; }
+  .nav .gh { margin-left: auto; }
+  .hero { padding-block: 48px 16px; }
+  .app { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .editor { display: none; }
+  .titlebar .menus, .titlebar .search { display: none; }
+  .titlebar { justify-content: space-between; }
+  .feats, .faq { grid-template-columns: minmax(0, 1fr); }
+  .modes { grid-template-columns: minmax(0, 1fr); }
+  .mode { border-right: 0 !important; border-bottom: 1px solid var(--line); }
+  .mode:last-child { border-bottom: 0; }
+  section { padding-block: 72px 0; }
+  footer .wrap { grid-template-columns: minmax(0, 1fr); }
+  .statusbar .hide-sm { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Switchdesk home"><img src="icon.svg" alt="">Switchdesk</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#agents">Agents</a>
+      <a href="#features">Features</a>
+      <a href="#open-source">Open source</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn small gh" href="https://github.com/SlaterMarketing/switchdesk">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub<span class="stars" id="stars" hidden></span>
+    </a>
+    <a class="btn small primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download</a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero wrap">
+    <div class="hero-top">
+      <div>
+        <div class="pills">
+          <span class="pill"><b>Free</b> forever</span>
+          <span class="pill"><b>MIT</b> licensed</span>
+          <span class="pill"><b>7</b> agents</span>
+        </div>
+        <h1>One desk.<span class="swap grad">Every coding agent.</span></h1>
+      </div>
+      <div>
+        <p class="lede">Switchdesk is a Cursor-style editor for the agents you already pay for. It runs <strong>Claude Code, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek</strong> through each maker's own CLI, signed in with your own plan or key. Switch agents in the middle of a task and keep going.</p>
+        <div class="cta">
+          <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.1H3V5.1Zm0 13.8 7.4 1.1v-7H3v5.9Zm8.3 1.2L21 21.5v-8.4h-9.7v7Zm0-16.2v7.2H21V2.5l-9.7 1.4Z"/></svg>
+            <span id="dl-label">Download for Windows</span>
+          </a>
+          <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+            Star on GitHub
+          </a>
+        </div>
+        <p class="cta-note" id="dl-note">Windows 10 and 11 · macOS and Linux from source</p>
+      </div>
+    </div>
+
+    <div class="switcher" role="group" aria-label="Try switching agents">
+      <span class="label">Switch agent</span>
+      <button class="agent-chip" type="button" data-agent="0" aria-pressed="true">Claude Code</button>
+      <button class="agent-chip" type="button" data-agent="1" aria-pressed="false">Codex</button>
+      <button class="agent-chip" type="button" data-agent="2" aria-pressed="false">Cursor</button>
+      <button class="agent-chip" type="button" data-agent="3" aria-pressed="false">Kimi</button>
+      <button class="agent-chip" type="button" data-agent="4" aria-pressed="false">Gemini</button>
+      <button class="agent-chip" type="button" data-agent="5" aria-pressed="false">Qwen</button>
+      <button class="agent-chip" type="button" data-agent="6" aria-pressed="false">DeepSeek</button>
+    </div>
+
+    <div class="window" aria-label="Switchdesk app window, illustrated">
+      <div class="titlebar">
+        <img src="icon.svg" alt="">
+        <div class="menus"><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></div>
+        <div class="search"><span>Search files</span><span class="mono">Ctrl+P</span></div>
+        <div class="winctl" aria-hidden="true"><span>─</span><span>☐</span><span>✕</span></div>
+      </div>
+      <div class="app">
+        <aside class="side">
+          <div class="tabs"><b>EXPLORER</b><span>GIT 2</span><span>CHATS</span></div>
+          <div class="tree">
+            <div class="dir">▾ api-server</div>
+            <div class="in dir">▾ src</div>
+            <div class="in" style="padding-left:42px">index.ts</div>
+            <div class="in on mod" style="padding-left:42px">rateLimit.ts</div>
+            <div class="in mod" style="padding-left:42px">routes.ts</div>
+            <div class="in dir">▸ test</div>
+            <div class="in">package.json</div>
+            <div class="in">README.md</div>
+            <div class="dir" style="margin-top:10px">▾ ⟦shared-lib⟧</div>
+            <div class="in">clock.ts</div>
+          </div>
+        </aside>
+        <div class="editor">
+          <div class="etabs"><span class="on">rateLimit.ts</span><span>routes.ts</span><span>Preview</span></div>
+<pre class="code"><span class="l" data-n="1"><span class="k">import</span> { now } <span class="k">from</span> <span class="s">"⟦shared-lib⟧/clock"</span>;</span><span class="l" data-n="2"> </span><span class="l" data-n="3"><span class="k">const</span> WINDOW_MS = <span class="f">60_000</span>;</span><span class="l d" data-n="4"><span class="k">const</span> LIMIT = <span class="f">100</span>;</span><span class="l a" data-n="4"><span class="k">const</span> LIMIT = Number(process.env.RATE_LIMIT ?? <span class="f">100</span>);</span><span class="l" data-n="5"><span class="k">const</span> hits = <span class="k">new</span> Map&lt;string, number[]&gt;();</span><span class="l" data-n="6"> </span><span class="l" data-n="7"><span class="k">export function</span> <span class="f">allow</span>(ip: string): boolean {</span><span class="l a" data-n="8">  <span class="k">const</span> cutoff = <span class="f">now</span>() - WINDOW_MS;</span><span class="l d" data-n="9">  <span class="k">const</span> list = hits.get(ip) || [];</span><span class="l a" data-n="9">  <span class="k">const</span> list = (hits.get(ip) ?? []).filter(t =&gt; t &gt; cutoff);</span><span class="l" data-n="10">  <span class="k">if</span> (list.length &gt;= LIMIT) <span class="k">return</span> <span class="k">false</span>;</span><span class="l" data-n="11">  list.push(<span class="f">now</span>());</span><span class="l" data-n="12">  hits.set(ip, list);</span><span class="l" data-n="13">  <span class="k">return</span> <span class="k">true</span>;</span><span class="l" data-n="14">}</span></pre>
+          <div class="reviewbar"><span>Change 2 of 3</span><span class="mini">Undo</span><span class="mini ok">Keep</span><span class="sp mini">Compare</span><span class="mini">Keep file</span></div>
+        </div>
+        <div class="chat">
+          <div class="ctabs"><span class="on">Fix the rate limiter</span><span>Add tests</span><span>⑂ Try Redis</span></div>
+          <div class="msgs" id="msgs">
+            <div class="user-msg">The rate limiter never forgets old requests. Fix it and make the limit configurable.</div>
+            <div class="tool"><i>✎</i>Edit rateLimit.ts <span class="p">+3</span> <span class="m">−2</span></div>
+            <div class="tool"><i>❯</i>Ran npm test</div>
+            <div class="switch-note" id="switch-note"><span>Switched to <b id="note-agent">Claude Code</b></span></div>
+            <div class="reply fade" id="reply"></div>
+            <div class="changes"><span>› 2 files</span><span class="tool"><span class="p">+5</span> <span class="m">−3</span></span><span class="sp"><span class="mini">Undo</span><span class="mini">Keep</span><span class="mini ok">Review</span></span></div>
+          </div>
+          <div class="composer">
+            <div class="ph">Ask anything, @ to mention a file, paste a screenshot</div>
+            <div class="row"><span class="agent-pill" id="agent-pill">Claude Code ▾</span><span class="mode-pill">Agent</span><span id="via" class="hide-sm">your Claude plan</span><span class="send">↑</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar"><span>⎇ main · 2 changed</span><span><span class="dot"></span><span id="status-cli">claude -p --output-format stream-json</span></span><span class="r hide-sm">2 folders · 3 chats</span></div>
+    </div>
+  </div>
+
+  <section id="agents">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Bring your own agent</span>
+        <h2>Your plans and keys. <span class="grad">Their own CLIs.</span></h2>
+        <p>Every chat runs the agent maker's own, unmodified command-line tool on your machine. Pick the agent per chat from the menu in the chat box, and switch whenever you like. The conversation carries on.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Agent</th><th scope="col">Signs in with</th><th scope="col">What Switchdesk runs</th></tr></thead>
+          <tbody>
+            <tr><td>Claude Code</td><td><span class="tag plan">plan</span>&nbsp; Your Claude plan, with several accounts side by side</td><td><code>claude -p --input-format stream-json</code></td></tr>
+            <tr><td>Codex</td><td><span class="tag plan">plan</span>&nbsp; Your ChatGPT plan, or an OpenAI API key</td><td><code>codex app-server</code></td></tr>
+            <tr><td>Cursor</td><td><span class="tag plan">plan</span>&nbsp; Your Cursor plan, through <code>agent login</code></td><td><code>agent acp</code></td></tr>
+            <tr><td>Kimi</td><td><span class="tag plan">plan</span>&nbsp; Your Kimi Code membership</td><td><code>kimi acp</code></td></tr>
+            <tr><td>Gemini</td><td><span class="tag key">key</span>&nbsp; Your Gemini API key</td><td><code>gemini --acp</code></td></tr>
+            <tr><td>Qwen</td><td><span class="tag key">key</span>&nbsp; Your Alibaba Cloud API key</td><td><code>qwen --acp</code></td></tr>
+            <tr><td>DeepSeek</td><td><span class="tag key">key</span>&nbsp; Your DeepSeek API key, through Qwen Code</td><td><code>qwen --acp</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">Settings → Agents installs each CLI and signs it in, in the app's own terminal, so you see exactly what runs. Qwen Code takes any OpenAI-compatible address, so other providers work too. Switchdesk isn't made by or affiliated with any of these companies.</p>
+    </div>
+  </section>
+
+  <section id="modes">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Four modes</span>
+        <h2>Decide how much it can touch.</h2>
+      </div>
+      <div class="modes">
+        <div class="mode"><h3>Ask <small>READ ONLY</small></h3><p>Answers questions about your code and never edits a file. Anything that would change something is refused automatically.</p></div>
+        <div class="mode"><h3>Plan <small>THINK FIRST</small></h3><p>Researches, then opens the plan as a Markdown document in its own tab. Edit it, then choose <b>Build it</b> or <b>Keep planning</b>.</p></div>
+        <div class="mode"><h3>Agent <small>HANDS ON</small></h3><p>Edits files without asking. Before a shell command runs, you get an Allow, Always allow or Deny card.</p></div>
+        <div class="mode"><h3>Auto <small>CLAUDE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
+      </div>
+      <p class="modes-note">Cycle modes with <kbd>Ctrl</kbd> <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>Tab</kbd> in the chat box.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Everything in one window</span>
+        <h2>An editor built around reviewing what agents do.</h2>
+      </div>
+      <div class="groups">
+        <div class="group">
+          <div><h3>See every change</h3><p>Nothing an agent does is hidden or permanent until you say so.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Changes card after each turn</h4><p>Every file the turn changed, including ones changed by shell commands, with +/− counts, a diff and Undo per file.</p></div>
+            <div class="feat"><h4>Inline review</h4><p>Edits appear in the editor in green and red, each with its own Keep and Undo, plus a side-by-side Compare.</p></div>
+            <div class="feat"><h4>Rewind</h4><p>Go back to just before any message you sent, edit it and resend. Your files can go back too.</p></div>
+            <div class="feat"><h4>Git panel</h4><p>Diffs, discard, branches, push and pull, and a ✨ button that writes the commit message for you.</p></div>
+          </div>
+        </div>
+        <div class="group">
+          <div><h3>Run more at once</h3><p>Several agents, several projects, several accounts.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Parallel agents</h4><p>A chat that works in its own git worktree. Run several, then <b>Merge into my folder</b> for inline review, or discard.</p></div>
+            <div class="feat"><h4>Several windows</h4><p>Each window has its own project, chats, agents and terminals. Quitting remembers them all.</p></div>
+            <div class="feat"><h4>Multi-folder workspaces</h4><p>Add a shared library or the backend to the window. Every agent can read and change all of them.</p></div>
+            <div class="feat"><h4>Several Claude accounts</h4><p>Stay signed in to personal and work accounts at once, and tie each folder to the right one.</p></div>
+          </div>
+        </div>
+        <div class="group">
+          <div><h3>Talk to it naturally</h3><p>A chat panel that keeps up with how you actually work.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Queue and steer</h4><p>Type while it works and the message waits its turn. Press Enter again to interrupt and steer mid-task.</p></div>
+            <div class="feat"><h4>Context in a keystroke</h4><p><kbd>@</kbd> a file, <kbd>Ctrl</kbd> <kbd>L</kbd> to add a selection, <kbd>Ctrl</kbd> <kbd>K</kbd> to edit it in place, or paste a screenshot.</p></div>
+            <div class="feat"><h4>Chat tabs and history</h4><p>Conversations side by side, and every past Claude Code chat for the folder, including ones from your terminal.</p></div>
+            <div class="feat"><h4>Slash commands</h4><p>Type <kbd>/</kbd> for Claude Code's commands, including your own commands and skills.</p></div>
+          </div>
+        </div>
+        <div class="group">
+          <div><h3>The rest of the desk</h3><p>The tools you'd otherwise keep in other windows.</p></div>
+          <div class="feats">
+            <div class="feat"><h4>Monaco editor</h4><p>The VS Code editor with tabs, quick open, search in files with regex, and light or dark themes.</p></div>
+            <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
+            <div class="feat"><h4>Live preview</h4><p>Your site in a tab beside the code. Pick an element on the page and attach it, with a screenshot, to the chat.</p></div>
+            <div class="feat"><h4>Updates itself</h4><p>New versions download in the background and install with one click, or the next time you quit.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="trust">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Your machine, your logins</span>
+        <h2>Switchdesk never sees your password.</h2>
+      </div>
+      <div class="trust">
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <h3>You sign in with each maker</h3>
+          <p>Logins happen in each vendor's own CLI. API keys are encrypted with your operating system's keychain.</p>
+        </div>
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+          <h3>Unmodified CLIs</h3>
+          <p>Switchdesk drives the same tools you'd run in a terminal, through the protocols their makers provide for editors.</p>
+        </div>
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          <h3>No account, no telemetry server</h3>
+          <p>There's nothing to sign up for. The app talks to the agents you pick and to GitHub for updates.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="open-source">
+    <div class="wrap oss">
+      <div>
+        <span class="eyebrow">Open source</span>
+        <div class="big" style="margin-top:14px">Free.<br><span class="grad">Readable.</span><br>Yours.</div>
+        <p>Switchdesk is MIT licensed and built in the open on GitHub. Read how every agent is driven, file an issue, or send a pull request.</p>
+        <div class="cta">
+          <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">Browse the code</a>
+          <a class="btn" href="https://github.com/SlaterMarketing/switchdesk/issues/new/choose">Report a bug</a>
+        </div>
+      </div>
+      <div class="term">
+        <div class="bar"><span>Run it from source · Node 20+</span><button class="copy" type="button" id="copy">Copy</button></div>
+<pre id="cmds"><span class="pr">$ </span>git clone https://github.com/SlaterMarketing/switchdesk
+<span class="pr">$ </span>cd switchdesk
+<span class="pr">$ </span>npm install
+<span class="pr">$ </span>npm start
+<span class="cm"># build your own installer</span>
+<span class="pr">$ </span>npm run dist:mac   <span class="cm"># or dist:win, dist:linux</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="sec-head"><span class="eyebrow">Questions</span><h2>Good to know</h2></div>
+      <div class="faq">
+        <div>
+          <details open><summary>Does it cost anything?</summary><p>No. Switchdesk is free and MIT licensed. You use the plans and API keys you already have with each agent's maker, and they bill you as they normally would.</p></details>
+          <details><summary>Which systems does it run on?</summary><p>There's a ready-made installer for Windows 10 and 11. On macOS and Linux, run it from source or build an installer with <code>npm run dist:mac</code> or <code>npm run dist:linux</code>.</p></details>
+          <details><summary>Windows says it protected my PC. Is that normal?</summary><p>Yes. The installer isn't code-signed yet, because that needs a paid certificate. Click <b>More info</b>, then <b>Run anyway</b>. Updates after that install without the warning.</p></details>
+          <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box and the conversation carries on.</p></details>
+        </div>
+        <div>
+          <details><summary>Is it affiliated with Anthropic, OpenAI or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
+          <details><summary>Does it have Tab autocomplete?</summary><p>Not yet. Switchdesk is built around agent chats, and the agents' CLIs don't offer inline completions.</p></details>
+          <details><summary>Was this called Claude Desk?</summary><p>Yes. It was renamed Switchdesk in version 0.8, when it grew beyond Claude Code. Existing installs update on their own.</p></details>
+          <details><summary>Can I share it with my team on my plan?</summary><p>Each person should sign in with their own plan or API key. That's how the agents' terms expect them to be used, and it's how Switchdesk is designed.</p></details>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="final wrap">
+    <img src="icon.svg" alt="">
+    <h2>Pick an agent.<br><span class="grad">Switch any time.</span></h2>
+    <p>Download Switchdesk for Windows, or run it from source anywhere Node runs.</p>
+    <div class="cta">
+      <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">View on GitHub</a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="legal">
+      <a class="brand" href="#top" style="margin-bottom:12px"><img src="icon.svg" alt="">Switchdesk</a>
+      <p>Free and open source under the MIT licence. Claude, Codex, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/SlaterMarketing/switchdesk">GitHub</a>
+      <a href="https://github.com/SlaterMarketing/switchdesk/releases">Releases</a>
+      <a href="https://github.com/SlaterMarketing/switchdesk/issues">Issues</a>
+      <a href="https://github.com/SlaterMarketing/switchdesk/blob/main/LICENSE">Licence</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var REPO = "SlaterMarketing/switchdesk";
+  var agents = [
+    { name: "Claude Code", via: "your Claude plan", cli: "claude -p --output-format stream-json",
+      reply: "Old timestamps now drop out of the window on every request, and <code>RATE_LIMIT</code> sets the limit (default 100). Tests pass." },
+    { name: "Codex", via: "your ChatGPT plan", cli: "codex app-server",
+      reply: "Picked up where the last agent left off. I added a test for the expiry case in <code>test/rateLimit.test.ts</code>; all 14 tests pass." },
+    { name: "Cursor", via: "your Cursor plan", cli: "agent acp",
+      reply: "Reviewed the change. One gap: <code>hits</code> never deletes idle IPs. I added a cleanup when a list empties." },
+    { name: "Kimi", via: "your Kimi Code membership", cli: "kimi acp",
+      reply: "Documented <code>RATE_LIMIT</code> in the README and added it to <code>.env.example</code>." },
+    { name: "Gemini", via: "your Gemini API key", cli: "gemini --acp",
+      reply: "The clock import comes from <code>⟦shared-lib⟧</code>, the second folder in this workspace, so I mocked it there for the tests." },
+    { name: "Qwen", via: "your Alibaba Cloud key", cli: "qwen --acp",
+      reply: "Ran the suite again after the cleanup change. Everything passes, and memory stays flat in the soak test." },
+    { name: "DeepSeek", via: "your DeepSeek API key", cli: "qwen --acp",
+      reply: "Suggested commit message: <code>Expire old hits and make the rate limit configurable</code>." }
+  ];
+  var chips = document.querySelectorAll(".agent-chip");
+  var reply = document.getElementById("reply");
+  var current = 0, timer = null, touched = false;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function show(i) {
+    current = i;
+    var a = agents[i];
+    chips.forEach(function (c) { c.setAttribute("aria-pressed", String(+c.dataset.agent === i)); });
+    document.getElementById("agent-pill").textContent = a.name + " ▾";
+    document.getElementById("note-agent").textContent = a.name;
+    document.getElementById("switch-note").hidden = i === 0;
+    document.getElementById("via").textContent = a.via;
+    document.getElementById("status-cli").textContent = a.cli;
+    reply.innerHTML = a.reply;
+    reply.classList.remove("fade"); void reply.offsetWidth; reply.classList.add("fade");
+  }
+  chips.forEach(function (c) {
+    c.addEventListener("click", function () {
+      touched = true; clearInterval(timer); show(+c.dataset.agent);
+    });
+  });
+  show(0);
+  if (!reduce) {
+    timer = setInterval(function () { if (!touched) show((current + 1) % agents.length); }, 3600);
+  }
+
+  // Copy the source commands.
+  var copy = document.getElementById("copy");
+  copy.addEventListener("click", function () {
+    var text = "git clone https://github.com/" + REPO + "\ncd switchdesk\nnpm install\nnpm start\n";
+    var done = function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy"; }, 1600); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { selectCmds(); });
+    } else { selectCmds(); }
+  });
+  function selectCmds() {
+    var r = document.createRange(); r.selectNodeContents(document.getElementById("cmds"));
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+
+  // Point the download buttons at the latest installer, and show the star count.
+  var isWin = /Windows/i.test(navigator.userAgent);
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest").then(function (r) {
+    return r.ok ? r.json() : null;
+  }).then(function (rel) {
+    if (!rel) return;
+    var exe = (rel.assets || []).filter(function (a) { return /\.exe$/i.test(a.name); })[0];
+    if (exe && isWin) document.querySelectorAll(".dl-link").forEach(function (a) { a.href = exe.browser_download_url; });
+    document.getElementById("dl-note").textContent = rel.tag_name + " · Windows 10 and 11 · macOS and Linux from source";
+  }).catch(function () {});
+  fetch("https://api.github.com/repos/" + REPO).then(function (r) { return r.ok ? r.json() : null; }).then(function (repo) {
+    if (repo && repo.stargazers_count > 0) {
+      var s = document.getElementById("stars");
+      s.textContent = "★ " + repo.stargazers_count.toLocaleString();
+      s.hidden = false;
+    }
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>
