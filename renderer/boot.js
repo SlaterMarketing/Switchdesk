@@ -47,6 +47,7 @@ async function init() {
   wireDebug();
   wireDebugMode();
   wireQuickFix();
+  wireTests();
   wireDiff();
   wireReview();
   wirePreview();

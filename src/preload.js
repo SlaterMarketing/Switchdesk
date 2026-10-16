@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('desk', {
   onSetupLog: on('setup-log'),
   onLoginUrl: on('setup-login-url'),
   onLoginExit: on('setup-login-exit'),
+  tests: { run: call('tests:run') },
   debugLog: { open: call('debuglog:open'), take: call('debuglog:take'), onCount: on('debuglog-count') },
   agents: {
     list: call('agents:list'),

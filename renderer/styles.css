@@ -681,3 +681,4 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .key-chip.empty { color: var(--text-dim); }
 .key-chip.key-recording { border-color: var(--accent); color: var(--accent); }
 .key-clash { color: var(--warn); font-size: 11px; }
+.test-output { max-height: 55vh; overflow: auto; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }

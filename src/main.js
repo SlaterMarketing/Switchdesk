@@ -17,6 +17,7 @@ const search = require('./search');
 const worktrees = require('./worktrees');
 const accounts = require('./accounts');
 const debuglog = require('./debuglog');
+const tests = require('./tests');
 const usage = require('./usage');
 const codebase = require('./codebase');
 const debug = require('./debugger');
@@ -1258,6 +1259,21 @@ function registerIpc() {
     }
     return agents.findCommand(isWin ? ['py', 'python', 'python3'] : ['python3', 'python']);
   };
+  // Running a test from the editor (tests.js). One run per test at a time; a new run of the same
+  // test stops the old one.
+  handle('tests:run', async (ctx, { rel, name, cls, key }) => {
+    const abs = resolveInWorkspace(ctx, rel);
+    const root = (rootOf(ctx, abs) || { dir: path.dirname(abs) }).dir;
+    ctx.testRuns = ctx.testRuns || new Map();
+    const old = ctx.testRuns.get(key);
+    if (old) old.kill();
+    const env = await cli.childEnv();
+    try {
+      return await tests.runTest({ abs, root, name, cls, env, findNode: () => agents.findCommand(['node']), findPython: pythonFor, onSpawn: (child) => ctx.testRuns.set(key, child) });
+    } finally {
+      ctx.testRuns.delete(key);
+    }
+  });
   const absBreakpoints = (ctx, bps) => Object.fromEntries(Object.entries(bps || {}).map(([rel, lines]) => [resolveInWorkspace(ctx, rel), lines]));
   handle('debug:start', async (ctx, { rel, args, breakpoints, exceptions }) => {
     if (ctx.debug) ctx.debug.stop();
