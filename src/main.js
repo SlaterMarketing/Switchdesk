@@ -403,9 +403,8 @@ function textOf(content) {
 // Past chats in the open folder, from every account. A conversation that moved between accounts
 // has a copy under each; the newest one is listed.
 async function listSessions(ctx) {
-  if (!ctx.workspace) return [];
   const byId = new Map();
-  for (const a of accounts.list(settings)) for (const row of await listSessionsIn(a.id, ctx.workspace)) {
+  for (const a of accounts.list(settings)) for (const row of await listSessionsIn(a.id, chatHome(ctx))) {
     const seen = byId.get(row.id);
     if (!seen || row.updatedAt > seen.updatedAt) byId.set(row.id, row);
   }
@@ -457,9 +456,18 @@ async function listSessionsIn(account, workspace) {
 }
 
 // A chat's working folder: the open folder, or its own copy (a worktree) for parallel agents.
+// With no folder open, chats still work, like a plain AI chat: they run in a folder of their own,
+// so anything an agent writes lands there rather than somewhere of yours.
+function chatHome(ctx) {
+  if (ctx.workspace) return ctx.workspace;
+  const dir = path.join(os.homedir(), '.switchdesk', 'chats');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 function chatCwd(ctx, cwd) {
   if (ctx.remote) return cwd && ctx.remote.home && worktrees.onHost(ctx.remote).isUnder(cwd) ? cwd : ctx.workspace;
-  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
+  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : chatHome(ctx);
 }
 
 async function loadSession(ctx, id, cwd, account) {
@@ -798,7 +806,6 @@ function beginSnapshot(ctx, chat) {
 }
 
 async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, resumeAt, cwd, account, agent, agentAccount }) {
-  if (!ctx.workspace) throw new Error('Open a folder first.');
   if (!accounts.exists(settings, account)) account = folderAccount(ctx);
   agent = agents.AGENTS[agent] ? agent : 'claude';
   agentAccount = agent !== 'claude' && agents.findAccount(settings, agent, agentAccount) ? agentAccount || agents.MAIN : agents.MAIN;
@@ -1111,7 +1118,7 @@ function registerIpc() {
   // Each account keeps its own conversations (API-key agents share one history), so ask each one.
   handle('agents:sessions', async (ctx, id) => {
     const a = agents.AGENTS[id];
-    if (!a || id === 'claude' || !ctx.workspace) return [];
+    if (!a || id === 'claude') return [];
     const bin = await agents.findBin(id, settings);
     if (!bin) return [];
     const list = agents.homeVar(id) ? agents.accountsOf(settings, id) : [agents.accountsOf(settings, id).find((x) => agents.readKey(settings, id, x.id))].filter(Boolean);
@@ -1119,7 +1126,7 @@ function registerIpc() {
       list.map(async (x) => {
         if (a.key && !agents.readKey(settings, id, x.id)) return [];
         const env = agents.envFor(settings, id, '', x.id);
-        const rows = await (a.kind === 'codex' ? codexSessions(bin, env, ctx.workspace) : acpSessions(bin, a.args, env, ctx.workspace, a.authMethod)).catch(() => []);
+        const rows = await (a.kind === 'codex' ? codexSessions(bin, env, chatHome(ctx)) : acpSessions(bin, a.args, env, chatHome(ctx), a.authMethod)).catch(() => []);
         return rows.map((r) => ({ ...r, agent: id, agentAccount: agents.homeVar(id) ? x.id : undefined }));
       })
     );

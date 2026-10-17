@@ -20,8 +20,10 @@ function emptyState() {
   return h(
     'div',
     { class: 'empty-chat' },
-    h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF and other documents with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model. It works in ', state.folder ? state.folder.name : 'the open folder', '.')
+    state.folder
+      ? h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
+      : h('p', {}, 'Ask anything. With no folder open this is a plain chat; open a folder to work on code.'),
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF and other documents with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : '')
   );
 }
 
@@ -261,8 +263,7 @@ const agentRows = { root: null, at: 0, rows: [], loading: null };
 
 async function loadHistory(fresh) {
   const list = $('#history-list');
-  if (!state.folder) return list.replaceChildren();
-  const root = state.folder.root;
+  const root = state.folder ? state.folder.root : '';
   const claudeRows = (await desk.listSessions()).map((r) => ({ ...r, agent: 'claude' }));
   const show = () => renderHistory(list, [...claudeRows, ...(agentRows.root === root ? agentRows.rows : [])], !!agentRows.loading);
   show();
@@ -276,7 +277,7 @@ async function loadHistory(fresh) {
   })();
   await agentRows.loading;
   agentRows.loading = null;
-  if (state.folder && state.folder.root === root) loadHistory();
+  if ((state.folder ? state.folder.root : '') === root) loadHistory();
 }
 
 function renderHistory(list, rows, loading) {
@@ -1219,7 +1220,6 @@ async function send(textOverride, modeOverride, display, target) {
     const auth = multiAccount() ? acct.status.get(chatAccount(chat)) : cliState && cliState.auth;
     if (auth && !auth.loggedIn) return multiAccount() ? signInAccount(chatAccount(chat)) : showSetup();
   }
-  if (!state.folder) return toast('Open a folder first.');
   if (chat.worktree && chat.worktree.removed) return toast("This chat's copy was deleted. Start a new chat to keep going.");
   if (chat.making) return toast('Still making the copy. One moment.');
   const input = $('#input');

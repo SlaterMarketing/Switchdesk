@@ -438,7 +438,7 @@ body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right:
 .title-center { flex: 0 1 420px; min-width: 160px; }
 
 /* search in files */
-.side-tab { padding: 6px 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-tab { flex: 1 1 auto; padding: 6px 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-tabs { overflow: hidden; }
 @media (max-width: 1100px) { .side-tab { letter-spacing: 0.02em; font-size: 10px; } }
 #panel-search { overflow: hidden; }

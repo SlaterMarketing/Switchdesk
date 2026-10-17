@@ -293,6 +293,23 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   });
 });
 
+test('with no folder open, a chat still works, in a folder of its own', { timeout: 60000 }, async () => {
+  const p = profile();
+  const { app, w, errors } = await launch(p, null);
+  try {
+    assert.match(await w.$eval('#chat', (e) => e.innerText), /plain chat/);
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'what is a monad');
+    await idle(w);
+    assert.match(await w.$eval('#chat', (e) => e.innerText), /got: what is a monad/);
+    const cwd = agentLog(p).filter((m) => m.method === 'session/new').pop().params.cwd;
+    assert.equal(cwd, path.join(p.home, '.switchdesk', 'chats'));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
 test('pull requests: fix a check and a comment, push, review with an agent, and an issue to a PR', { timeout: 180000 }, async () => {
   const p = profile();
   const dir = project();
