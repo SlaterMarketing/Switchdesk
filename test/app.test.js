@@ -299,6 +299,27 @@ test('pull requests: fix a check and a comment, push, review with an agent, and 
     await w.waitForSelector('#pr-view .pr-thread', { timeout: 15000 });
     const view = await w.$eval('#pr-view', (e) => e.innerText);
     for (const want of [/fix-cart/, /1 test failed/, /What about a null cart\?/, /Files changed \(1\)/i]) assert.match(view, want);
+    // Its file opens as a diff in the editor, with the review comment under its line.
+    await w.click('#pr-view .pr-file .git-file');
+    await w.waitForSelector('#diff-editor .pr-zone .pr-inline-thread:has-text("What about a null cart?")', { timeout: 15000 });
+    assert.match(await w.evaluate(() => diffEditor.getModifiedEditor().getValue()), /0\) \|\| 0/);
+    assert.doesNotMatch(await w.evaluate(() => diffEditor.getOriginalEditor().getValue()), /\|\| 0/);
+    // Comment on another line from there.
+    await w.evaluate(() => diffEditor.getModifiedEditor().setPosition({ lineNumber: 3, column: 1 }));
+    await w.click('#diff-comment');
+    await w.fill('#diff-editor .pr-inline-thread.draft textarea', 'Should this be exported?');
+    await w.click('#diff-editor .pr-inline-thread.draft button:has-text("Comment")');
+    await w.waitForSelector('#diff-editor .pr-inline-thread:has-text("Should this be exported?"):not(.draft)', { timeout: 15000 });
+    assert.deepEqual(hub.posted.find((x) => x.key === 'POST /repos/o/r/pulls/7/comments').body, { commit_id: hub.sha, path: 'cart.js', line: 3, side: 'RIGHT', body: 'Should this be exported?' });
+    // On the pull request's branch, your own copy of the file shows its comments too.
+    gitIn(dir, 'checkout', '-q', 'fix-cart');
+    await w.evaluate(() => refreshGit().then(() => openFile('cart.js')));
+    await w.waitForSelector('#editor .pr-zone .pr-inline-thread:has-text("What about a null cart?")', { timeout: 15000 });
+    await w.evaluate(() => (editor.setPosition({ lineNumber: 1, column: 1 }), editor.getAction('switchdesk.prComment').run()));
+    await w.waitForSelector('#editor .pr-inline-thread.draft', { timeout: 5000 });
+    await w.click('#editor .pr-inline-thread.draft button:has-text("Cancel")');
+    gitIn(dir, 'checkout', '-q', 'main');
+    await w.evaluate(() => refreshGit().then(() => activateTab('pr:7')));
     // A failing check goes to an agent in a copy at the pull request's commit, with its log.
     await w.click('#pr-view .pr-check button:has-text("Fix with the agent")');
     await until(w, () => activeChat() && activeChat().pr && activeChat().worktree && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
@@ -380,12 +401,45 @@ test('pull requests: fix a check and a comment, push, review with an agent, and 
   }
 });
 
-test('an SSH folder: files, search, git, the terminal and an agent all on the host', { timeout: 180000 }, async (t) => {
+test("a pull request from a fork: the fix is pushed to the fork's branch", { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const hub = await fakeGithub(dir);
+  // The pull request's branch is on alex's fork, which lets maintainers push to it.
+  const forks = require('./helpers').tempDir('forks');
+  const fork = path.join(forks, 'alex-r.git');
+  require('child_process').execFileSync('git', ['clone', '-q', '--bare', hub.bare, fork]);
+  Object.assign(hub.pr.head, { repo: { full_name: 'alex/r', name: 'r', owner: { login: 'alex' } } });
+  hub.pr.maintainer_can_modify = true;
+  const { app, w, errors } = await launch(p, dir, { ...hub.env, SWITCHDESK_GITHUB_FORKS: forks });
+  const gitIn = (cwd, ...a) => require('child_process').execFileSync('git', a, { cwd }).toString().trim();
+  try {
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.evaluate(() => openPr(7));
+    await w.click('#pr-view .pr-check button:has-text("Fix with the agent")');
+    await until(w, () => activeChat() && activeChat().pr && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
+    await w.click('#worktree-bar button:has-text("Push to PR #7")');
+    assert.match(await w.$eval('.modal', (e) => e.innerText), /on alex's fork/);
+    await w.click('.modal button:has-text("Push")');
+    await w.waitForFunction(() => /Pushed [0-9a-f]{7} to PR #7/.test(activeChat().el.innerText), null, { timeout: 30000 });
+    const copy = await w.evaluate(() => activeChat().worktree.root);
+    assert.equal(gitIn(fork, 'rev-parse', 'fix-cart'), gitIn(copy, 'rev-parse', 'HEAD'), "the fork's branch has the fix");
+    assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), hub.sha, 'the main repository is untouched');
+    assert.deepEqual(errors, []);
+  } finally {
+    hub.close();
+    await app.close().catch(() => {});
+  }
+});
+
+test('an SSH folder: files, search, git, the terminal, an agent and a pull request all on the host', { timeout: 180000 }, async (t) => {
   const p = profile();
   const server = await sshServer(p);
   if (!server) return t.skip('no sshd on this machine');
   const dir = project();
-  const { app, w, errors } = await launch(p, null, { SWITCHDESK_SSH_CONFIG: server.config });
+  const hub = await fakeGithub(dir);
+  const { app, w, errors } = await launch(p, null, { SWITCHDESK_SSH_CONFIG: server.config, ...hub.env });
   try {
     await w.evaluate((url) => desk.openFolder(url).then(setFolder), `ssh://${server.host}${dir}`);
     await w.waitForSelector('.tree-row', { timeout: 30000, state: 'attached' });
@@ -420,11 +474,30 @@ test('an SSH folder: files, search, git, the terminal and an agent all on the ho
     const sent = agentLog(p).filter((m) => m.method === 'session/prompt');
     assert.ok(sent.length && sent.every((m) => m.overSsh), 'the agent ran over ssh');
     await until(w, () => /fake\.txt/.test(activeChat().el.innerText));
-    // What only works locally says so instead of touching a local folder.
-    const copy = await w.evaluate(() => desk.worktree.create('x').then(() => 'made', (e) => e.message));
-    assert.match(copy, /isn't available in SSH folders/);
+    // A pull request's failing check is fixed by an agent in a copy of the folder on the host, and pushed.
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.evaluate(() => showSidePanel('git'));
+    await w.click('.gh-row:has-text("Guard the cart total")');
+    await w.click('#pr-view .pr-check button:has-text("Fix with the agent")');
+    await until(w, () => activeChat() && activeChat().pr && activeChat().worktree && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
+    const copy = await w.evaluate(() => activeChat().worktree.root);
+    assert.ok(copy.startsWith(path.join(p.home, '.switchdesk', 'worktrees')), `the copy is on the host: ${copy}`);
+    assert.equal(fs.readFileSync(path.join(copy, 'fixed.txt'), 'utf8'), 'fixed by cursor\n');
+    assert.ok(agentLog(p).some((m) => m.method === 'session/new' && m.params.cwd === copy && m.overSsh), 'the agent ran over ssh, in the copy');
+    await w.click('#worktree-bar button:has-text("Push to PR #7")');
+    await w.click('.modal button:has-text("Push")');
+    await w.waitForFunction(() => /Pushed [0-9a-f]{7} to PR #7/.test(activeChat().el.innerText), null, { timeout: 30000 });
+    const gitIn = (cwd, ...a) => require('child_process').execFileSync('git', a, { cwd }).toString().trim();
+    assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), gitIn(copy, 'rev-parse', 'HEAD'));
+    // Its diff opens from the copy on the host too.
+    const d = await w.evaluate(() => desk.worktree.diff(activeChat().worktree, 'fixed.txt'));
+    assert.deepEqual(d, { before: '', after: 'fixed by cursor\n' });
+    await w.evaluate(() => discardWorktree(activeChat(), { silent: true }));
+    assert.ok(!fs.existsSync(copy), 'the copy was removed from the host');
     assert.deepEqual(errors, []);
   } finally {
+    hub.close();
     await app.close().catch(() => {});
     server.stop();
   }

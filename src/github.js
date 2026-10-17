@@ -146,12 +146,14 @@ async function listPrs(settings, repo) {
 async function getPr(settings, repo, n) {
   const base = `${repoPath(repo)}/pulls/${n}`;
   const p = await request(settings, 'GET', base);
-  const [files, comments, talk, reviews, ch] = await Promise.all([
+  const [files, comments, talk, reviews, ch, mergeBase] = await Promise.all([
     request(settings, 'GET', `${base}/files?per_page=100`),
     request(settings, 'GET', `${base}/comments?per_page=100`),
     request(settings, 'GET', `${repoPath(repo)}/issues/${n}/comments?per_page=100`),
     request(settings, 'GET', `${base}/reviews?per_page=100`),
     checks(settings, repo, p.head.sha),
+    // What the pull request's diff is against: where its branch left the base branch.
+    request(settings, 'GET', `${repoPath(repo)}/compare/${p.base.sha}...${p.head.sha}`).then((c) => c.merge_base_commit.sha, () => p.base.sha),
   ]);
   // Each reviewer's latest verdict.
   const verdicts = new Map();
@@ -172,8 +174,12 @@ async function getPr(settings, repo, n) {
     url: p.html_url,
     head: p.head.ref,
     headSha: p.head.sha,
+    mergeBase,
     // A pull request from a fork can only be pushed to there, if at all.
     sameRepo: !!(p.head.repo && p.base.repo && p.head.repo.full_name === p.base.repo.full_name),
+    // A fork's branch takes pushes when its author lets maintainers change it.
+    headRepo: p.head.repo ? { owner: p.head.repo.owner ? p.head.repo.owner.login : p.head.repo.full_name.split('/')[0], name: p.head.repo.name || p.head.repo.full_name.split('/')[1] } : null,
+    canPush: !!(p.head.repo && ((p.base.repo && p.head.repo.full_name === p.base.repo.full_name) || p.maintainer_can_modify)),
     base: p.base.ref,
     files: files.map((f) => ({ path: f.filename, from: f.previous_filename, status: f.status, add: f.additions, del: f.deletions, patch: f.patch || '' })),
     // Review comments, grouped into threads by the comment they reply to.
@@ -259,9 +265,21 @@ const deleteBranch = (settings, repo, ref) => request(settings, 'DELETE', `${rep
 const collaborators = (settings, repo) => request(settings, 'GET', `${repoPath(repo)}/collaborators?per_page=100`).then((l) => l.map(who), () => []);
 const checksOf = (settings, repo, sha) => checks(settings, repo, sha);
 
+// A file as it is at a commit, or null if it isn't there.
+const fileAt = (settings, repo, file, ref) =>
+  request(settings, 'GET', `${repoPath(repo)}/contents/${file.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`, null, { accept: 'application/vnd.github.raw+json', text: true }).catch((e) => (e.status === 404 ? null : Promise.reject(e)));
+// A review comment on one line of the pull request's latest version of a file.
+const comment = (settings, repo, n, { sha, path, line, body }) => request(settings, 'POST', `${repoPath(repo)}/pulls/${n}/comments`, { commit_id: sha, path, line, side: 'RIGHT', body });
+
 const createPr = (settings, repo, { head, base, title, body, draft }) => request(settings, 'POST', `${repoPath(repo)}/pulls`, { head, base, title, body, draft: !!draft }).then((p) => ({ number: p.number, url: p.html_url }));
 const reply = (settings, repo, n, commentId, body) => request(settings, 'POST', `${repoPath(repo)}/pulls/${n}/comments/${commentId}/replies`, { body });
 const defaultBranch = (settings, repo) => request(settings, 'GET', repoPath(repo)).then((r) => r.default_branch);
+
+// Where to push a fork's branch: the same kind of address as origin (SSH or HTTPS), for the fork.
+function remoteFor(originUrl, repo) {
+  if (process.env.SWITCHDESK_GITHUB_FORKS) return require('path').join(process.env.SWITCHDESK_GITHUB_FORKS, `${repo.owner}-${repo.name}.git`); // the app's tests
+  return /^(ssh:\/\/)?git@github\.com[:/]/i.test(String(originUrl).trim()) ? `git@github.com:${repo.owner}/${repo.name}.git` : `https://github.com/${repo.owner}/${repo.name}.git`;
+}
 
 // A push address that carries the token, for when git itself isn't signed in to GitHub.
 async function pushUrl(settings, repo) {
@@ -270,4 +288,4 @@ async function pushUrl(settings, repo) {
   return token ? `https://x-access-token:${token}@github.com/${repo.owner}/${repo.name}.git` : null;
 }
 
-module.exports = { parseRepo, repoOf, status, sealToken, listPrs, getPr, checksOf, readyForReview, requestReviewers, approve, merge, deleteBranch, collaborators, checkLog, listIssues, getIssue, postReview, createPr, reply, defaultBranch, pushUrl, forgetCli: () => (cliCache = { at: 0, token: null }) };
+module.exports = { parseRepo, repoOf, status, sealToken, listPrs, getPr, checksOf, readyForReview, requestReviewers, approve, merge, deleteBranch, collaborators, checkLog, listIssues, getIssue, postReview, fileAt, comment, createPr, reply, defaultBranch, remoteFor, pushUrl, forgetCli: () => (cliCache = { at: 0, token: null }) };

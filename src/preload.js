@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld('desk', {
     review: call('gh:review'),
     createPr: call('gh:create-pr'),
     reply: call('gh:reply'),
+    fileAt: call('gh:file-at'),
+    comment: call('gh:comment'),
     checks: call('gh:checks'),
     ready: call('gh:ready'),
     requestReviewers: call('gh:request-reviewers'),

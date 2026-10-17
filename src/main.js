@@ -289,6 +289,7 @@ async function openSsh(ctx, url) {
   }
   const conn = ctx.remote && ctx.remote.spec === spec && ctx.remote.alive ? ctx.remote : await new remote.Remote(spec).connect();
   const where = await conn.call('resolve', { path: dir || '~' });
+  if (!conn.home) conn.home = (await conn.call('hello')).home; // copies of the folder go under it
   if (!where.isDir) {
     if (conn !== ctx.remote) conn.close();
     throw new Error(where.exists ? `${where.path} on ${spec} is a file, not a folder.` : `There's no folder ${where.path} on ${spec}.`);
@@ -455,7 +456,8 @@ async function listSessionsIn(account, workspace) {
 
 // A chat's working folder: the open folder, or its own copy (a worktree) for parallel agents.
 function chatCwd(ctx, cwd) {
-  return !ctx.remote && cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
+  if (ctx.remote) return cwd && ctx.remote.home && worktrees.onHost(ctx.remote).isUnder(cwd) ? cwd : ctx.workspace;
+  return cwd && worktrees.isUnder(cwd) && fs.existsSync(cwd) ? cwd : ctx.workspace;
 }
 
 async function loadSession(ctx, id, cwd, account) {
@@ -855,16 +857,6 @@ function registerIpc() {
     'sessions:subagent': [],
     'agents:sessions': [],
     'agents:history': [],
-    'worktree:create': notOverSsh('Working in a copy of the folder'),
-    'worktree:for-pr': notOverSsh('Working on a pull request in a copy of the folder'),
-    'worktree:push': notOverSsh('Pushing from a copy of the folder'),
-    'worktree:head': notOverSsh('Working in a copy of the folder'),
-    'gh:push-branch': notOverSsh('Pushing from here'),
-    'worktree:changes': [],
-    'worktree:diff': [],
-    'worktree:merge': notOverSsh('Merging a copy'),
-    'worktree:remove': true,
-    'worktree:exists': false,
     'rewind:files': { available: false, files: [] },
     'rewind:apply': { available: false, files: [] },
     'git:repos': [],
@@ -942,7 +934,7 @@ function registerIpc() {
     'changes:undo': async (ctx, turnId, absPaths) => {
       const snap = turnSnapshots.get(turnId);
       if (!snap) return false;
-      await snap.undo(absPaths.filter((p) => inWorkspace(ctx, p)));
+      await snap.undo(absPaths.filter((p) => inWorkspace(ctx, p) || worktrees.onHost(ctx.remote).isUnder(p)));
       return true;
     },
     'git:status': (ctx) => remoteGit.status(ctx),
@@ -1266,23 +1258,32 @@ function registerIpc() {
   handle('sessions:list', (ctx) => listSessions(ctx));
   handle('sessions:load', (ctx, id, cwd, account) => loadSession(ctx, id, cwd, account));
   handle('sessions:subagent', (ctx, id, agentId, cwd, account) => loadSubagent(ctx, id, agentId, cwd, account));
-  // Parallel agents: chats working in their own copy of the project.
-  const ownCopy = (wt) => {
-    if (!worktrees.exists(wt)) throw new Error('This copy no longer exists.');
+  // Parallel agents: chats working in their own copy of the project. In an SSH folder the copies are
+  // on the host.
+  const copies = (ctx) => (ctx.remote ? worktrees.onHost(ctx.remote) : worktrees);
+  const folderAt = (ctx) => (ctx.remote ? { remote: ctx.remote, dir: ctx.workspace } : ctx.workspace);
+  const ownCopy = async (ctx, wt) => {
+    if (!(await copies(ctx).exists(wt))) throw new Error('This copy no longer exists.');
     return wt;
   };
-  handle('worktree:create', (ctx, name) => worktrees.create(ctx.workspace, name));
+  handle('worktree:create', (ctx, name) => copies(ctx).create(ctx.workspace, name));
   // A copy at a pull request's latest commit, to fix it there and push to its branch.
   handle('worktree:for-pr', async (ctx, n, name) => {
     const repo = await ghRepo(ctx);
     const pushUrl = await github.pushUrl(settings, repo);
-    const fetchHead = (from) => git(ctx.workspace, ['fetch', '-q', from, `pull/${n}/head`], { env: { GIT_TERMINAL_PROMPT: '0' } });
+    const fetchHead = (from) => git(folderAt(ctx), ['fetch', '-q', from, `pull/${n}/head`], { env: { GIT_TERMINAL_PROMPT: '0' } });
     await fetchHead('origin').catch((err) => (pushUrl ? fetchHead(pushUrl) : Promise.reject(err)));
-    const sha = (await git(ctx.workspace, ['rev-parse', 'FETCH_HEAD'])).trim();
-    return worktrees.create(ctx.workspace, name || `pr ${n}`, { rev: sha });
+    const sha = (await git(folderAt(ctx), ['rev-parse', 'FETCH_HEAD'])).trim();
+    return copies(ctx).create(ctx.workspace, name || `pr ${n}`, { rev: sha });
   });
-  handle('worktree:head', (ctx, wt) => worktrees.head(ownCopy(wt)));
-  handle('worktree:push', async (ctx, wt, to, message) => worktrees.push(ownCopy(wt), to, { message, pushUrl: await github.pushUrl(settings, await ghRepo(ctx)).catch(() => null) }));
+  handle('worktree:head', async (ctx, wt) => copies(ctx).head(await ownCopy(ctx, wt)));
+  // headRepo: the fork a pull request comes from, which its fixes are pushed to.
+  handle('worktree:push', async (ctx, wt, to, message, headRepo) => {
+    const repo = await ghRepo(ctx);
+    const fork = headRepo && (headRepo.owner !== repo.owner || headRepo.name !== repo.name) ? headRepo : null;
+    const origin = fork ? await git(folderAt(ctx), ['remote', 'get-url', 'origin']).catch(() => '') : '';
+    return copies(ctx).push(await ownCopy(ctx, wt), to, { message, remote: fork ? github.remoteFor(origin, fork) : 'origin', pushUrl: await github.pushUrl(settings, fork || repo).catch(() => null) });
+  });
 
   // GitHub: pull requests and issues for the open folder's repository (github.js).
   const ghCwd = (ctx) => (ctx.remote ? { remote: ctx.remote, dir: ctx.workspace } : gitCwd(ctx));
@@ -1308,6 +1309,8 @@ function registerIpc() {
     const repo = await ghRepo(ctx);
     return github.createPr(settings, repo, { ...p, base: p.base || (await github.defaultBranch(settings, repo)) });
   });
+  handle('gh:file-at', async (ctx, file, ref) => github.fileAt(settings, await ghRepo(ctx), file, ref));
+  handle('gh:comment', async (ctx, n, c) => github.comment(settings, await ghRepo(ctx), n, c));
   handle('gh:reply', async (ctx, n, id, body) => github.reply(settings, await ghRepo(ctx), n, id, body));
   handle('gh:checks', async (ctx, sha) => github.checksOf(settings, await ghRepo(ctx), sha));
   handle('gh:ready', async (ctx, nodeId) => github.readyForReview(settings, nodeId));
@@ -1316,7 +1319,7 @@ function registerIpc() {
   handle('gh:collaborators', async (ctx) => github.collaborators(settings, await ghRepo(ctx)));
   // Pushes the branch you're on, so a pull request can be opened from it.
   handle('gh:push-branch', async (ctx) => {
-    const cwd = gitCwd(ctx);
+    const cwd = ctx.remote ? remoteGit.cwd(ctx) : gitCwd(ctx);
     const env = { GIT_TERMINAL_PROMPT: '0' };
     try {
       await git(cwd, ['push', '-u', 'origin', 'HEAD'], { env });
@@ -1335,8 +1338,7 @@ function registerIpc() {
     await github.merge(settings, repo, n, { method, title, sha });
     const out = { merged: true, branchDeleted: false, switched: false };
     if (deleteBranch && head) out.branchDeleted = await github.deleteBranch(settings, repo, head).then(() => true, () => false);
-    if (ctx.remote) return out;
-    const cwd = gitCwd(ctx);
+    const cwd = ctx.remote ? remoteGit.cwd(ctx) : gitCwd(ctx);
     const env = { GIT_TERMINAL_PROMPT: '0' };
     try {
       const current = (await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
@@ -1354,11 +1356,11 @@ function registerIpc() {
     }
     return out;
   });
-  handle('worktree:changes', (ctx, wt) => worktrees.changes(ownCopy(wt)));
-  handle('worktree:diff', (ctx, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
-  handle('worktree:merge', (ctx, wt) => worktrees.merge(ownCopy(wt), ctx.workspace));
-  handle('worktree:remove', (ctx, wt) => (worktrees.exists(wt) ? worktrees.remove(wt) : true));
-  handle('worktree:exists', (ctx, wt) => worktrees.exists(wt));
+  handle('worktree:changes', async (ctx, wt) => copies(ctx).changes(await ownCopy(ctx, wt)));
+  handle('worktree:diff', async (ctx, wt, rel) => copies(ctx).fileDiff(await ownCopy(ctx, wt), rel));
+  handle('worktree:merge', async (ctx, wt) => copies(ctx).merge(await ownCopy(ctx, wt), ctx.workspace));
+  handle('worktree:remove', async (ctx, wt) => ((await copies(ctx).exists(wt)) ? copies(ctx).remove(wt) : true));
+  handle('worktree:exists', (ctx, wt) => copies(ctx).exists(wt));
 
   handle('chat:send', (ctx, chatId, opts) => chatSend(ctx, chatId, opts));
   handle('chat:interrupt', (ctx, chatId) => chatInterrupt(ctx, chatId));

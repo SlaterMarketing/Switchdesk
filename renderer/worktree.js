@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, activeChat, createChat, switchChat, renderChatTabs, appendChat, openDiff, addReviews,
-   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison */
+   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison, canPushTo */
 'use strict';
 
 // ------------------------------------------------------------------ parallel agents (own copies)
@@ -60,7 +60,7 @@ function renderWorktreeBar() {
   if (wt.removed) return bar.replaceChildren(h('span', { class: 'wt-icon' }, '⑂'), h('span', { class: 'muted' }, 'This copy was removed. Start a new chat to keep going.'));
   const n = (chat.wtChanges || []).length;
   // A pull request's copy pushes to it; an issue's copy opens one.
-  const github = chat.pr && chat.pr.sameRepo ? 'push' : chat.issue && !chat.pr ? 'open' : null;
+  const github = chat.pr && canPushTo(chat.pr) ? 'push' : chat.issue && !chat.pr ? 'open' : null;
   const unpushed = !chat.pr || !chat.wtHead || chat.wtHead.dirty || chat.wtHead.sha !== chat.pr.pushedSha;
   bar.replaceChildren(
     ...[

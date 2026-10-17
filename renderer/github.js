@@ -1,6 +1,6 @@
 /* global $, h, state, desk, toast, modal, git, renderGit, renderMarkdown, activeTab, activateTab, renderTabs, chats, activeChat, createChat, switchChat,
    renderChatTabs, renderWorktreeBar, refreshWorktree, appendChat, send, compareChoices, agentOf, agentLabel, setMode, queueSaveWorkspace, ago, cleanErr,
-   discardWorktree, refreshGit */
+   discardWorktree, refreshGit, diffEditor, cachePr, openPrFile, queueEditorComments */
 'use strict';
 
 // ------------------------------------------------------------------ GitHub: pull requests and issues
@@ -30,6 +30,7 @@ async function refreshGithub(force) {
   gh.at = Date.now();
   gh.loading = false;
   renderGit();
+  queueEditorComments();
 }
 
 function githubFolderOpened() {
@@ -130,6 +131,8 @@ async function loadPr(t) {
   try {
     t.pr.data = await desk.github.pr(t.pr.number);
     t.pr.error = '';
+    cachePr(t.pr.data);
+    queueEditorComments();
     t.rel = `PR #${t.pr.number}: ${t.pr.data.title}`.slice(0, 60);
   } catch (e) {
     t.pr.error = cleanErr(e);
@@ -189,7 +192,7 @@ function renderPr(t) {
     return h(
       'div',
       { class: `card pr-thread${th.outdated ? ' outdated' : ''}` },
-      h('div', { class: 'pr-where' }, h('code', {}, `${th.path}${th.line ? ':' + th.line : ''}`), th.outdated ? h('span', { class: 'muted small' }, ' · outdated') : null),
+      h('div', { class: 'pr-where' }, h('a', { href: '#', title: 'Open the file with its comments', onclick: (e) => (e.preventDefault(), openPrFileAt(p, th)) }, h('code', {}, `${th.path}${th.line ? ':' + th.line : ''}`)), th.outdated ? h('span', { class: 'muted small' }, ' · outdated') : null),
       th.hunk ? h('pre', { class: 'pr-hunk' }, diffLines(th.hunk.split('\n').slice(-4).join('\n'))) : null,
       ...th.replies.map((r) => h('div', { class: 'pr-comment' }, h('div', { class: 'muted small' }, `${r.author} · ${ago(new Date(r.at).getTime())}`), md(r.body))),
       replyBox,
@@ -205,17 +208,20 @@ function renderPr(t) {
   const talk = p.talk.map((c) => h('div', { class: 'pr-comment' }, h('div', { class: 'muted small' }, `${c.author}${c.review ? ` ${REVIEW_TEXT[c.review] || 'reviewed'}` : ''} · ${ago(new Date(c.at).getTime())}`), c.body ? md(c.body) : null));
   const files = p.files.map((f) => {
     const patch = h('pre', { class: 'pr-patch hidden' }, f.patch ? diffLines(f.patch) : 'No text diff (binary or too large).');
+    const n = p.threads.filter((th) => th.path === f.path && !th.outdated).length;
     return h(
       'div',
       { class: 'pr-file' },
       h(
         'div',
-        { class: 'git-file', onclick: () => patch.classList.toggle('hidden') },
+        { class: 'git-file', title: 'Open the diff in the editor, with its comments', onclick: () => openPrFile(p, f) },
         h('span', { class: `git-st st-${f.status === 'added' ? 'A' : f.status === 'removed' ? 'D' : 'M'}` }, f.status === 'added' ? 'A' : f.status === 'removed' ? 'D' : f.status === 'renamed' ? 'R' : 'M'),
         h('span', { class: 'name' }, f.path),
         h('span', { class: 'spacer' }),
         h('span', { class: 'stat-add small' }, `+${f.add}`),
-        h('span', { class: 'stat-del small' }, ` −${f.del}`)
+        h('span', { class: 'stat-del small' }, ` −${f.del}`),
+        n ? h('span', { class: 'pr-file-comments small', title: `${n} review comment${n > 1 ? 's' : ''}` }, ` 💬 ${n}`) : null,
+        h('button', { class: 'icon-btn', title: 'Show the patch here', onclick: (e) => (e.stopPropagation(), patch.classList.toggle('hidden')) }, '▾')
       ),
       patch
     );
@@ -277,6 +283,13 @@ function reviewLine(p) {
 
 const REVIEW_TEXT = { APPROVED: 'approved', CHANGES_REQUESTED: 'asked for changes', COMMENTED: 'reviewed' };
 
+async function openPrFileAt(p, th) {
+  const f = p.files.find((x) => x.path === th.path);
+  if (!f) return toast(`${th.path} isn't in this pull request's changes any more.`);
+  await openPrFile(p, f);
+  if (th.line && !th.outdated) setTimeout(() => diffEditor.getModifiedEditor().revealLineInCenter(th.line), 200);
+}
+
 function diffLines(text) {
   const frag = document.createDocumentFragment();
   for (const line of text.split('\n')) frag.append(h('span', { class: line[0] === '+' ? 'add' : line[0] === '-' ? 'del' : line.startsWith('@@') ? 'hunk' : '' }, line + '\n'));
@@ -292,7 +305,7 @@ async function chatForPr(p) {
   let chat = prChat(p.number);
   if (chat) return chat;
   chat = createChat({ title: `PR #${p.number}: ${p.title}`.slice(0, 60) });
-  chat.pr = { number: p.number, title: p.title, head: p.head, base: p.base, sameRepo: p.sameRepo, threads: [], pushedSha: p.headSha };
+  chat.pr = { number: p.number, title: p.title, head: p.head, base: p.base, sameRepo: p.sameRepo, canPush: p.canPush, headRepo: p.sameRepo ? null : p.headRepo, threads: [], pushedSha: p.headSha };
   chat.making = true;
   renderWorktreeBar();
   try {
@@ -341,11 +354,14 @@ async function sendFixes(chat, p, items, note = '') {
   send(prompt, 'agent', shown, chat);
 }
 
+// Its own branch, or a fork's that lets maintainers push. (Chats saved before forks only had sameRepo.)
+const canPushTo = (pr) => (pr.canPush != null ? pr.canPush : pr.sameRepo);
+
 // Push from a pull request's copy to its branch, and optionally answer the comments it fixed.
 async function pushToPr(chat) {
   if (chat.busy) return toast('Wait for the agent to finish first.');
   const pr = chat.pr;
-  if (!pr.sameRepo) return toast("This pull request comes from someone's fork, so Switchdesk can't push to it. Use Merge into my folder, or push to the fork yourself.");
+  if (!canPushTo(pr)) return toast("This pull request comes from a fork that doesn't let maintainers push to it. Use Merge into my folder, or ask its author to allow edits from maintainers.");
   const message = h('input', { class: 'big', value: `Address review on #${pr.number}`, spellcheck: 'true' });
   const replyBox = h('input', { type: 'checkbox', checked: !!(pr.threads || []).length });
   const green = keepGreenBox();
@@ -355,7 +371,7 @@ async function pushToPr(chat) {
       'div',
       { class: 'body' },
       h('h3', {}, `Push to PR #${pr.number}?`),
-      h('p', { class: 'muted small' }, `The agent's commits go to the branch ${pr.head} on GitHub. Anything it left uncommitted is committed first with this message:`),
+      h('p', { class: 'muted small' }, `The agent's commits go to the branch ${pr.head}${pr.headRepo ? ` on ${pr.headRepo.owner}'s fork` : ' on GitHub'}. Anything it left uncommitted is committed first with this message:`),
       message,
       (pr.threads || []).length ? h('label', { class: 'check' }, replyBox, ` Reply "Fixed in …" on the ${pr.threads.length} review comment${pr.threads.length > 1 ? 's' : ''} it was asked to fix`) : null,
       green.el
@@ -367,7 +383,7 @@ async function pushToPr(chat) {
     go.disabled = true;
     go.textContent = 'Pushing…';
     try {
-      const r = await desk.worktree.push(chat.worktree, pr.head, message.value.trim());
+      const r = await desk.worktree.push(chat.worktree, pr.head, message.value.trim(), pr.headRepo || null);
       close();
       const short = r.sha.slice(0, 7);
       if (replyBox.checked) for (const id of pr.threads || []) await desk.github.reply(pr.number, id, `Fixed in ${short}.`).catch(() => {});
@@ -636,7 +652,7 @@ async function prTurnEnded(chat, failed) {
   try {
     const head = await desk.worktree.head(chat.worktree);
     if (head.sha === w.sha && !head.dirty) return stopWatch(chat, `${agentLabel(chat)} didn't change anything for PR #${pr.number}'s failing checks, so it needs you.`);
-    const r = await desk.worktree.push(chat.worktree, pr.head, `Fix failing checks on #${pr.number}`);
+    const r = await desk.worktree.push(chat.worktree, pr.head, `Fix failing checks on #${pr.number}`, pr.headRepo || null);
     pr.pushedSha = r.sha;
     w.sha = r.sha;
     w.since = Date.now();

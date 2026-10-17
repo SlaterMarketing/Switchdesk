@@ -42,8 +42,10 @@ async function gitRoot(cwd) {
 }
 
 // Writes the current working tree (tracked + untracked, minus .gitignore) as a tree object.
+// root can be a folder on an SSH host ({ remote, dir }); the index file is then made there.
 async function writeTree(root) {
-  const index = path.join(os.tmpdir(), `claude-desk-index-${crypto.randomUUID()}`);
+  const onHost = root && typeof root === 'object' && root.remote;
+  const index = onHost ? `/tmp/claude-desk-index-${crypto.randomUUID()}` : path.join(os.tmpdir(), `claude-desk-index-${crypto.randomUUID()}`);
   const env = { GIT_INDEX_FILE: index };
   try {
     try {
@@ -54,7 +56,8 @@ async function writeTree(root) {
     await git(root, ['add', '-A', '--', '.'], { env });
     return (await git(root, ['write-tree'], { env })).trim();
   } finally {
-    fs.rm(index, { force: true }, () => {});
+    if (onHost) root.remote.exec(['rm', '-f', index], root.dir).catch(() => {});
+    else fs.rm(index, { force: true }, () => {});
   }
 }
 

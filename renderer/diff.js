@@ -1,4 +1,4 @@
-/* global $, h, state, desk, monaco, diffEditor, toast, activeTab, activateTab, closeTab, languageFor, reloadOpenFiles, refreshGit, changeCards */
+/* global $, h, state, desk, monaco, diffEditor, toast, prDiffComments, activeTab, activateTab, closeTab, languageFor, reloadOpenFiles, refreshGit, changeCards */
 'use strict';
 
 // ------------------------------------------------------------------ diff review
@@ -8,9 +8,9 @@
 
 function openDiff(change) {
   const source = change.source || 'claude';
-  const id = `d:${source === 'git' ? 'git' : source === 'worktree' ? 'wt:' + change.turnId : source === 'compare' ? 'cmp:' + (change.key || '') : change.turnId}:${change.rel}`;
+  const id = `d:${source === 'git' ? 'git' : source === 'worktree' ? 'wt:' + change.turnId : source === 'compare' ? 'cmp:' + (change.key || '') : source === 'pr' ? 'pr:' + change.key : change.turnId}:${change.rel}`;
   let t = state.tabs.find((x) => x.id === id);
-  if (t && (source === 'git' || source === 'worktree' || source === 'compare')) {
+  if (t && (source === 'git' || source === 'worktree' || source === 'compare' || source === 'pr')) {
     // Git diffs always show the current state, so rebuild them.
     t.original.setValue(change.before);
     t.modified.setValue(change.after);
@@ -35,6 +35,15 @@ function openDiff(change) {
 
 function renderDiffBar(t) {
   const git = t.change.source === 'git';
+  $('#diff-comment').classList.toggle('hidden', t.change.source !== 'pr');
+  if (t.change.source === 'pr') {
+    $('#diff-title').textContent = t.change.title;
+    $('#diff-hint').textContent = 'Put the cursor on a line to comment on it.';
+    $('#diff-undo').classList.add('hidden');
+    $('#diff-keep').textContent = 'Close';
+    queueHunkWidgets();
+    return;
+  }
   // Read-only comparisons: a commit's change, or two files side by side.
   if (t.change.source === 'compare') {
     $('#diff-title').textContent = t.change.title || t.rel;
@@ -128,10 +137,11 @@ function queueHunkWidgets() {
 function renderHunkWidgets() {
   const ed = diffEditor.getModifiedEditor();
   const t = activeTab();
+  prDiffComments(t);
   ed.changeViewZones((acc) => {
     for (const id of hunkZones) acc.removeZone(id);
     hunkZones = [];
-    if (!t || t.kind !== 'diff' || t.change.undone || t.change.source === 'worktree' || t.change.source === 'compare') return;
+    if (!t || t.kind !== 'diff' || t.change.undone || t.change.source === 'worktree' || t.change.source === 'compare' || t.change.source === 'pr') return;
     const git = t.change.source === 'git';
     for (const c of diffEditor.getLineChanges() || []) {
       const after = c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber : c.modifiedStartLineNumber - 1;

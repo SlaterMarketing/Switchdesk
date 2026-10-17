@@ -57,6 +57,7 @@ async function init() {
   wireSsh();
   wireDiff();
   wireReview();
+  wirePrComments();
   wirePreview();
   createChat();
   // This window's folder: the one it had (after a reload), the one it opened with, or none.

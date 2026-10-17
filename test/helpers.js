@@ -121,7 +121,7 @@ async function sshServer(p) {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const user = os.userInfo().username;
   const remotePath = [FAKES, ...process.env.PATH.split(path.delimiter).filter((d) => process.env.TEST_REMOTE_CLAUDE || !fs.existsSync(path.join(d, 'claude')))].join(':');
-  const lines = [`Port ${port}`, 'ListenAddress 127.0.0.1', `HostKey ${dir}/host_key`, `AuthorizedKeysFile ${dir}/authorized_keys`, 'PasswordAuthentication no', 'KbdInteractiveAuthentication no', 'PubkeyAuthentication yes', 'PermitRootLogin yes', 'StrictModes no', 'UsePAM no', `PidFile ${dir}/sshd.pid`, `SetEnv PATH=${remotePath} FAKE_AGENT_DIR=${p.agentDir}`];
+  const lines = [`Port ${port}`, 'ListenAddress 127.0.0.1', `HostKey ${dir}/host_key`, `AuthorizedKeysFile ${dir}/authorized_keys`, 'PasswordAuthentication no', 'KbdInteractiveAuthentication no', 'PubkeyAuthentication yes', 'PermitRootLogin yes', 'StrictModes no', 'UsePAM no', `PidFile ${dir}/sshd.pid`, `SetEnv PATH=${remotePath} FAKE_AGENT_DIR=${p.agentDir} HOME=${p.home} GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com`];
   fs.writeFileSync(path.join(dir, 'sshd_config'), lines.join('\n') + '\n');
   const child = require('child_process').spawn(sshd, ['-D', '-e', '-f', path.join(dir, 'sshd_config')], { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
@@ -157,10 +157,11 @@ async function fakeGithub(dir) {
   g('commit', '-qam', 'Guard the total');
   g('push', '-q', 'origin', 'fix-cart');
   const sha = g('rev-parse', 'HEAD');
+  const baseSha = g('rev-parse', 'main');
   execFileSync('git', ['update-ref', 'refs/pull/7/head', sha], { cwd: bare });
   g('checkout', '-q', 'main');
   const user = { login: 'sam' };
-  const pr = { node_id: 'PR_7', mergeable: true, mergeable_state: 'unstable', requested_reviewers: [], number: 7, title: 'Guard the cart total', body: 'Makes total() safe.', user, draft: false, state: 'open', html_url: 'https://github.com/o/r/pull/7', updated_at: new Date().toISOString(), head: { ref: 'fix-cart', sha, repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
+  const pr = { node_id: 'PR_7', mergeable: true, mergeable_state: 'unstable', requested_reviewers: [], number: 7, title: 'Guard the cart total', body: 'Makes total() safe.', user, draft: false, state: 'open', html_url: 'https://github.com/o/r/pull/7', updated_at: new Date().toISOString(), head: { ref: 'fix-cart', sha, repo: { full_name: 'o/r' } }, base: { ref: 'main', sha: baseSha, repo: { full_name: 'o/r' } } };
   const issue = { number: 3, title: 'Prices need a currency', body: 'Show prices with £.', user, labels: [{ name: 'bug' }], comments: 0, html_url: 'https://github.com/o/r/issues/3', updated_at: new Date().toISOString() };
   const routes = {
     'GET /user': () => ({ login: 'tester' }),
@@ -168,7 +169,9 @@ async function fakeGithub(dir) {
     'GET /repos/o/r/pulls': () => [pr],
     'GET /repos/o/r/pulls/7': () => pr,
     'GET /repos/o/r/pulls/7/files': () => [{ filename: 'cart.js', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1,3 +1,3 @@\n function total(items) {\n-  return items.reduce((sum, i) => sum + i.price, 0);\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;\n }' }],
-    'GET /repos/o/r/pulls/7/comments': () => [{ id: 900, path: 'cart.js', line: 2, original_line: 2, body: 'What about a null cart?', user, created_at: new Date().toISOString(), diff_hunk: '@@ -1,3 +1,3 @@\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;' }],
+    'GET /repos/o/r/pulls/7/comments': () => comments,
+    'POST /repos/o/r/pulls/7/comments': (b) => (comments.push({ id: 950 + comments.length, path: b.path, line: b.line, original_line: b.line, body: b.body, user: { login: 'tester' }, created_at: new Date().toISOString(), diff_hunk: '' }), { id: 950 }),
+    [`GET /repos/o/r/compare/${baseSha}...${sha}`]: () => ({ merge_base_commit: { sha: baseSha } }),
     'GET /repos/o/r/pulls/7/reviews': () => [],
     'GET /repos/o/r/issues/7/comments': () => [],
     'GET /repos/o/r/collaborators': () => [{ login: 'sam' }, { login: 'alex' }],
@@ -184,6 +187,7 @@ async function fakeGithub(dir) {
     'POST /repos/o/r/pulls/7/reviews': () => ({ id: 1 }),
     'POST /repos/o/r/pulls': () => ({ number: 8, html_url: 'https://github.com/o/r/pull/8' }),
   };
+  const comments = [{ id: 900, path: 'cart.js', line: 2, original_line: 2, body: 'What about a null cart?', user, created_at: new Date().toISOString(), diff_hunk: '@@ -1,3 +1,3 @@\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;' }];
   const posted = [];
   const shas = [sha];
   const hub = { passFrom: 2 };
@@ -199,17 +203,27 @@ async function fakeGithub(dir) {
     req.on('end', () => {
       const key = `${req.method} ${req.url.split('?')[0]}`;
       const checks = /^GET \/repos\/o\/r\/commits\/(\w+)\/(check-runs|status)$/.exec(key);
-      const route = checks ? () => checksOf(checks[1], checks[2]) : routes[key];
+      // A file at a commit, from the bare repository.
+      const file = /^GET \/repos\/o\/r\/contents\/(.+)$/.exec(key);
+      const ref = new URL(req.url, 'http://x').searchParams.get('ref');
+      const show = () => {
+        try {
+          return execFileSync('git', ['show', `${ref}:${decodeURIComponent(file[1])}`], { cwd: bare }).toString();
+        } catch {
+          return undefined;
+        }
+      };
+      const route = checks ? () => checksOf(checks[1], checks[2]) : file ? show : routes[key];
       if (req.method !== 'GET') posted.push({ key, body: JSON.parse(body || '{}') });
-      if (!route) return res.writeHead(404).end(JSON.stringify({ message: `Not Found: ${key}` }));
-      const out = route();
+      const out = route ? route(JSON.parse(body || '{}')) : undefined;
+      if (out === undefined) return res.writeHead(404).end(JSON.stringify({ message: `Not Found: ${key}` }));
       if (out === null) return res.writeHead(204).end();
       res.writeHead(req.method === 'POST' ? 201 : 200, { 'Content-Type': typeof out === 'string' ? 'text/plain' : 'application/json' });
       res.end(typeof out === 'string' ? out : JSON.stringify(out));
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return Object.assign(hub, { env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
+  return Object.assign(hub, { pr, env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
 }
 
 module.exports = { fakeGithub, sshServer, launch, profile, project, openFolder, autoAllow, agentLog, prompts, chatWith, sendMessage, idle, tempDir };

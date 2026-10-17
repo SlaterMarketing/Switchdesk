@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr */
+/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr, queueEditorComments */
 'use strict';
 
 // ------------------------------------------------------------------ source control panel
@@ -23,6 +23,7 @@ async function refreshGit() {
     if (git.historyOpen || git.fileHistory) await loadGitLog();
     if (typeof blameCache !== 'undefined') blameCache.clear(); // a commit, pull or checkout changes who wrote what
     renderGit();
+    queueEditorComments(); // a checkout can put the folder on a pull request's branch
   })();
   try {
     await gitRefreshing;
