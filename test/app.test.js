@@ -172,6 +172,18 @@ appTest('the same prompt to two agents, then merge one', async ({ w, dir }) => {
   await until(w, () => chats.filter((c) => c.compare && c.worktree.removed).length === 1);
 });
 
+appTest('✨ writes commit messages and pull requests with the agent of the chat', async ({ w, dir }) => {
+  const g = (...a) => require('child_process').execFileSync('git', a, { cwd: dir, env: { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@x' } }).toString();
+  fs.appendFileSync(path.join(dir, 'cart.js'), '// more\n');
+  const message = await w.evaluate(() => desk.git.suggest('cursor'));
+  assert.match(message, /^\[cursor\] \[ask\] got: Write a git commit message/);
+  g('checkout', '-q', '-b', 'more');
+  g('commit', '-qam', 'More');
+  const pr = await w.evaluate(() => desk.git.pr('copilot'));
+  assert.match(pr.title, /^\[copilot\] \[ask\] got: Write a pull request for this branch \(more, going into main\)/);
+  assert.equal(pr.branch, 'more');
+});
+
 appTest('a second opinion marks its findings in the editor', async ({ w }) => {
   await w.evaluate(() => startOpinion({ id: 'copilot', label: 'Copilot' }, ['cart.js'], activeChat()));
   await w.waitForSelector('.card.findings', { timeout: 30000 });

@@ -190,8 +190,9 @@ async function compareUrl(cwd, base, branch) {
   return m ? `https://github.com/${m[1]}/${m[2]}/compare/${base.replace(/^origin\//, '')}...${encodeURIComponent(branch)}?expand=1` : null;
 }
 
-// Asks Claude (Haiku) for a pull request title and description of this branch's work.
-async function suggestPullRequest(cwd, bin, extraEnv = {}) {
+// Asks an agent for a pull request title and description of this branch's work. ask(prompt) gets
+// one reply: Claude Haiku's (askHaiku), or another agent's.
+async function suggestPullRequest(cwd, ask) {
   const base = await baseBranch(cwd);
   if (!base) throw new Error("Couldn't find the branch to compare with (no main or master).");
   const branch = (await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
@@ -203,7 +204,7 @@ async function suggestPullRequest(cwd, bin, extraEnv = {}) {
     '(under 72 characters, no prefix), a blank line, then the description in Markdown: what changes for someone using it, ' +
     'then briefly how it works and anything a reviewer should look at. Keep it short. No code fences around the reply.\n\n' +
     `Commits:\n${commits.slice(0, 8000)}\n\nDiff:\n${diff.slice(0, 60000)}`;
-  const text = await runHaiku(cwd, bin, extraEnv, prompt);
+  const text = clean(await ask(prompt));
   const [title, ...rest] = text.split('\n');
   return { title: title.replace(/^#+\s*|^title:\s*/i, '').trim(), body: rest.join('\n').trim(), base, branch, url: await compareUrl(cwd, base, branch) };
 }
@@ -230,8 +231,8 @@ async function sync(cwd, action) {
   return git(cwd, args, { env: { GIT_TERMINAL_PROMPT: '0' } });
 }
 
-// Asks Claude (Haiku, one shot) for a commit message describing the current changes.
-async function suggestMessage(cwd, bin, extraEnv = {}) {
+// Asks an agent (as for suggestPullRequest) for a commit message describing the current changes.
+async function suggestMessage(cwd, ask) {
   let diff = await git(cwd, ['diff', 'HEAD', '--stat', '--patch', '--no-color']).catch(() => '');
   const untracked = (await git(cwd, ['ls-files', '--others', '--exclude-standard']).catch(() => '')).trim();
   if (untracked) diff += `\n\nNew files:\n${untracked}`;
@@ -240,8 +241,13 @@ async function suggestMessage(cwd, bin, extraEnv = {}) {
     'Write a git commit message for this diff. First line: imperative summary under 72 characters. ' +
     'Then, only if useful, a blank line and up to 3 short bullet points. Reply with the message only, no code fences.\n\n' +
     diff.slice(0, 60000);
-  return runHaiku(cwd, bin, extraEnv, prompt);
+  return clean(await ask(prompt));
 }
+
+const clean = (text) => String(text || '').trim().replace(/^```\w*\n?|```$/g, '').trim();
+
+// Claude Haiku, one shot, with no tools.
+const askHaiku = (cwd, bin, extraEnv) => (prompt) => runHaiku(cwd, bin, extraEnv, prompt);
 
 async function runHaiku(cwd, bin, extraEnv, prompt) {
   const env = await cli.childEnv(extraEnv);
@@ -262,4 +268,4 @@ async function runHaiku(cwd, bin, extraEnv, prompt) {
   });
 }
 
-module.exports = { status, headContent, commitAll, checkout, sync, suggestMessage, abortOperation, continueOperation, markResolved, blame, log, commitFiles, fileAt, suggestPullRequest };
+module.exports = { status, headContent, commitAll, checkout, sync, suggestMessage, askHaiku, abortOperation, continueOperation, markResolved, blame, log, commitFiles, fileAt, suggestPullRequest };

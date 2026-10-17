@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr, queueEditorComments, linearSection */
+/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr, queueEditorComments, linearSection, activeChat, agentOf, agentLabel */
 'use strict';
 
 // ------------------------------------------------------------------ source control panel
@@ -124,11 +124,11 @@ function renderGit() {
     'button',
     {
       class: 'btn small',
-      title: 'Ask Claude (Haiku) to write the message',
+      title: `Ask ${writerLabel()} to write the message`,
       disabled: !s.files.length || !!git.busy,
       onclick: () =>
         gitAction('suggest', async () => {
-          const m = await desk.git.suggest();
+          const m = await desk.git.suggest(...writerArgs());
           if (m) git.message = m;
         }),
     },
@@ -355,8 +355,18 @@ async function showCommitDiff(c, f) {
 
 // ---------- pull request
 
+// ✨ writes with the agent of the chat you're in (Claude's quick Haiku model for Claude).
+const writerArgs = () => {
+  const c = activeChat();
+  return c ? [agentOf(c), c.agentAccount || undefined] : [];
+};
+const writerLabel = () => {
+  const c = activeChat();
+  return !c || agentOf(c) === 'claude' ? 'Claude (Haiku)' : agentLabel(c);
+};
+
 async function pullRequest() {
-  const pr = await gitAction('pr', () => desk.git.pr());
+  const pr = await gitAction('pr', () => desk.git.pr(...writerArgs()));
   if (!pr) return;
   const title = h('input', { class: 'big', value: pr.title, spellcheck: 'true' });
   const body = h('textarea', { class: 'pr-body', rows: 14, spellcheck: 'true' });

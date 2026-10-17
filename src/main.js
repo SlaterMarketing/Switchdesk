@@ -716,6 +716,57 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   return chat;
 }
 
+// One reply from an agent, outside any chat: it gets the prompt in Ask mode, may not use tools, and
+// is closed once it answers. For ✨ commit messages and pull requests with agents other than Claude.
+async function askOnce(ctx, agent, agentAccount, prompt) {
+  const a = agents.AGENTS[agent] || agents.AGENTS.claude;
+  agent = agents.AGENTS[agent] ? agent : 'claude';
+  const bin = ctx.remote ? a.bins[0] : await agents.findBin(agent, settings);
+  if (!bin) throw new Error(`${a.label} isn't installed yet. Open Settings → Agents to install it.`);
+  if (a.key && !agents.readKey(settings, agent, agentAccount)) throw new Error(`Add your ${a.key.name} in Settings → Agents first.`);
+  const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
+  const cwd = ctx.workspace;
+  let streamed = '';
+  let whole = '';
+  let settle;
+  const done = new Promise((resolve, reject) => (settle = { resolve, reject }));
+  const session = new Session({
+    bin,
+    via: ctx.remote ? (args) => ctx.remote.spawnArgs(cwd, [bin, ...args]) : null,
+    args: a.args || [],
+    label: a.label,
+    authMethod: a.authMethod,
+    cwd,
+    dirs: [],
+    rules: '',
+    env: ctx.remote ? {} : agent === 'claude' ? accounts.envFor(folderAccount(ctx)) : agents.envFor(settings, agent, '', agentAccount),
+    model: agent === 'claude' ? 'haiku' : '',
+    mode: 'ask',
+    onEvent: (ev) => {
+      const e = ev.type === 'stream_event' && ev.event;
+      if (e && e.type === 'content_block_delta' && e.delta && e.delta.type === 'text_delta') streamed += e.delta.text;
+      else if (e && e.type === 'message_start' && streamed) streamed += '\n\n';
+      if (ev.type === 'assistant') for (const b of (ev.message && ev.message.content) || []) if (b.type === 'text') whole += (whole ? '\n\n' : '') + b.text;
+      if (ev.type === 'result') ev.is_error ? settle.reject(new Error(ev.result || `${a.label} couldn't answer.`)) : settle.resolve((typeof ev.result === 'string' && ev.result.trim()) || whole || streamed);
+    },
+    onPermission: async () => ({ behavior: 'deny', message: 'Reply with the text only. No tools are needed.' }),
+    onExit: ({ code, stderr }) => settle.reject(new Error(String(stderr || '').trim().split('\n').pop() || `${a.label} stopped (${code}).`)),
+  });
+  const timer = setTimeout(() => settle.reject(new Error(`${a.label} took too long to answer.`)), 180000);
+  try {
+    await session.start();
+    await session.send([{ type: 'text', text: prompt }], 'ask');
+    return await done;
+  } finally {
+    clearTimeout(timer);
+    try {
+      session.dispose ? session.dispose() : session.close && session.close();
+    } catch {
+      /* gone */
+    }
+  }
+}
+
 // "@⟦api⟧/src/x.js" in a message means the extra folder's file: agents get its real path.
 function withRealPaths(ctx, content) {
   const keyed = roots(ctx).slice(1);
@@ -867,8 +918,6 @@ function registerIpc() {
     'git:log': [],
     'git:commit-files': [],
     'git:file-at': null,
-    'git:pr': notOverSsh('Pull requests'),
-    'git:suggest': '',
     'git:init': notOverSsh('Making a git repository'),
     'git:abort': notOverSsh('That git action'),
     'git:continue': notOverSsh('That git action'),
@@ -1431,7 +1480,14 @@ function registerIpc() {
     } else await git(f.cwd, ['checkout', 'HEAD', '--', f.name]);
   });
   handle('git:init', (ctx) => git(gitCwd(ctx), ['init']));
-  handle('git:suggest', async (ctx) => gitops.suggestMessage(gitCwd(ctx), await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
+  // ✨ writes commit messages and pull requests with the agent you pick: Claude Haiku for Claude here,
+  // else the agent itself, asked once in Ask mode.
+  const writer = async (ctx, agent, agentAccount) => {
+    if ((!agent || agent === 'claude') && !ctx.remote) return gitops.askHaiku(gitCwd(ctx), await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx)));
+    return (prompt) => askOnce(ctx, agent || 'claude', agentAccount, prompt);
+  };
+  const gitHere = (ctx) => (ctx.remote ? remoteGit.cwd(ctx) : gitCwd(ctx));
+  handle('git:suggest', async (ctx, agent, agentAccount) => gitops.suggestMessage(gitHere(ctx), await writer(ctx, agent, agentAccount)));
   // Merge conflicts
   handle('git:abort', (ctx) => gitops.abortOperation(gitCwd(ctx)));
   handle('git:continue', (ctx) => gitops.continueOperation(gitCwd(ctx)));
@@ -1462,7 +1518,7 @@ function registerIpc() {
     const f = fileRepo(ctx, rel);
     return gitops.fileAt(f.cwd, rev, './' + f.name);
   });
-  handle('git:pr', async (ctx) => gitops.suggestPullRequest(gitCwd(ctx), await cli.findClaude(settings.claudePath), accounts.envFor(folderAccount(ctx))));
+  handle('git:pr', async (ctx, agent, agentAccount) => gitops.suggestPullRequest(gitHere(ctx), await writer(ctx, agent, agentAccount)));
 
   // Terminal
   // Terminal ids are per window in the app, so they're prefixed with the window's here.
