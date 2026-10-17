@@ -26,6 +26,7 @@ async function init() {
   wireTerminal();
   wireGit();
   wireGithub();
+  wireBoard();
   wireSearch();
   wireAgents();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));

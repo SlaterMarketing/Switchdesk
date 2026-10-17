@@ -473,6 +473,47 @@ test('a Linear issue: start work on it, and its pull request says it fixes it', 
   }
 });
 
+test('the board: start several at once, and see what each one needs', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const hub = await fakeGithub(dir);
+  const { app, w, errors } = await launch(p, dir, hub.env);
+  const col = (key) => w.$$eval(`#board-view .board-col.${key} .board-title`, (els) => els.map((e) => e.textContent.trim()));
+  try {
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.click('#btn-board');
+    await w.waitForSelector('#board-view .board-empty');
+    // An issue and two typed tasks, each in its own copy.
+    await w.click('#board-view button:has-text("Start several")');
+    await w.check('.modal .board-pick:has-text("Prices need a currency") input');
+    await w.fill('.modal textarea', 'compare-test the board\nsay hello');
+    await w.click('.modal button:has-text("Start")');
+    await until(w, () => chats.filter((c) => c.worktree).length === 3 && chats.every((c) => !c.busy && !c.making), null, 60000);
+    await until(w, () => document.querySelectorAll('#board-view .board-col.review .board-card').length === 2, null, 15000);
+    assert.deepEqual((await col('review')).sort(), ['#3 Prices need a currency', 'compare-test the board']);
+    assert.deepEqual(await col('idle'), ['say hello']);
+    assert.equal(new Set(await w.evaluate(() => chats.filter((c) => c.worktree).map((c) => c.worktree.root))).size, 3, 'three copies');
+    assert.match(await w.$eval('#board-view .board-card:has-text("Prices need a currency")', (e) => e.innerText), /Open pull request/i);
+    // One that plans first asks to run a command: it shows under Needs you, with Answer.
+    await w.click('#board-view button:has-text("Start several")');
+    await w.fill('.modal textarea', 'plan the cart');
+    await w.selectOption('.modal select >> nth=1', 'plan');
+    await w.click('.modal button:has-text("Start")');
+    // (Its plan opens in a tab of its own, so go back to the board.)
+    await until(w, () => chats.some((c) => c.title === 'plan the cart' && c.el.querySelector('.card.plan')), null, 30000);
+    await w.click('#btn-board');
+    await until(w, () => document.querySelectorAll('#board-view .board-col.needs .board-card').length === 1, null, 30000);
+    assert.deepEqual(await col('needs'), ['plan the cart']);
+    await w.click('#board-view .board-col.needs button:has-text("Answer")');
+    assert.equal(await w.evaluate(() => activeChat().title), 'plan the cart');
+    assert.deepEqual(errors, []);
+  } finally {
+    hub.close();
+    await app.close().catch(() => {});
+  }
+});
+
 test('an SSH folder: files, search, git, the terminal, an agent and a pull request all on the host', { timeout: 180000 }, async (t) => {
   const p = profile();
   const server = await sshServer(p);

@@ -504,9 +504,12 @@ async function openIssue(n) {
 // A GitHub issue (#12) or a Linear one (ENG-12).
 const issueRef = (i) => (i.identifier ? i.identifier : `#${i.number}`);
 
-async function startIssue(i, mode) {
+// agent and account: who works on it, when not the agent new chats use (the board starts several).
+async function startIssue(i, mode, { agent, account } = {}) {
   const ref = issueRef(i);
   const chat = createChat({ title: `${ref} ${i.title}`.slice(0, 60) });
+  if (agent) chat.agent = agent;
+  if (account && account !== 'default') chat.agentAccount = account;
   chat.issue = i.identifier ? { linear: true, id: i.id, identifier: i.identifier, title: i.title, url: i.url } : { number: i.number, title: i.title };
   chat.making = true;
   renderWorktreeBar();
@@ -524,7 +527,7 @@ async function startIssue(i, mode) {
   queueSaveWorkspace();
   const talk = i.comments.length ? `\n\nComments on it:\n\n${i.comments.slice(-10).map((c) => `${c.author}: ${c.body}`).join('\n\n')}` : '';
   const prompt = `Work on ${i.identifier ? 'Linear' : 'GitHub'} issue ${ref}: "${i.title}" (opened by ${i.author}).\n\n${i.body.trim() || '(no description)'}${talk}\n\nYou're in your own copy of the repository, on a new branch. Make the change, check it works, and commit with a clear message that mentions ${ref}. Don't push: Switchdesk opens the pull request when you're done.`;
-  setMode(mode);
+  if (chat === activeChat()) setMode(mode);
   send(prompt, mode, `Work on issue ${ref}: ${i.title}`, chat);
 }
 

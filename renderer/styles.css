@@ -891,3 +891,25 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 .pr-where a:hover code { text-decoration: underline; }
 #diff-bar #diff-title, #diff-bar .btn { white-space: nowrap; }
 #diff-bar #diff-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The board (board.js) */
+#board-view { position: absolute; inset: 0; overflow: auto; padding: 20px 24px 48px; background: var(--bg); z-index: 5; display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+.board-head { display: flex; align-items: center; gap: 12px; }
+.board-head h2 { margin: 0; font-size: 18px; }
+.board-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: start; }
+.board-col { display: flex; flex-direction: column; gap: 8px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 80px; }
+.board-col-head { text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 600; }
+.board-col.needs .board-col-head { color: var(--accent); }
+.board-card { display: flex; flex-direction: column; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.board-card.active { border-color: var(--accent); }
+.board-card.needs { border-left: 3px solid var(--accent); }
+.board-title { font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-title:hover { text-decoration: underline; }
+.board-why { color: var(--accent); }
+.board-last { color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.board-card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.board-empty { padding: 40px 0; text-align: center; }
+.board-start { min-width: 460px; }
+.board-picks { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; margin: 6px 0; }
+.board-pick { display: flex; flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
+.board-pick input { width: auto; margin: 0; flex: none; }
+.board-start .row { display: flex; gap: 8px; margin-top: 8px; }

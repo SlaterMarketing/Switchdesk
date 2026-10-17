@@ -182,7 +182,7 @@ function renderTabs() {
           onclick: () => activateTab(t.id),
           onauxclick: (e) => e.button === 1 && closeTab(t.id),
         },
-        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : t.kind === 'plan' ? h('span', { class: 'badge' }, '◆') : t.kind === 'pr' ? h('span', { class: 'badge' }, '⇅') : null,
+        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : t.kind === 'plan' ? h('span', { class: 'badge' }, '◆') : t.kind === 'pr' ? h('span', { class: 'badge' }, '⇅') : t.kind === 'board' ? h('span', { class: 'badge' }, '▦') : null,
         t.rel.split('/').pop(),
         h('button', { class: 'close', onclick: (e) => (e.stopPropagation(), closeTab(t.id)) }, '×')
       )
@@ -209,6 +209,7 @@ function activateTab(id) {
   showPlan(t);
   showNotebook(t);
   showPr(t);
+  showBoard(t);
   if (t && (t.kind === 'file' || t.kind === 'plan')) {
     editor.setModel(t.model);
     if (t.viewState) editor.restoreViewState(t.viewState);
@@ -235,6 +236,7 @@ function closeTab(id) {
   if (t.kind === 'file' || t.kind === 'plan') t.model.dispose();
   else if (t.kind === 'preview') $('#preview').classList.add('hidden');
   else if (t.kind === 'pr') showPr(null);
+  else if (t.kind === 'board') showBoard(null);
   else {
     t.original.dispose();
     t.modified.dispose();
@@ -251,6 +253,7 @@ function closeTab(id) {
       $('#editor').classList.remove('hidden');
       showNotebook(null);
       showPr(null);
+      showBoard(null);
     }
   }
   renderTabs();
