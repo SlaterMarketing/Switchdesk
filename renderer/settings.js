@@ -130,11 +130,15 @@ async function settingsInstructions(body) {
   );
 }
 
+// Commands that can't be taken back: the always-ask list until you change it (as in src/permissions.js).
+const ASK_DEFAULTS = ['rm -rf', 'rm -fr', 'git push --force', 'git push -f', 'git reset --hard', 'git clean -f', 'npm publish', 'terraform apply', 'terraform destroy', 'kubectl delete', 'drop database'];
+
 // Switchdesk's rules apply to every agent: each request to run or change something comes through
 // the app, and these answer it before you're asked (src/permissions.js).
+
 async function settingsPermissions(body) {
   const rerender = () => settingsPermissions(body);
-  const pol = { skipAll: false, commands: false, edits: false, web: false, allow: [], deny: [], ...(state.settings.permissions || {}) };
+  const pol = { skipAll: false, commands: false, edits: false, web: false, allow: [], deny: [], ask: ASK_DEFAULTS, ...(state.settings.permissions || {}) };
   const save = async (patch) => {
     state.settings = await desk.setSettings({ permissions: { ...pol, ...patch } });
     renderPermissionBadge();
@@ -179,6 +183,7 @@ async function settingsPermissions(body) {
       toggle('web', 'Fetch web pages and search without asking', '')
     ),
     list('allow', 'Always allowed commands', 'A rule matches the command and anything after it: "npm test" also allows "npm test -- --watch". Use * as a wildcard. Commands joined with && or | are allowed only if every part is. "Always allow" on an approval card adds a rule here.', 'e.g. npm test, git status, pytest'),
+    list('ask', 'Always ask first', "These always ask you, whatever else would say yes: skipped prompts, \"Run any command\", an allowed rule, or an agent in Auto mode. Matched like the rules above. It starts with commands that can't be taken back.", 'e.g. git push --force, npm publish, ./deploy.sh'),
     list('deny', 'Always blocked commands', 'Refused for every agent, even with prompts skipped. A command is blocked if any part of it matches.', 'e.g. rm -rf, git push --force, npm publish'),
     ...(await claudePermissionBoxes(body))
   );

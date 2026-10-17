@@ -123,8 +123,10 @@ function readPlan(file) {
 }
 
 class AcpSession {
-  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, mcp, via, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, mcp, via, onEvent, onPermission, onExit });
+  // holdAuto: Auto mode doesn't ask about anything, so with always-ask rules the agent stays in its
+  // asking mode and Switchdesk says yes to all but those (permissions.js, autoApprove).
+  constructor({ bin, args, cwd, dirs, rules, env, sessionId, model, mode, label, authMethod, mcp, via, onEvent, onPermission, onExit, holdAuto }) {
+    Object.assign(this, { bin, args: args || [], cwd, dirs: dirs || [], rules: rules || '', extraEnv: env || {}, sessionId, model, mode, label: label || 'The agent', authMethod, mcp, via, onEvent, onPermission, onExit, holdAuto: !!holdAuto });
     this.alive = false;
     this.modes = [];
     this.tools = new Map();
@@ -191,7 +193,7 @@ class AcpSession {
   async applyMode() {
     if (!this.modes.length) return;
     const ids = this.modes.map((m) => m.id);
-    const want = (MODE_PREFS[this.mode] || []).map((x) => ids.find((id) => id.toLowerCase().replace(/_/g, '-') === x)).find(Boolean);
+    const want = (MODE_PREFS[this.mode === 'auto' && this.holdAuto ? 'agent' : this.mode] || []).map((x) => ids.find((id) => id.toLowerCase().replace(/_/g, '-') === x)).find(Boolean);
     if (!want || want === this.currentMode) return;
     try {
       await this.rpc.request('session/set_mode', { sessionId: this.sessionId, modeId: want }, 15000);

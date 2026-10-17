@@ -48,8 +48,9 @@ function spawnCodex(bin, args, opts) {
 }
 
 class CodexSession {
-  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, mcp, via, onEvent, onPermission, onExit }) {
-    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, mcp, via, onEvent, onPermission, onExit });
+  // holdAuto: as for ACP agents, Auto mode asks about untrusted commands, so the always-ask rules apply.
+  constructor({ bin, cwd, dirs, env, sessionId, model, effort, mode, unrestricted, mcp, via, onEvent, onPermission, onExit, holdAuto }) {
+    Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, model, effort, mode, unrestricted: !!unrestricted, mcp, via, onEvent, onPermission, onExit, holdAuto: !!holdAuto });
     this.alive = false;
     this.items = new Map(); // itemId -> item, for approvals that only name the item
     this.turnId = null;
@@ -77,7 +78,7 @@ class CodexSession {
     });
     await this.rpc.request('initialize', { clientInfo: { name: 'switchdesk', title: 'Switchdesk', version: '1' }, capabilities: { experimentalApi: false, requestAttestation: false } }, 30000);
     this.rpc.notify('initialized');
-    const m = MODE[this.mode] || MODE.agent;
+    const m = (this.mode === 'auto' && this.holdAuto ? MODE.agent : MODE[this.mode]) || MODE.agent;
     const common = { cwd: this.cwd, approvalPolicy: m.approval, sandbox: this.unrestricted && m.sandbox !== 'read-only' ? 'danger-full-access' : m.sandbox, model: this.model || null, ...(this.dirs.length ? { developerInstructions: dirsNote(this.dirs) } : {}) };
     let r;
     if (this.sessionId) {
@@ -103,7 +104,7 @@ class CodexSession {
         input.push({ type: 'localImage', path: file });
       }
     }
-    const m = MODE[this.mode] || MODE.agent;
+    const m = (this.mode === 'auto' && this.holdAuto ? MODE.agent : MODE[this.mode]) || MODE.agent;
     this.turnStarted = Date.now();
     try {
       const r = await this.rpc.request('turn/start', {

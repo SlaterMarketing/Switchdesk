@@ -678,6 +678,8 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     effort,
     mode,
     unrestricted: permissions.policyOf(settings).skipAll,
+    askRules: permissions.claudeAskRules(settings),
+    holdAuto: permissions.policyOf(settings).ask.length > 0,
     onEvent: (ev) => {
       backgroundTurn(ctx, chatId, chat, ev);
       trackStream(ctx, chat.turn, ev);
@@ -692,8 +694,11 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
           const abs = P(ctx).resolve(chat.cwd || ctx.workspace || '', f);
           return (chat.cwd && within(chat.cwd, abs, P(ctx))) || inWorkspace(ctx, abs);
         };
-        const auto = permissions.decide(settings, req, { mode: chat.mode, inWorkspace: inFolders });
-        if (auto) {
+        // Other agents asked in Auto mode only because of the always-ask rules (holdAuto): the rest is yes.
+        const autoApprove = chat.mode === 'auto' && agent !== 'claude' && chat.session.holdAuto;
+        const auto = permissions.decide(settings, req, { mode: chat.mode, inWorkspace: inFolders, autoApprove });
+        if (auto && auto.behavior === 'ask') req = { ...req, description: `It matches your always-ask rule "${auto.rule}" (Settings → Permissions).` };
+        else if (auto) {
           if (auto.behavior === 'deny' && auto.rule) {
             const what = permissions.SHELL_TOOLS.has(req.toolName) ? `\`${String(req.input.command || '').slice(0, 200)}\`` : req.toolName;
             sendTo(ctx, 'chat-event', { chatId, ev: { type: 'system', subtype: 'notice', text: `Blocked ${what}: it matches your rule "${auto.rule}" (Settings → Permissions).` } });
@@ -823,6 +828,7 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
   chat.turn = turn;
   chat.mode = mode;
   chat.session.unrestricted = permissions.policyOf(settings).skipAll;
+  chat.session.holdAuto = permissions.policyOf(settings).ask.length > 0;
   await chat.session.send(withRealPaths(ctx, content), mode);
   return { turnId: turn.id };
 }

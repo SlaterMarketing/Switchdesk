@@ -5,9 +5,13 @@
 //   skipAll  answer yes to everything else, without asking
 //   commands run any command        edits  edit and read files in the open folders
 //   web      fetch pages and search   allow  commands (and tools) that are always fine
+//   ask      commands that always ask you first, whatever else says yes: prompts skipped, any
+//            command allowed, an allow rule, or the agent in Auto mode
 'use strict';
 
-const DEFAULTS = { skipAll: false, commands: false, edits: false, web: false, allow: [], deny: [] };
+// Commands that can't be taken back. renderer/settings.js shows the same list.
+const ASK_DEFAULTS = ['rm -rf', 'rm -fr', 'git push --force', 'git push -f', 'git reset --hard', 'git clean -f', 'npm publish', 'terraform apply', 'terraform destroy', 'kubectl delete', 'drop database'];
+const DEFAULTS = { skipAll: false, commands: false, edits: false, web: false, allow: [], deny: [], ask: ASK_DEFAULTS };
 const SHELL = new Set(['Bash', 'PowerShell', 'Shell', 'BashOutput']);
 const EDITS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const READS = new Set(['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']);
@@ -83,11 +87,13 @@ const looksOnly = (part) => !WRITES.test(part) && LOOKS.some((r) => matches(r, p
 // The plan files agents keep while planning (Gemini's plans folder, Cursor's .plan.md).
 const isPlanFile = (f) => /[\\/]plans?[\\/][^\\/]+\.md$/i.test(f) || /\.plan\.md$/i.test(f);
 
-// Returns { behavior: 'allow' | 'deny', message?, rule? }, or null to ask the user.
-// inWorkspace(path) says whether a file is in the window's open folders.
+// Returns { behavior: 'allow' | 'deny', message?, rule? }, or null to ask the user, or
+// { behavior: 'ask', rule } to ask because of an always-ask rule.
+// inWorkspace(path) says whether a file is in the window's open folders. autoApprove: the agent is
+// in Auto mode but asks Switchdesk anyway (because of the always-ask rules), so everything else is yes.
 // Ask and Plan mode follow the same rules, except that file edits always ask (agents are meant to
 // only look while planning), and read-only commands never do.
-function decide(settings, { toolName, input }, { mode, inWorkspace }) {
+function decide(settings, { toolName, input }, { mode, inWorkspace, autoApprove }) {
   if (ALWAYS_ASK.has(toolName)) return null;
   // Switchdesk's own Preview tools only look at and click around the page in the Preview.
   if (/switchdesk[-_]preview|^preview_(open|screenshot|page|click|type|console|eval)$/.test(toolName || '')) return { behavior: 'allow' };
@@ -100,7 +106,11 @@ function decide(settings, { toolName, input }, { mode, inWorkspace }) {
       const rule = pol.deny.find((r) => matches(r, part));
       if (rule) return { behavior: 'deny', rule, message: `Blocked by the user's Switchdesk permission rules ("${rule}"). Don't run this command or work around the block; if it's needed, explain why and ask the user to run it.` };
     }
-    if (pol.skipAll || pol.commands) return { behavior: 'allow' };
+    for (const part of parts) {
+      const rule = (pol.ask || []).find((r) => matches(r, part) || matches(r.toLowerCase(), part.toLowerCase()));
+      if (rule) return { behavior: 'ask', rule };
+    }
+    if (pol.skipAll || pol.commands || autoApprove) return { behavior: 'allow' };
     if (parts.length && parts.every((part) => pol.allow.some((r) => matches(r, part)) || (looking && looksOnly(part)))) return { behavior: 'allow', rule: 'allow-list' };
     return null;
   }
@@ -109,7 +119,7 @@ function decide(settings, { toolName, input }, { mode, inWorkspace }) {
     .split(', ')
     .filter(Boolean);
   if (EDITS.has(toolName) && looking) return mode === 'plan' && files.length && files.every(isPlanFile) ? { behavior: 'allow' } : null;
-  if (pol.skipAll) return { behavior: 'allow' };
+  if (pol.skipAll || autoApprove) return { behavior: 'allow' };
   if (looking && READS.has(toolName)) return { behavior: 'allow' };
   if (EDITS.has(toolName) || READS.has(toolName)) {
     if (pol.edits && (!files.length ? READS.has(toolName) : files.every((f) => inWorkspace(f)))) return { behavior: 'allow' };
@@ -120,4 +130,12 @@ function decide(settings, { toolName, input }, { mode, inWorkspace }) {
   return null;
 }
 
-module.exports = { SHELL_TOOLS: SHELL, DEFAULTS, policyOf, decide, splitCommand, matches, looksOnly };
+// The always-ask rules as Claude Code permission rules, so Claude asks for them in its own Auto
+// mode too ("git push --force" -> "Bash(git push --force:*)").
+const claudeAskRules = (settings) =>
+  (policyOf(settings).ask || [])
+    .map((r) => r.trim().replace(/\s*\*$/, ''))
+    .filter((r) => r && !r.includes('*') && !/[()]/.test(r))
+    .map((r) => `Bash(${r}:*)`);
+
+module.exports = { SHELL_TOOLS: SHELL, DEFAULTS, ASK_DEFAULTS, policyOf, decide, splitCommand, matches, looksOnly, claudeAskRules };
