@@ -272,6 +272,8 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   assert.equal(saved.cells[1].outputs[1].data['text/plain'], '42');
   // A new cell, typed and run with Shift+Enter; the kernel remembers x.
   await w.click('#nb-view .nb-adder button:has-text("Code")');
+  // Type once the new cell's editor has the focus, so no key goes elsewhere.
+  await until(w, () => { const codes = document.querySelectorAll('#nb-view .nb-code'); return codes.length === 5 && codes[4].contains(document.activeElement); });
   await w.keyboard.type('print(x + 1)');
   await w.keyboard.press('Shift+Enter');
   await until(w, () => /43/.test(document.querySelectorAll('#nb-view .nb-outputs')[4]?.innerText || ''), null, 30000).catch(async () => {
