@@ -35,7 +35,7 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 
 Switchdesk never sees your logins. Switch any chat to another agent or account from the menu in the chat box and the new one picks up the conversation where the last left off, in the same tab.
 
-Switchdesk was called Claude Desk until version 0.8. It isn't made by or affiliated with Anthropic, OpenAI, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
+Switchdesk isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere (Cursor), Moonshot, Google, Alibaba or DeepSeek.
 
 ## What you get
 
