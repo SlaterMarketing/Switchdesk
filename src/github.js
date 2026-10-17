@@ -153,10 +153,19 @@ async function getPr(settings, repo, n) {
     request(settings, 'GET', `${base}/reviews?per_page=100`),
     checks(settings, repo, p.head.sha),
   ]);
+  // Each reviewer's latest verdict.
+  const verdicts = new Map();
+  for (const r of reviews) if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED') verdicts.set(who(r.user), r.state);
   return {
     number: p.number,
+    nodeId: p.node_id,
     title: p.title,
     body: p.body || '',
+    mergeable: p.mergeable,
+    // clean, blocked (needs reviews or checks), dirty (conflicts), behind, unstable (checks failing), draft or unknown
+    mergeState: p.mergeable_state || 'unknown',
+    requested: (p.requested_reviewers || []).map(who),
+    verdicts: [...verdicts].filter(([, v]) => v !== 'DISMISSED').map(([login, state]) => ({ login, state })),
     author: who(p.user),
     draft: !!p.draft,
     state: p.merged_at ? 'merged' : p.state,
@@ -236,6 +245,20 @@ async function postReview(settings, repo, n, { sha, body, comments }) {
   }
 }
 
+async function graphql(settings, query, variables) {
+  const r = await request(settings, 'POST', `${API.replace(/\/v3$/, '')}/graphql`, { query, variables });
+  if (r.errors && r.errors.length) throw new Error(r.errors.map((e) => e.message).join('; '));
+  return r.data;
+}
+
+const readyForReview = (settings, nodeId) => graphql(settings, 'mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }', { id: nodeId });
+const requestReviewers = (settings, repo, n, logins) => request(settings, 'POST', `${repoPath(repo)}/pulls/${n}/requested_reviewers`, { reviewers: logins });
+const approve = (settings, repo, n, body) => request(settings, 'POST', `${repoPath(repo)}/pulls/${n}/reviews`, { event: 'APPROVE', body: body || '' });
+const merge = (settings, repo, n, { method, title, sha }) => request(settings, 'PUT', `${repoPath(repo)}/pulls/${n}/merge`, { merge_method: method || 'merge', commit_title: title || undefined, sha: sha || undefined });
+const deleteBranch = (settings, repo, ref) => request(settings, 'DELETE', `${repoPath(repo)}/git/refs/heads/${ref.split('/').map(encodeURIComponent).join('/')}`);
+const collaborators = (settings, repo) => request(settings, 'GET', `${repoPath(repo)}/collaborators?per_page=100`).then((l) => l.map(who), () => []);
+const checksOf = (settings, repo, sha) => checks(settings, repo, sha);
+
 const createPr = (settings, repo, { head, base, title, body, draft }) => request(settings, 'POST', `${repoPath(repo)}/pulls`, { head, base, title, body, draft: !!draft }).then((p) => ({ number: p.number, url: p.html_url }));
 const reply = (settings, repo, n, commentId, body) => request(settings, 'POST', `${repoPath(repo)}/pulls/${n}/comments/${commentId}/replies`, { body });
 const defaultBranch = (settings, repo) => request(settings, 'GET', repoPath(repo)).then((r) => r.default_branch);
@@ -247,4 +270,4 @@ async function pushUrl(settings, repo) {
   return token ? `https://x-access-token:${token}@github.com/${repo.owner}/${repo.name}.git` : null;
 }
 
-module.exports = { parseRepo, repoOf, status, sealToken, listPrs, getPr, checkLog, listIssues, getIssue, postReview, createPr, reply, defaultBranch, pushUrl, forgetCli: () => (cliCache = { at: 0, token: null }) };
+module.exports = { parseRepo, repoOf, status, sealToken, listPrs, getPr, checksOf, readyForReview, requestReviewers, approve, merge, deleteBranch, collaborators, checkLog, listIssues, getIssue, postReview, createPr, reply, defaultBranch, pushUrl, forgetCli: () => (cliCache = { at: 0, token: null }) };

@@ -1,5 +1,6 @@
 /* global $, h, state, desk, toast, modal, git, renderGit, renderMarkdown, activeTab, activateTab, renderTabs, chats, activeChat, createChat, switchChat,
-   renderChatTabs, renderWorktreeBar, refreshWorktree, appendChat, send, compareChoices, agentOf, agentLabel, setMode, queueSaveWorkspace, ago, cleanErr */
+   renderChatTabs, renderWorktreeBar, refreshWorktree, appendChat, send, compareChoices, agentOf, agentLabel, setMode, queueSaveWorkspace, ago, cleanErr,
+   discardWorktree, refreshGit */
 'use strict';
 
 // ------------------------------------------------------------------ GitHub: pull requests and issues
@@ -226,6 +227,18 @@ function renderPr(t) {
       { class: 'pr-head' },
       h('h2', {}, p.title, h('span', { class: 'muted' }, ` #${p.number}`)),
       h('div', { class: 'muted small' }, h('span', { class: `pr-state ${p.state}${p.draft ? ' draft' : ''}` }, p.draft ? 'Draft' : p.state === 'merged' ? 'Merged' : p.state === 'closed' ? 'Closed' : 'Open'), ` ${p.author} wants to merge `, h('code', {}, p.head), ' into ', h('code', {}, p.base)),
+      reviewLine(p),
+      chat && chat.pr.watch ? h('div', { class: 'small pr-watch' }, h('span', { class: 'spinner' }), ` Watching its checks${chat.pr.watch.autoFix ? `; failures go back to ${agentLabel(chat)} to fix (${chat.pr.watch.tries} of ${MAX_FIXES} tries used)` : ''}.`, h('a', { href: '#', onclick: (e) => (e.preventDefault(), (chat.pr.watch = null), queueSaveWorkspace(), renderPr(t)) }, ' Stop')) : null,
+      p.state === 'open'
+        ? h(
+            'div',
+            { class: 'actions' },
+            p.draft ? h('button', { class: 'btn small', onclick: () => readyPr(t) }, 'Ready for review') : null,
+            h('button', { class: 'btn small', onclick: () => requestReview(t) }, 'Request review'),
+            h('button', { class: 'btn small', onclick: () => approvePr(t) }, 'Approve'),
+            h('button', { class: `btn small${p.mergeState === 'clean' ? ' primary' : ''}`, title: MERGE_WHY[p.mergeState] || '', onclick: () => mergePr(t) }, 'Merge…')
+          )
+        : null,
       h(
         'div',
         { class: 'actions' },
@@ -251,6 +264,17 @@ function renderPr(t) {
   );
 }
 
+// Who approved, who asked for changes, and who hasn't reviewed yet.
+function reviewLine(p) {
+  const bits = [
+    ...p.verdicts.map((v) => `${v.login} ${v.state === 'APPROVED' ? 'approved' : 'asked for changes'}`),
+    ...(p.requested.length ? [`waiting on ${p.requested.join(', ')}`] : []),
+  ];
+  const state = { clean: 'Ready to merge', dirty: 'Has conflicts', blocked: 'Not mergeable yet', unstable: 'Checks failing', behind: 'Behind its base branch' }[p.mergeState];
+  if (!bits.length && !state) return null;
+  return h('div', { class: 'small pr-reviews' }, [state, ...bits].filter(Boolean).join(' · '));
+}
+
 const REVIEW_TEXT = { APPROVED: 'approved', CHANGES_REQUESTED: 'asked for changes', COMMENTED: 'reviewed' };
 
 function diffLines(text) {
@@ -268,7 +292,7 @@ async function chatForPr(p) {
   let chat = prChat(p.number);
   if (chat) return chat;
   chat = createChat({ title: `PR #${p.number}: ${p.title}`.slice(0, 60) });
-  chat.pr = { number: p.number, title: p.title, head: p.head, base: p.base, sameRepo: p.sameRepo, threads: [] };
+  chat.pr = { number: p.number, title: p.title, head: p.head, base: p.base, sameRepo: p.sameRepo, threads: [], pushedSha: p.headSha };
   chat.making = true;
   renderWorktreeBar();
   try {
@@ -292,6 +316,10 @@ async function fixPr(p, items) {
   const chat = await chatForPr(p);
   if (!chat) return;
   switchChat(chat.id);
+  await sendFixes(chat, p, items);
+}
+
+async function sendFixes(chat, p, items, note = '') {
   const parts = [];
   for (const it of items) {
     if (it.kind === 'check') {
@@ -307,9 +335,9 @@ async function fixPr(p, items) {
     }
   }
   const what = items.length > 1 ? 'these' : 'this';
-  const prompt = `You're working on pull request #${p.number} "${p.title}" (branch \`${p.head}\` into \`${p.base}\`), in your own copy of the repository checked out at its latest commit. Fix ${what}:\n\n${parts.join('\n\n')}\n\nCheck each one against the code first and fix what's real; if you think something is wrong, say why instead. Keep the changes small, run whatever checks the failure involves, then commit with a clear message. Don't push: Switchdesk pushes to the pull request when you're done.`;
+  const prompt = `You're working on pull request #${p.number} "${p.title}" (branch \`${p.head}\` into \`${p.base}\`), in your own copy of the repository checked out at its latest commit. ${note}Fix ${what}:\n\n${parts.join('\n\n')}\n\nCheck each one against the code first and fix what's real; if you think something is wrong, say why instead. Keep the changes small, run whatever checks the failure involves, then commit with a clear message. Don't push: Switchdesk pushes to the pull request when you're done.`;
   const shown = items.length > 1 ? `Fix ${items.length} things on PR #${p.number}` : items[0].kind === 'check' ? `Fix the failing check "${items[0].check.name}" on PR #${p.number}` : items[0].kind === 'comment' ? `Fix the review comment on ${items[0].thread.path} in PR #${p.number}` : `Fix "${items[0].finding.title}" on PR #${p.number}`;
-  setMode('agent');
+  if (chat === activeChat()) setMode('agent');
   send(prompt, 'agent', shown, chat);
 }
 
@@ -320,6 +348,7 @@ async function pushToPr(chat) {
   if (!pr.sameRepo) return toast("This pull request comes from someone's fork, so Switchdesk can't push to it. Use Merge into my folder, or push to the fork yourself.");
   const message = h('input', { class: 'big', value: `Address review on #${pr.number}`, spellcheck: 'true' });
   const replyBox = h('input', { type: 'checkbox', checked: !!(pr.threads || []).length });
+  const green = keepGreenBox();
   const go = h('button', { class: 'btn primary' }, 'Push');
   const close = modal([
     h(
@@ -328,7 +357,8 @@ async function pushToPr(chat) {
       h('h3', {}, `Push to PR #${pr.number}?`),
       h('p', { class: 'muted small' }, `The agent's commits go to the branch ${pr.head} on GitHub. Anything it left uncommitted is committed first with this message:`),
       message,
-      (pr.threads || []).length ? h('label', { class: 'check' }, replyBox, ` Reply "Fixed in …" on the ${pr.threads.length} review comment${pr.threads.length > 1 ? 's' : ''} it was asked to fix`) : null
+      (pr.threads || []).length ? h('label', { class: 'check' }, replyBox, ` Reply "Fixed in …" on the ${pr.threads.length} review comment${pr.threads.length > 1 ? 's' : ''} it was asked to fix`) : null,
+      green.el
     ),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go),
   ]);
@@ -342,7 +372,9 @@ async function pushToPr(chat) {
       const short = r.sha.slice(0, 7);
       if (replyBox.checked) for (const id of pr.threads || []) await desk.github.reply(pr.number, id, `Fixed in ${short}.`).catch(() => {});
       pr.threads = [];
-      appendChat(h('div', { class: 'notice' }, `Pushed ${short} to PR #${pr.number}. Its checks run again on GitHub.`), chat);
+      pr.pushedSha = r.sha;
+      appendChat(h('div', { class: 'notice' }, `Pushed ${short} to PR #${pr.number}. ${green.watch() ? "Switchdesk is watching its checks and will tell you how they go." : 'Its checks run again on GitHub.'}`), chat);
+      if (green.watch()) startWatch(chat, r.sha, green.fix());
       refreshWorktree(chat);
       refreshPrTab(pr.number);
       gh.at = 0;
@@ -485,9 +517,10 @@ async function openPrFromCopy(chat) {
   const body = h('textarea', { class: 'pr-body', rows: 10, spellcheck: 'true' });
   body.value = `Closes #${issue.number}.\n\n${last ? last.innerText.trim() : ''}`.trim();
   const draft = h('input', { type: 'checkbox' });
+  const green = keepGreenBox();
   const go = h('button', { class: 'btn primary' }, 'Open pull request');
   const close = modal([
-    h('div', { class: 'body' }, h('h3', {}, `Pull request for issue #${issue.number}`), h('p', { class: 'muted small' }, `Pushes the branch ${chat.worktree.branch} to GitHub (committing anything left uncommitted) and opens the pull request.`), title, body, h('label', { class: 'check' }, draft, ' Open it as a draft')),
+    h('div', { class: 'body' }, h('h3', {}, `Pull request for issue #${issue.number}`), h('p', { class: 'muted small' }, `Pushes the branch ${chat.worktree.branch} to GitHub (committing anything left uncommitted) and opens the pull request.`), title, body, h('label', { class: 'check' }, draft, ' Open it as a draft'), green.el),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go),
   ]);
   title.focus();
@@ -495,10 +528,11 @@ async function openPrFromCopy(chat) {
     go.disabled = true;
     go.textContent = 'Opening…';
     try {
-      await desk.worktree.push(chat.worktree, chat.worktree.branch, `${title.value.trim()} (#${issue.number})`);
+      const pushed = await desk.worktree.push(chat.worktree, chat.worktree.branch, `${title.value.trim()} (#${issue.number})`);
       const r = await desk.github.createPr({ head: chat.worktree.branch, title: title.value.trim(), body: body.value, draft: draft.checked });
       close();
-      chat.pr = { number: r.number, title: title.value.trim(), head: chat.worktree.branch, sameRepo: true, threads: [] };
+      chat.pr = { number: r.number, title: title.value.trim(), head: chat.worktree.branch, base: null, sameRepo: true, threads: [], pushedSha: pushed.sha };
+      if (green.watch()) startWatch(chat, pushed.sha, green.fix());
       appendChat(h('div', { class: 'notice' }, `Opened PR #${r.number}. Changes you make in this chat from now on can be pushed to it.`), chat);
       renderWorktreeBar();
       queueSaveWorkspace();
@@ -510,4 +544,221 @@ async function openPrFromCopy(chat) {
       toast(cleanErr(e));
     }
   });
+}
+
+// ------------------------------------------------------------------ keeping a pull request green
+//
+// After a push, Switchdesk watches the pull request's checks. When they pass (or fail and need you)
+// you get a notification. With auto-fix on, a failing check goes back to the agent with its log, and
+// its fix is pushed again, up to MAX_FIXES times.
+
+const WATCH_MS = 30e3;
+const MAX_FIXES = 3;
+const watchBusy = new Set(); // chat ids being checked right now
+let watchTimer = null;
+
+function keepGreenBox() {
+  const watch = h('input', { type: 'checkbox', checked: true });
+  const fix = h('input', { type: 'checkbox', checked: true });
+  watch.addEventListener('change', () => (fix.disabled = !watch.checked));
+  return {
+    el: h('div', { class: 'keep-green' }, h('label', { class: 'check' }, watch, ' Watch its checks and tell me how they go'), h('label', { class: 'check' }, fix, ` If a check fails, have the agent fix it and push again (up to ${MAX_FIXES} tries)`)),
+    watch: () => watch.checked,
+    fix: () => watch.checked && fix.checked,
+  };
+}
+
+function startWatch(chat, sha, autoFix) {
+  chat.pr.watch = { sha, since: Date.now(), tries: 0, autoFix: !!autoFix, fixing: false };
+  queueSaveWorkspace();
+  renderWorktreeBar();
+}
+
+function wireGithub() {
+  clearInterval(watchTimer);
+  watchTimer = setInterval(checkWatches, WATCH_MS);
+}
+
+function checkWatches() {
+  for (const chat of chats) if (chat.pr && chat.pr.watch && !chat.pr.watch.fixing && !chat.busy && !watchBusy.has(chat.id)) watchStep(chat);
+}
+
+async function watchStep(chat) {
+  const pr = chat.pr;
+  const w = pr.watch;
+  watchBusy.add(chat.id);
+  try {
+    const c = await desk.github.checks(w.sha);
+    if (pr.watch !== w) return;
+    const failing = c.list.filter((x) => x.state === 'failing');
+    const names = failing.map((x) => x.name).join(', ');
+    if (c.state === 'passing') stopWatch(chat, `Checks pass on PR #${pr.number}.`, true);
+    else if (c.state === 'failing' && !w.autoFix) stopWatch(chat, `A check failed on PR #${pr.number}: ${names}. Fix it from the pull request's tab.`);
+    else if (c.state === 'failing' && w.tries >= MAX_FIXES) stopWatch(chat, `Checks still fail on PR #${pr.number} after ${MAX_FIXES} tries, so it needs you: ${names}.`);
+    else if (c.state === 'failing') {
+      w.tries++;
+      w.fixing = true;
+      queueSaveWorkspace();
+      appendChat(h('div', { class: 'notice' }, `${names} failed on PR #${pr.number}. Asking ${agentLabel(chat)} to fix it (try ${w.tries} of ${MAX_FIXES}).`), chat);
+      await sendFixes(chat, { number: pr.number, title: pr.title, head: pr.head, base: pr.base || 'the default branch' }, failing.map((check) => ({ kind: 'check', check })), `This is try ${w.tries} of ${MAX_FIXES} at getting its checks to pass, and Switchdesk pushes your commit for you. `);
+    } else if (c.state === 'none' && Date.now() - w.since > 15 * 60e3) stopWatch(chat, `No checks ran on PR #${pr.number}, so Switchdesk stopped watching it.`);
+    else if (Date.now() - w.since > 3 * 3600e3) stopWatch(chat, `PR #${pr.number}'s checks were still running after 3 hours, so Switchdesk stopped watching them.`);
+  } catch {
+    /* offline for now: try again next time */
+  } finally {
+    watchBusy.delete(chat.id);
+  }
+}
+
+function stopWatch(chat, text, good) {
+  chat.pr.watch = null;
+  queueSaveWorkspace();
+  renderWorktreeBar();
+  appendChat(h('div', { class: `notice${good ? ' good' : ''}` }, `${good ? '✓ ' : ''}${text}`), chat);
+  try {
+    const n = new Notification('Switchdesk', { body: text });
+    n.onclick = () => (window.focus(), chats.includes(chat) && switchChat(chat.id));
+  } catch {
+    /* notifications off */
+  }
+  desk.flashWindow();
+  refreshPrTab(chat.pr.number);
+  gh.at = 0;
+}
+
+// The agent's turn on a failing check ended (chat.js calls this): push its fix and keep watching.
+async function prTurnEnded(chat, failed) {
+  const pr = chat.pr;
+  const w = pr && pr.watch;
+  if (!w || !w.fixing) return;
+  w.fixing = false;
+  if (failed) return stopWatch(chat, `The agent stopped before fixing PR #${pr.number}'s checks, so it needs you.`);
+  try {
+    const head = await desk.worktree.head(chat.worktree);
+    if (head.sha === w.sha && !head.dirty) return stopWatch(chat, `${agentLabel(chat)} didn't change anything for PR #${pr.number}'s failing checks, so it needs you.`);
+    const r = await desk.worktree.push(chat.worktree, pr.head, `Fix failing checks on #${pr.number}`);
+    pr.pushedSha = r.sha;
+    w.sha = r.sha;
+    w.since = Date.now();
+    appendChat(h('div', { class: 'notice' }, `Pushed ${r.sha.slice(0, 7)} to PR #${pr.number}. Watching its checks again.`), chat);
+    queueSaveWorkspace();
+    refreshWorktree(chat);
+    refreshPrTab(pr.number);
+  } catch (e) {
+    stopWatch(chat, `Couldn't push the fix to PR #${pr.number}: ${cleanErr(e)}`);
+  }
+}
+
+// ------------------------------------------------------------------ reviewers, approving and merging
+
+async function readyPr(t) {
+  try {
+    await desk.github.ready(t.pr.data.nodeId);
+    toast(`PR #${t.pr.number} is ready for review.`);
+  } catch (e) {
+    toast(cleanErr(e));
+  }
+  loadPr(t);
+}
+
+async function requestReview(t) {
+  const p = t.pr.data;
+  const people = await desk.github.collaborators().catch(() => []);
+  const list = h('datalist', { id: 'gh-people' }, ...people.filter((x) => x !== p.author).map((x) => h('option', { value: x })));
+  const input = h('input', { class: 'big', list: 'gh-people', placeholder: 'GitHub usernames, separated by commas', spellcheck: 'false' });
+  const go = h('button', { class: 'btn primary' }, 'Request review');
+  const close = modal([h('div', { class: 'body' }, h('h3', {}, `Who should review PR #${p.number}?`), input, list), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go)]);
+  input.focus();
+  go.addEventListener('click', async () => {
+    const logins = input.value.split(/[\s,]+/).map((x) => x.replace(/^@/, '')).filter(Boolean);
+    if (!logins.length) return input.focus();
+    try {
+      await desk.github.requestReviewers(p.number, logins);
+      close();
+      toast(`Asked ${logins.join(', ')} to review.`);
+      loadPr(t);
+    } catch (e) {
+      toast(cleanErr(e));
+    }
+  });
+}
+
+async function approvePr(t) {
+  const p = t.pr.data;
+  const note = h('textarea', { rows: 3, class: 'pr-body', placeholder: 'A comment with the approval (optional)' });
+  const go = h('button', { class: 'btn primary' }, 'Approve');
+  const close = modal([h('div', { class: 'body' }, h('h3', {}, `Approve PR #${p.number}?`), note), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go)]);
+  go.addEventListener('click', async () => {
+    try {
+      await desk.github.approve(p.number, note.value.trim());
+      close();
+      toast(`Approved PR #${p.number}.`);
+      loadPr(t);
+    } catch (e) {
+      toast(cleanErr(e));
+    }
+  });
+}
+
+const MERGE_WHY = {
+  dirty: "It has conflicts with the branch it's going into. Fix those first (ask an agent in its chat), then merge.",
+  blocked: 'GitHub says it still needs something first: an approving review or checks that are required to pass.',
+  unstable: "Some checks aren't passing. You can still merge if the repository allows it.",
+  behind: "It's behind the branch it's going into. GitHub may ask you to update it first.",
+  draft: "It's a draft. Mark it ready for review first.",
+};
+
+async function mergePr(t) {
+  const p = t.pr.data;
+  const method = h('select', {}, h('option', { value: 'squash' }, 'Squash and merge'), h('option', { value: 'merge' }, 'Create a merge commit'), h('option', { value: 'rebase' }, 'Rebase and merge'));
+  const title = h('input', { class: 'big', value: `${p.title} (#${p.number})`, spellcheck: 'true' });
+  const del = h('input', { type: 'checkbox', checked: p.sameRepo });
+  const go = h('button', { class: 'btn primary' }, 'Merge');
+  method.addEventListener('change', () => title.classList.toggle('hidden', method.value === 'rebase'));
+  const close = modal([
+    h(
+      'div',
+      { class: 'body' },
+      h('h3', {}, `Merge PR #${p.number} into ${p.base}?`),
+      MERGE_WHY[p.mergeState] ? h('p', { class: 'small merge-why' }, MERGE_WHY[p.mergeState]) : null,
+      method,
+      title,
+      p.sameRepo ? h('label', { class: 'check' }, del, ` Delete the branch ${p.head} afterwards`) : null,
+      h('p', { class: 'muted small' }, `Any copy Switchdesk made for it is removed once everything in it is pushed. If your folder is on ${p.head}, it switches to ${p.base} and pulls.`)
+    ),
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go),
+  ]);
+  go.focus();
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    go.textContent = 'Merging…';
+    try {
+      const r = await desk.github.merge(p.number, { method: method.value, title: method.value === 'rebase' ? undefined : title.value.trim(), sha: p.headSha, head: p.head, base: p.base, deleteBranch: del.checked && p.sameRepo });
+      close();
+      const removed = await removeMergedCopies(p.number);
+      toast(`Merged PR #${p.number}.${r.branchDeleted ? ` Deleted ${p.head}.` : ''}${r.switched ? ` Your folder is on ${p.base} now.` : ''}${removed ? ` Removed ${removed} cop${removed > 1 ? 'ies' : 'y'} of the folder.` : ''}`);
+      refreshGit();
+      refreshGithub(true);
+      loadPr(t);
+    } catch (e) {
+      go.disabled = false;
+      go.textContent = 'Merge';
+      toast(`Couldn't merge: ${cleanErr(e)}`);
+    }
+  });
+}
+
+// The copies a merged pull request's chats worked in, once nothing in them is left unpushed.
+async function removeMergedCopies(n) {
+  let removed = 0;
+  for (const chat of chats.filter((c) => ((c.pr && c.pr.number === n) || (c.opinion && c.opinion.pr && c.opinion.pr.number === n)) && c.worktree && !c.worktree.removed && !c.busy)) {
+    const head = await desk.worktree.head(chat.worktree).catch(() => null);
+    const pushed = chat.opinion ? head && !head.dirty : head && !head.dirty && head.sha === chat.pr.pushedSha;
+    if (!pushed) continue;
+    if (chat.pr) chat.pr.watch = null;
+    await discardWorktree(chat, { silent: true });
+    appendChat(h('div', { class: 'notice' }, `PR #${n} was merged, so this chat's copy of the folder was removed.`), chat);
+    removed++;
+  }
+  return removed;
 }

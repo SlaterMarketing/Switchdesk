@@ -25,6 +25,7 @@ async function init() {
   wireImageInput();
   wireTerminal();
   wireGit();
+  wireGithub();
   wireSearch();
   wireAgents();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));

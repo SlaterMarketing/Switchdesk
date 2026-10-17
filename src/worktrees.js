@@ -188,8 +188,13 @@ async function push(wt, to, { message, pushUrl } = {}) {
   return { sha: (await git(wt.root, ['rev-parse', 'HEAD'])).trim() };
 }
 
+// The copy's latest commit, and whether anything is left uncommitted.
+async function head(wt) {
+  return { sha: (await git(wt.root, ['rev-parse', 'HEAD'])).trim(), dirty: !!(await git(wt.root, ['status', '--porcelain'])).trim() };
+}
+
 function exists(wt) {
   return !!(wt && wt.root && isUnder(wt.root) && fs.existsSync(wt.root));
 }
 
-module.exports = { setBaseDir, isUnder, create, changes, fileDiff, merge, remove, exists, push };
+module.exports = { setBaseDir, isUnder, create, changes, fileDiff, merge, remove, exists, push, head };

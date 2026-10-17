@@ -143,7 +143,8 @@ async function sshServer(p) {
 
 // A stand-in for GitHub's API, serving one pull request (#7, from the branch fix-cart, with a
 // failing check and a review comment) and one issue (#3), for the folder's origin remote (a bare
-// repository on this machine). Everything posted to it is in .posted.
+// repository on this machine). Everything sent to it is in .posted. Checks fail on the pull
+// request's first commit and the next one pushed, and pass from the one after (.passFrom).
 async function fakeGithub(dir) {
   const http = require('http');
   const g = (...a) => execFileSync('git', a, { cwd: dir, env: gitEnv() }).toString().trim();
@@ -159,7 +160,7 @@ async function fakeGithub(dir) {
   execFileSync('git', ['update-ref', 'refs/pull/7/head', sha], { cwd: bare });
   g('checkout', '-q', 'main');
   const user = { login: 'sam' };
-  const pr = { number: 7, title: 'Guard the cart total', body: 'Makes total() safe.', user, draft: false, state: 'open', html_url: 'https://github.com/o/r/pull/7', updated_at: new Date().toISOString(), head: { ref: 'fix-cart', sha, repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
+  const pr = { node_id: 'PR_7', mergeable: true, mergeable_state: 'unstable', requested_reviewers: [], number: 7, title: 'Guard the cart total', body: 'Makes total() safe.', user, draft: false, state: 'open', html_url: 'https://github.com/o/r/pull/7', updated_at: new Date().toISOString(), head: { ref: 'fix-cart', sha, repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
   const issue = { number: 3, title: 'Prices need a currency', body: 'Show prices with £.', user, labels: [{ name: 'bug' }], comments: 0, html_url: 'https://github.com/o/r/issues/3', updated_at: new Date().toISOString() };
   const routes = {
     'GET /user': () => ({ login: 'tester' }),
@@ -170,8 +171,11 @@ async function fakeGithub(dir) {
     'GET /repos/o/r/pulls/7/comments': () => [{ id: 900, path: 'cart.js', line: 2, original_line: 2, body: 'What about a null cart?', user, created_at: new Date().toISOString(), diff_hunk: '@@ -1,3 +1,3 @@\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;' }],
     'GET /repos/o/r/pulls/7/reviews': () => [],
     'GET /repos/o/r/issues/7/comments': () => [],
-    [`GET /repos/o/r/commits/${sha}/check-runs`]: () => ({ check_runs: [{ id: 55, name: 'test', status: 'completed', conclusion: 'failure', app: { slug: 'github-actions' }, html_url: 'https://github.com/o/r/actions/runs/1', output: { title: '1 test failed', summary: '' } }] }),
-    [`GET /repos/o/r/commits/${sha}/status`]: () => ({ statuses: [] }),
+    'GET /repos/o/r/collaborators': () => [{ login: 'sam' }, { login: 'alex' }],
+    'POST /repos/o/r/pulls/7/requested_reviewers': () => ({}),
+    'PUT /repos/o/r/pulls/7/merge': () => ({ merged: true }),
+    'DELETE /repos/o/r/git/refs/heads/fix-cart': () => null,
+    'POST /graphql': () => ({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } }),
     'GET /repos/o/r/actions/jobs/55/logs': () => '2026-10-17T00:00:00.0000000Z Running tests\n2026-10-17T00:00:01.0000000Z ##[error]total(null) threw TypeError\n',
     'GET /repos/o/r/issues': () => [issue, { ...pr, pull_request: {} }],
     'GET /repos/o/r/issues/3': () => issue,
@@ -181,21 +185,31 @@ async function fakeGithub(dir) {
     'POST /repos/o/r/pulls': () => ({ number: 8, html_url: 'https://github.com/o/r/pull/8' }),
   };
   const posted = [];
+  const shas = [sha];
+  const hub = { passFrom: 2 };
+  const checksOf = (s, kind) => {
+    if (kind === 'status') return { statuses: [] };
+    if (!shas.includes(s)) shas.push(s);
+    const pass = shas.indexOf(s) >= hub.passFrom;
+    return { check_runs: [{ id: 55, name: 'test', status: 'completed', conclusion: pass ? 'success' : 'failure', app: { slug: 'github-actions' }, html_url: 'https://github.com/o/r/actions/runs/1', output: { title: pass ? 'All tests pass' : '1 test failed', summary: '' } }] };
+  };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const key = `${req.method} ${req.url.split('?')[0]}`;
-      const route = routes[key];
-      if (req.method === 'POST') posted.push({ key, body: JSON.parse(body || '{}') });
+      const checks = /^GET \/repos\/o\/r\/commits\/(\w+)\/(check-runs|status)$/.exec(key);
+      const route = checks ? () => checksOf(checks[1], checks[2]) : routes[key];
+      if (req.method !== 'GET') posted.push({ key, body: JSON.parse(body || '{}') });
       if (!route) return res.writeHead(404).end(JSON.stringify({ message: `Not Found: ${key}` }));
       const out = route();
+      if (out === null) return res.writeHead(204).end();
       res.writeHead(req.method === 'POST' ? 201 : 200, { 'Content-Type': typeof out === 'string' ? 'text/plain' : 'application/json' });
       res.end(typeof out === 'string' ? out : JSON.stringify(out));
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, close: () => server.close() };
+  return Object.assign(hub, { env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
 }
 
 module.exports = { fakeGithub, sshServer, launch, profile, project, openFolder, autoAllow, agentLog, prompts, chatWith, sendMessage, idle, tempDir };

@@ -858,6 +858,8 @@ function registerIpc() {
     'worktree:create': notOverSsh('Working in a copy of the folder'),
     'worktree:for-pr': notOverSsh('Working on a pull request in a copy of the folder'),
     'worktree:push': notOverSsh('Pushing from a copy of the folder'),
+    'worktree:head': notOverSsh('Working in a copy of the folder'),
+    'gh:push-branch': notOverSsh('Pushing from here'),
     'worktree:changes': [],
     'worktree:diff': [],
     'worktree:merge': notOverSsh('Merging a copy'),
@@ -1279,6 +1281,7 @@ function registerIpc() {
     const sha = (await git(ctx.workspace, ['rev-parse', 'FETCH_HEAD'])).trim();
     return worktrees.create(ctx.workspace, name || `pr ${n}`, { rev: sha });
   });
+  handle('worktree:head', (ctx, wt) => worktrees.head(ownCopy(wt)));
   handle('worktree:push', async (ctx, wt, to, message) => worktrees.push(ownCopy(wt), to, { message, pushUrl: await github.pushUrl(settings, await ghRepo(ctx)).catch(() => null) }));
 
   // GitHub: pull requests and issues for the open folder's repository (github.js).
@@ -1306,6 +1309,51 @@ function registerIpc() {
     return github.createPr(settings, repo, { ...p, base: p.base || (await github.defaultBranch(settings, repo)) });
   });
   handle('gh:reply', async (ctx, n, id, body) => github.reply(settings, await ghRepo(ctx), n, id, body));
+  handle('gh:checks', async (ctx, sha) => github.checksOf(settings, await ghRepo(ctx), sha));
+  handle('gh:ready', async (ctx, nodeId) => github.readyForReview(settings, nodeId));
+  handle('gh:request-reviewers', async (ctx, n, logins) => github.requestReviewers(settings, await ghRepo(ctx), n, logins));
+  handle('gh:approve', async (ctx, n, body) => github.approve(settings, await ghRepo(ctx), n, body));
+  handle('gh:collaborators', async (ctx) => github.collaborators(settings, await ghRepo(ctx)));
+  // Pushes the branch you're on, so a pull request can be opened from it.
+  handle('gh:push-branch', async (ctx) => {
+    const cwd = gitCwd(ctx);
+    const env = { GIT_TERMINAL_PROMPT: '0' };
+    try {
+      await git(cwd, ['push', '-u', 'origin', 'HEAD'], { env });
+    } catch (err) {
+      const url = await github.pushUrl(settings, await ghRepo(ctx));
+      if (!url) throw new Error(String(err.stderr || err.message).trim().split('\n').slice(-3).join('\n'));
+      await git(cwd, ['push', url, 'HEAD'], { env }).catch((e) => {
+        throw new Error(String(e.stderr || e.message).replace(url, 'GitHub').trim().split('\n').slice(-3).join('\n'));
+      });
+    }
+    return true;
+  });
+  // Merges on GitHub, then tidies up: the branch on GitHub, and your folder if it's on that branch.
+  handle('gh:merge', async (ctx, n, { method, title, sha, head, base, deleteBranch }) => {
+    const repo = await ghRepo(ctx);
+    await github.merge(settings, repo, n, { method, title, sha });
+    const out = { merged: true, branchDeleted: false, switched: false };
+    if (deleteBranch && head) out.branchDeleted = await github.deleteBranch(settings, repo, head).then(() => true, () => false);
+    if (ctx.remote) return out;
+    const cwd = gitCwd(ctx);
+    const env = { GIT_TERMINAL_PROMPT: '0' };
+    try {
+      const current = (await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      const dirty = (await git(cwd, ['status', '--porcelain'])).trim();
+      if (current === head && base && !dirty) {
+        const local = (await git(cwd, ['rev-parse', 'HEAD'])).trim();
+        await git(cwd, ['checkout', '-q', base], { env });
+        await git(cwd, ['pull', '-q', '--ff-only'], { env }).catch(() => {});
+        // Only a branch with nothing beyond what was merged is deleted.
+        if (local === sha) await git(cwd, ['branch', '-D', head]).catch(() => {});
+        out.switched = true;
+      }
+    } catch {
+      /* the folder stays as it is */
+    }
+    return out;
+  });
   handle('worktree:changes', (ctx, wt) => worktrees.changes(ownCopy(wt)));
   handle('worktree:diff', (ctx, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
   handle('worktree:merge', (ctx, wt) => worktrees.merge(ownCopy(wt), ctx.workspace));

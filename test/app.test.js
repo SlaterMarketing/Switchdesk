@@ -318,6 +318,17 @@ test('pull requests: fix a check and a comment, push, review with an agent, and 
     await w.waitForFunction(() => /Pushed [0-9a-f]{7} to PR #7/.test(activeChat().el.innerText), null, { timeout: 30000 });
     assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), gitIn(copy, 'rev-parse', 'HEAD'));
     assert.ok(hub.posted.some((x) => x.key.endsWith('/comments/900/replies') && /^Fixed in [0-9a-f]{7}/.test(x.body.body)));
+    // Switchdesk watches the checks: they fail again, so the agent fixes it and the fix is pushed.
+    const chatText = () => w.evaluate(() => chats.find((c) => c.pr && c.pr.number === 7).el.innerText);
+    await w.evaluate(() => checkWatches());
+    await until(w, () => /Watching its checks again/.test(chats.find((c) => c.pr && c.pr.number === 7).el.innerText), null, 30000);
+    assert.match(await chatText(), /test failed on PR #7\. Asking Cursor to fix it \(try 1 of 3\)/);
+    assert.match(prompts(p).pop(), /try 1 of 3/);
+    assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), gitIn(copy, 'rev-parse', 'HEAD'), 'the fix was pushed by itself');
+    // Then they pass, and it says so.
+    await w.evaluate(() => checkWatches());
+    await until(w, () => /Checks pass on PR #7/.test(chats.find((c) => c.pr && c.pr.number === 7).el.innerText));
+    assert.equal(await w.evaluate(() => chats.find((c) => c.pr && c.pr.number === 7).pr.watch), null);
     // Review with an agent: its findings go to GitHub as a review with a line comment.
     await w.evaluate(() => activateTab('pr:7'));
     await w.click('#pr-view button:has-text("Review with an agent")');
@@ -329,6 +340,25 @@ test('pull requests: fix a check and a comment, push, review with an agent, and 
     assert.equal(review.commit_id, hub.sha);
     assert.deepEqual(review.comments.map((c) => [c.path, c.line]), [['cart.js', 2]]);
     assert.match(review.comments[0].body, /Null cart throws/);
+    // Ask for a review, approve, and merge, all from the pull request's tab.
+    await w.evaluate(() => activateTab('pr:7'));
+    await w.click('#pr-view button:has-text("Request review")');
+    await w.fill('.modal input', 'alex');
+    await w.click('.modal button:has-text("Request review")');
+    await until(w, () => !document.querySelector('.modal'));
+    assert.deepEqual(hub.posted.find((x) => x.key.endsWith('/requested_reviewers')).body, { reviewers: ['alex'] });
+    await w.click('#pr-view button:has-text("Approve")');
+    await w.click('.modal button:has-text("Approve")');
+    await until(w, () => !document.querySelector('.modal'));
+    assert.ok(hub.posted.some((x) => x.key.endsWith('/pulls/7/reviews') && x.body.event === 'APPROVE'));
+    await w.click('#pr-view button:has-text("Merge…")');
+    await w.click('.modal button:has-text("Merge")');
+    await until(w, () => !document.querySelector('.modal'));
+    const merged = hub.posted.find((x) => x.key === 'PUT /repos/o/r/pulls/7/merge').body;
+    assert.equal(merged.merge_method, 'squash');
+    assert.equal(merged.commit_title, 'Guard the cart total (#7)');
+    assert.ok(hub.posted.some((x) => x.key === 'DELETE /repos/o/r/git/refs/heads/fix-cart'), 'its branch was deleted');
+    await until(w, () => chats.filter((c) => c.pr && c.pr.number === 7).every((c) => c.worktree.removed), null, 15000);
     // An issue starts a chat in its own copy, which ends in a pull request that closes it.
     await w.evaluate(() => ((gh.open.issues = true), renderGit()));
     await w.click('.gh-row:has-text("Prices need a currency")');

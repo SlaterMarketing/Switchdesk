@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion */
+/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr */
 'use strict';
 
 // ------------------------------------------------------------------ source control panel
@@ -360,11 +360,42 @@ async function pullRequest() {
   const body = h('textarea', { class: 'pr-body', rows: 14, spellcheck: 'true' });
   body.value = pr.body;
   const copy = h('button', { class: 'btn' }, 'Copy');
-  const openBtn = pr.url ? h('button', { class: 'btn primary' }, 'Open on GitHub') : null;
+  // Signed in to GitHub: push and open the pull request right here. Otherwise GitHub's page does it.
+  const direct = !!(gh.status && gh.status.signedIn);
+  const openBtn = pr.url ? h('button', { class: `btn${direct ? '' : ' primary'}` }, 'Open on GitHub') : null;
+  const draft = h('input', { type: 'checkbox' });
+  const create = direct ? h('button', { class: 'btn primary' }, 'Create pull request') : null;
+  const base = pr.base.replace(/^origin\//, '');
   const close = modal([
-    h('div', { class: 'body' }, h('h3', {}, `Pull request: ${pr.branch} → ${pr.base.replace(/^origin\//, '')}`), title, body, h('p', { class: 'muted small' }, pr.url ? 'Open on GitHub fills in a new pull request with this. Push the branch first if you haven\'t.' : 'Copy it into your pull request.')),
-    h('div', { class: 'foot' }, copy, openBtn),
+    h(
+      'div',
+      { class: 'body' },
+      h('h3', {}, `Pull request: ${pr.branch} → ${base}`),
+      title,
+      body,
+      direct ? h('label', { class: 'check' }, draft, ' Open it as a draft') : null,
+      h('p', { class: 'muted small' }, direct ? `Create pull request pushes ${pr.branch} and opens it on GitHub, then shows it here.` : pr.url ? "Open on GitHub fills in a new pull request with this. Push the branch first if you haven't. Connect GitHub in this panel to open it from here instead." : 'Copy it into your pull request.')
+    ),
+    h('div', { class: 'foot' }, copy, openBtn, create),
   ]);
+  if (create)
+    create.addEventListener('click', async () => {
+      create.disabled = true;
+      create.textContent = 'Creating…';
+      try {
+        await desk.github.pushBranch();
+        const r = await desk.github.createPr({ head: pr.branch, base, title: title.value.trim(), body: body.value, draft: draft.checked });
+        close();
+        toast(`Opened PR #${r.number}.`);
+        refreshGit();
+        refreshGithub(true);
+        openPr(r.number);
+      } catch (e) {
+        create.disabled = false;
+        create.textContent = 'Create pull request';
+        toast(cleanErr(e));
+      }
+    });
   copy.addEventListener('click', () => {
     navigator.clipboard.writeText(`${title.value}\n\n${body.value}`);
     toast('Copied.');

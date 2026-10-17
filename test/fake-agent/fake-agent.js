@@ -66,7 +66,7 @@ async function prompt(m) {
     say('One real problem.\n\n```findings\n[{"file": "cart.js", "line": 2, "severity": "error", "title": "Null cart throws", "detail": "total(null) throws a TypeError."}]\n```\n');
   } else if (/Switchdesk (pushes to|opens) the pull request/.test(text) && mode !== 'plan') {
     // A pull request's or an issue's copy: fix it and commit, as asked.
-    fs.writeFileSync(path.join(cwd, 'fixed.txt'), `fixed by ${NAME}\n`);
+    fs.appendFileSync(path.join(cwd, 'fixed.txt'), `fixed by ${NAME}\n`);
     require('child_process').execFileSync('git', ['add', '-A'], { cwd });
     require('child_process').execFileSync('git', ['commit', '-q', '-m', `Fix from ${NAME}`], { cwd });
     say(`Fixed it and committed in ${cwd}.`);

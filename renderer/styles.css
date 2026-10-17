@@ -871,3 +871,9 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 .issue-body { margin: 6px 0; }
 #worktree-bar .btn, #worktree-bar .wt-label, #worktree-bar .muted { white-space: nowrap; }
 #worktree-bar { flex-wrap: wrap; row-gap: 4px; }
+.keep-green { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.keep-green input:disabled + * { opacity: 0.5; }
+.pr-watch { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--text); }
+.pr-reviews { margin-top: 6px; color: var(--text); }
+.merge-why { color: var(--warn); }
+.notice.good { color: var(--add); }
