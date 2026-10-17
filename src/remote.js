@@ -148,6 +148,38 @@ class Remote extends EventEmitter {
     return { command: sshBin(), args: ['-tt', ...target(this.spec), `cd ${q(dir)} && exec "\${SHELL:-/bin/sh}" -l`] };
   }
 
+  // A port on this machine that reaches port on the host (for the debugger): { port, close }.
+  async forward(port) {
+    const local = await new Promise((resolve, reject) => {
+      const srv = require('net').createServer();
+      srv.once('error', reject);
+      srv.listen(0, '127.0.0.1', () => {
+        const p = srv.address().port;
+        srv.close(() => resolve(p));
+      });
+    });
+    const child = spawn(sshBin(), ['-N', '-o', 'ExitOnForwardFailure=yes', '-L', `127.0.0.1:${local}:127.0.0.1:${port}`, ...target(this.spec)], { windowsHide: true });
+    const close = () => {
+      try {
+        child.kill();
+      } catch {
+        /* gone */
+      }
+    };
+    // Ready once something answers on the local port.
+    for (let i = 0; i < 100; i++) {
+      if (child.exitCode != null) throw new Error(`Couldn't forward the debugger's port from ${this.spec}.`);
+      const ok = await new Promise((resolve) => {
+        const s = require('net').connect(local, '127.0.0.1', () => (s.end(), resolve(true)));
+        s.on('error', () => resolve(false));
+      });
+      if (ok) return { port: local, close };
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    close();
+    throw new Error(`Couldn't forward the debugger's port from ${this.spec}.`);
+  }
+
   close() {
     this.alive = false;
     try {

@@ -29,15 +29,34 @@ async function findPython(root, settings) {
   return agents.findCommand(isWin ? ['python', 'py'] : ['python3', 'python']);
 }
 
+// An SSH folder's Python, on its host: the folder's virtual environment, else the one on PATH.
+async function hostPython(remote, root) {
+  for (const rel of ['.venv/bin/python', 'venv/bin/python', 'env/bin/python']) {
+    const p = path.posix.join(root, rel);
+    const r = await remote.exec(['test', '-x', p], root).catch(() => null);
+    if (r && r.code === 0) return p;
+  }
+  const r = await remote.exec(['sh', '-lc', 'command -v python3 || command -v python'], root).catch(() => null);
+  return (r && r.code === 0 && r.stdout.toString().trim().split('\n').pop()) || null;
+}
+
 // Starts (or reuses) the notebook's kernel. send(msg) gets everything the kernel says.
-async function start(ctx, rel, { abs, root, kernel, settings, send }) {
+// remote: an SSH folder's connection; the kernel then runs on its host, bridge and all.
+async function start(ctx, rel, { abs, root, kernel, settings, send, remote }) {
   const key = `${ctx.id}:${rel}`;
   const had = kernels.get(key);
   if (had) return had.ready;
-  const python = await findPython(root, settings);
-  if (!python) return { error: 'No Python found. Install Python 3, or set its path in Settings → Editor.', missing: 'python' };
-  const env = await cli.childEnv({ PYTHONUNBUFFERED: '1' });
-  const child = spawn(python, [BRIDGE, kernel || 'python3'], { cwd: path.dirname(abs), env, windowsHide: true });
+  const python = remote ? await hostPython(remote, root) : await findPython(root, settings);
+  if (!python) return { error: remote ? `No Python found on ${remote.spec}. Install Python 3 there.` : 'No Python found. Install Python 3, or set its path in Settings → Editor.', missing: 'python' };
+  let child;
+  if (remote) {
+    const code = fs.readFileSync(BRIDGE).toString('base64');
+    const via = remote.spawnArgs(path.posix.dirname(abs), [python, '-u', '-c', `import base64,sys;exec(base64.b64decode('${code}'))`, kernel || 'python3']);
+    child = spawn(via.command, via.args, { windowsHide: true });
+  } else {
+    const env = await cli.childEnv({ PYTHONUNBUFFERED: '1' });
+    child = spawn(python, [BRIDGE, kernel || 'python3'], { cwd: path.dirname(abs), env, windowsHide: true });
+  }
   const k = { child, python };
   kernels.set(key, k);
   k.ready = new Promise((resolve) => {
@@ -108,4 +127,4 @@ function installCommand(python) {
   return `${isWin ? '& ' : ''}${q} -m pip install ipykernel jupyter_client`;
 }
 
-module.exports = { start, command, stop, stopAll, installCommand, findPython };
+module.exports = { start, command, stop, stopAll, installCommand, findPython, hostPython };

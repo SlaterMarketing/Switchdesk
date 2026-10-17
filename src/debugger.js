@@ -29,9 +29,20 @@ function preview(v) {
   return v.description || v.className || v.type;
 }
 
+// Runs the program here, or (host: an SSH folder's connection) on that machine, in the same folder.
+function launch(host, bin, args, { cwd, env }) {
+  if (!host) return spawn(bin, args, { cwd, env, windowsHide: true });
+  const via = host.spawnArgs(cwd, [bin, ...args]);
+  return spawn(via.command, via.args, { windowsHide: true });
+}
+
+// File URLs for this machine's paths, or a host's POSIX ones.
+const urlOf = (file, host) => (host ? 'file://' + file.split('/').map(encodeURIComponent).join('/') : pathToFileURL(file).href);
+const fileOfUrl = (url, host) => (host ? decodeURIComponent(new URL(url).pathname) : fileURLToPath(url));
+
 class NodeDebug {
-  constructor({ program, args, cwd, env, node, onEvent }) {
-    Object.assign(this, { program, args: args || [], cwd, env, node, onEvent });
+  constructor({ program, args, cwd, env, node, onEvent, host }) {
+    Object.assign(this, { program, args: args || [], cwd, env, node, onEvent, host: host || null });
     this.seq = 0;
     this.waits = new Map();
     this.scripts = new Map(); // scriptId -> url
@@ -53,7 +64,7 @@ class NodeDebug {
   async start(breakpoints) {
     const flags = [`--inspect-brk=127.0.0.1:0`];
     if (/\.(ts|mts|cts)$/.test(this.program)) flags.push('--experimental-strip-types', '--no-warnings=ExperimentalWarning');
-    this.child = spawn(this.node, [...flags, this.program, ...this.args], { cwd: this.cwd, env: this.env, windowsHide: true });
+    this.child = launch(this.host, this.node, [...flags, this.program, ...this.args], { cwd: this.cwd, env: this.env });
     this.child.stdout.on('data', (d) => this.onEvent({ type: 'output', category: 'stdout', text: d.toString('utf8') }));
     let wsUrl = null;
     const found = new Promise((resolve, reject) => {
@@ -73,6 +84,13 @@ class NodeDebug {
     });
     this.child.on('exit', (code) => this.finish(code));
     await found;
+    if (this.host) {
+      // The inspector listens on the host: reach it through a forwarded port.
+      const u = new URL(wsUrl);
+      this.tunnel = await this.host.forward(Number(u.port));
+      u.port = String(this.tunnel.port);
+      wsUrl = u.href;
+    }
     this.ws = new WebSocket(wsUrl);
     await new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
@@ -117,7 +135,7 @@ class NodeDebug {
       const url = f.url || this.scripts.get(f.location.scriptId) || '';
       let file = null;
       try {
-        file = url.startsWith('file:') ? fileURLToPath(url) : null;
+        file = url.startsWith('file:') ? fileOfUrl(url, this.host) : null;
       } catch {}
       return { id: i, cdp: f, name: f.functionName || '(anonymous)', file, url, line: f.location.lineNumber + 1, column: (f.location.columnNumber || 0) + 1, internal: !file };
     });
@@ -130,7 +148,7 @@ class NodeDebug {
   async setBreakpoints(file, lines) {
     for (const id of this.breakpoints.get(file) || []) await this.send('Debugger.removeBreakpoint', { breakpointId: id }).catch(() => {});
     const ids = [];
-    const url = pathToFileURL(file).href;
+    const url = urlOf(file, this.host);
     for (const line of lines) {
       try {
         const r = await this.send('Debugger.setBreakpointByUrl', { url, lineNumber: line - 1, columnNumber: 0 });
@@ -202,6 +220,7 @@ class NodeDebug {
       this.ws && this.ws.close();
     } catch {}
     if (this.child && this.child.exitCode == null) this.child.kill();
+    if (this.tunnel) this.tunnel.close();
   }
 
   finish(code) {
@@ -210,6 +229,7 @@ class NodeDebug {
     try {
       this.ws && this.ws.close();
     } catch {}
+    if (this.tunnel) this.tunnel.close();
     this.onEvent({ type: 'terminated', code });
   }
 }
@@ -217,8 +237,8 @@ class NodeDebug {
 // ---------- Python, through debugpy's adapter (Debug Adapter Protocol over stdio)
 
 class PythonDebug {
-  constructor({ program, args, cwd, env, python, onEvent }) {
-    Object.assign(this, { program, args: args || [], cwd, env, python, onEvent });
+  constructor({ program, args, cwd, env, python, onEvent, host }) {
+    Object.assign(this, { program, args: args || [], cwd, env, python, onEvent, host: host || null });
     this.seq = 0;
     this.waits = new Map();
     this.buf = Buffer.alloc(0);
@@ -238,7 +258,7 @@ class PythonDebug {
   }
 
   async start(breakpoints) {
-    this.child = spawn(this.python, ['-m', 'debugpy.adapter'], { cwd: this.cwd, env: this.env, windowsHide: true });
+    this.child = launch(this.host, this.python, ['-m', 'debugpy.adapter'], { cwd: this.cwd, env: this.env });
     let stderr = '';
     this.child.stderr.on('data', (d) => (stderr += d.toString('utf8')).slice(-4000));
     this.child.stdout.on('data', (d) => this.read(d));

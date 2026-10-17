@@ -83,9 +83,19 @@ const CLIENT_CAPS = {
   general: { positionEncodings: ['utf-16'] },
 };
 
+// File URIs for this machine's paths, or for a host's (SSH folders), whose paths are always POSIX.
+function uriOf(file, host) {
+  return host ? 'file://' + file.split('/').map(encodeURIComponent).join('/') : pathToFileURL(file).href;
+}
+function fileOf(uri, host) {
+  return host ? decodeURIComponent(new URL(uri).pathname) : fileURLToPath(uri);
+}
+
 class LangServers {
   // find(names) locates a command; env() gives the child environment; onDiagnostics(file, list).
-  constructor({ find, env, version, onDiagnostics }) {
+  // host: an SSH folder's connection, to run the servers there (installed on that machine).
+  constructor({ find, env, version, onDiagnostics, host }) {
+    this.host = host || null;
     this.find = find;
     this.env = env;
     this.version = version;
@@ -95,20 +105,27 @@ class LangServers {
   }
 
   async binFor(id, override) {
-    if (override && fs.existsSync(override)) return override;
+    if (override && !this.host && fs.existsSync(override)) return override;
     const hit = this.bins.get(id);
     if (hit && Date.now() - hit.at < 60000) return hit.path;
     const def = SERVERS[id];
     let p = null;
     for (const name of def.bins) {
       const found = await this.find([name]);
-      if (found && (!def.accept || (await def.accept(name, found)))) {
+      if (found && (!def.accept || (await this.accepts(def, name, found)))) {
         p = found;
         break;
       }
     }
     this.bins.set(id, { path: p, at: Date.now() });
     return p;
+  }
+
+  async accepts(def, name, bin) {
+    if (!this.host) return def.accept(name, bin);
+    if (name !== 'tsc') return true;
+    const r = await this.host.exec([bin, '--version']).catch(() => null);
+    return Number((/Version (\d+)/.exec(r ? r.stdout.toString() : '') || [])[1]) >= 7;
   }
 
   async status(overrides = {}, disabled = []) {
@@ -129,7 +146,8 @@ class LangServers {
     const def = SERVERS[id];
     const name = path.basename(bin).replace(/\.(cmd|exe)$/i, '');
     const args = (def.argsFor && def.argsFor[name]) || def.args;
-    const lsp = new Lsp(bin, args, await this.env(), `The ${def.label} language server`, root);
+    const via = this.host && this.host.spawnArgs(root, [bin, ...args]);
+    const lsp = via ? new Lsp(via.command, via.args, await this.env(), `The ${def.label} language server on ${this.host.spec}`) : new Lsp(bin, args, await this.env(), `The ${def.label} language server`, root);
     const entry = { lsp, docs: new Map(), caps: {} };
     this.running.set(key, entry);
     lsp.onExit = () => {
@@ -139,7 +157,7 @@ class LangServers {
       if (method === 'textDocument/publishDiagnostics' && p && p.uri) {
         let file;
         try {
-          file = fileURLToPath(p.uri);
+          file = fileOf(p.uri, this.host);
         } catch {
           return;
         }
@@ -150,13 +168,13 @@ class LangServers {
       const r = await lsp.request(
         'initialize',
         {
-          processId: process.pid,
+          processId: this.host ? null : process.pid,
           clientInfo: { name: 'Switchdesk', version: this.version },
-          rootUri: pathToFileURL(root).href,
+          rootUri: uriOf(root, this.host),
           rootPath: root,
-          workspaceFolders: [{ uri: pathToFileURL(root).href, name: path.basename(root) }],
+          workspaceFolders: [{ uri: uriOf(root, this.host), name: path.posix.basename(root.replace(/\\/g, '/')) }],
           capabilities: CLIENT_CAPS,
-          initializationOptions: def.initOptions ? def.initOptions(bin) : undefined,
+          initializationOptions: def.initOptions && !this.host ? def.initOptions(bin) : undefined,
         },
         60000
       );
@@ -177,7 +195,7 @@ class LangServers {
     if (!id || disabled.includes(id)) return null;
     const entry = await this.server(id, doc.root, overrides[id]);
     if (!entry) return { missing: id, label: SERVERS[id].label, install: SERVERS[id].install };
-    const uri = pathToFileURL(doc.file).href;
+    const uri = uriOf(doc.file, this.host);
     if (!entry.docs.has(uri)) {
       entry.docs.set(uri, 1);
       entry.lsp.notify('textDocument/didOpen', { textDocument: { uri, languageId: lspLanguage(doc.languageId, doc.file), version: 1, text: doc.text } });
@@ -193,7 +211,7 @@ class LangServers {
   }
 
   entryFor(file) {
-    const uri = pathToFileURL(file).href;
+    const uri = uriOf(file, this.host);
     for (const e of this.running.values()) if (e.docs.has(uri)) return { e, uri };
     return null;
   }
@@ -245,4 +263,4 @@ class LangServers {
   }
 }
 
-module.exports = { LangServers, SERVERS, serverFor };
+module.exports = { LangServers, SERVERS, serverFor, fileOf };

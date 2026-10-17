@@ -32,7 +32,7 @@ const { extract } = require('./extract');
 const { listCommands } = require('./commands');
 const permissions = require('./permissions');
 const autocomplete = require('./autocomplete');
-const { LangServers } = require('./langservers');
+const { LangServers, fileOf: fileOfUri } = require('./langservers');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
@@ -316,6 +316,7 @@ async function openSsh(ctx, url) {
 
 function dropRemote(ctx) {
   if (!ctx.remote) return;
+  if (ctx.remote.langs) ctx.remote.langs.stopAll();
   ctx.remote.removeAllListeners();
   ctx.remote.close();
   ctx.remote = null;
@@ -873,20 +874,12 @@ function registerIpc() {
     'git:continue': notOverSsh('That git action'),
     'git:resolved': notOverSsh('That git action'),
     'git:checkout': notOverSsh('Switching branches here'),
-    'lsp:status': { servers: [] },
-    'lsp:open': null,
-    'lsp:change': null,
-    'lsp:close': null,
-    'lsp:request': null,
-    'lsp:restart': null,
     'complete:request': { items: [] },
     'codebase:status': { model: false, files: 0, chunks: 0, embedded: 0, remote: true },
     'codebase:scan': { model: false, files: 0, chunks: 0, embedded: 0, remote: true },
     'codebase:pending': [],
     'codebase:put': null,
     'codebase:search': [],
-    'tests:run': notOverSsh('Running tests from the editor'),
-    'debug:start': notOverSsh('The debugger'),
     'commands:list': [],
     'cfg:memory': [],
     'cfg:rules-shared': false,
@@ -894,7 +887,6 @@ function registerIpc() {
     'cfg:save-memory': notOverSsh('Editing memory files'),
     'cfg:permissions': { rules: [] },
     'cfg:rule': notOverSsh('Editing these rules'),
-    'nb:start': { error: "Notebooks in SSH folders can't run their cells yet. You can still read and edit them.", missing: 'remote' },
     'folder:add': notOverSsh('Adding folders'),
     'cfg:mcp-list': [],
     'cfg:mcp-add': notOverSsh('Adding MCP servers'),
@@ -1234,11 +1226,11 @@ function registerIpc() {
   handle('files:search', async (ctx, query, opts) => (ctx.workspace ? search.search((rel) => resolveInWorkspace(ctx, rel), await listFiles(ctx), query, { ...opts, group: ctx.id }) : { results: [] }));
   // Notebooks: one kernel per open notebook (jupyter.js).
   handle('nb:start', (ctx, rel, kernel) =>
-    jupyter.start(ctx, rel, { abs: resolveInWorkspace(ctx, rel), root: ctx.workspace, kernel, settings, send: (m) => sendTo(ctx, 'nb-event', { rel, ...m }) })
+    jupyter.start(ctx, rel, { abs: resolveInWorkspace(ctx, rel), root: ctx.workspace, kernel, settings, remote: ctx.remote, send: (m) => sendTo(ctx, 'nb-event', { rel, ...m }) })
   );
   handle('nb:send', (ctx, rel, cmd) => jupyter.command(ctx, rel, cmd));
   handle('nb:stop', (ctx, rel) => jupyter.stop(ctx, rel));
-  handle('nb:install-command', async (ctx) => jupyter.installCommand((await jupyter.findPython(ctx.workspace, settings)) || (process.platform === 'win32' ? 'python' : 'python3')));
+  handle('nb:install-command', async (ctx) => jupyter.installCommand((await (ctx.remote ? jupyter.hostPython(ctx.remote, ctx.workspace) : jupyter.findPython(ctx.workspace, settings))) || (process.platform === 'win32' && !ctx.remote ? 'python' : 'python3')));
   handle('files:replace', async (ctx, rels, query, replacement, opts) => (ctx.workspace ? search.replace((rel) => resolveInWorkspace(ctx, rel), rels, query, replacement, opts || {}) : { files: [] }));
   handle('file:read', async (ctx, rel) => {
     const abs = resolveInWorkspace(ctx, rel);
@@ -1494,6 +1486,27 @@ function registerIpc() {
     },
   });
   langServers = langs;
+  // An SSH folder's language servers run on its host, one set per connection.
+  const hostFind = async (remote, names) => {
+    for (const n of names) {
+      const r = await remote.exec(['sh', '-lc', `command -v ${n}`]).catch(() => null);
+      const found = r && r.code === 0 && r.stdout.toString().trim().split('\n').pop();
+      if (found) return found;
+    }
+    return null;
+  };
+  const langsOf = (ctx) => {
+    if (!ctx.remote) return langs;
+    const remote = ctx.remote;
+    remote.langs ||= new LangServers({
+      host: remote,
+      find: (names) => hostFind(remote, names),
+      env: async () => process.env,
+      version: app.getVersion(),
+      onDiagnostics: (file, diagnostics) => ctx.remote === remote && inWorkspace(ctx, file) && sendTo(ctx, 'lsp-diagnostics', { rel: relOf(ctx, file), diagnostics }),
+    });
+    return remote.langs;
+  };
   const langOpts = () => [settings.langServerPaths || {}, settings.langServersOff || []];
   const fileIn = (ctx, rel) => {
     try {
@@ -1510,35 +1523,35 @@ function registerIpc() {
         const range = l.targetSelectionRange || l.targetRange || l.range;
         let file;
         try {
-          file = require('url').fileURLToPath(uri);
+          file = fileOfUri(uri, ctx.remote);
         } catch {
           return null;
         }
         return { rel: inWorkspace(ctx, file) ? relOf(ctx, file) : null, file, range };
       })
       .filter(Boolean);
-  handle('lsp:status', () => langs.status(...langOpts()));
+  handle('lsp:status', (ctx) => langsOf(ctx).status(...langOpts()));
   handle('lsp:open', async (ctx, rel, languageId, text) => {
     const file = fileIn(ctx, rel);
     if (!file) return null;
     const root = rootOf(ctx, file).dir;
-    return langs.open({ file, languageId, text, root }, ...langOpts()).catch((e) => ({ error: String(e.message || e).replace(/^Request initialize failed with message: /, '') }));
+    return langsOf(ctx).open({ file, languageId, text, root }, ...langOpts()).catch((e) => ({ error: String(e.message || e).replace(/^Request initialize failed with message: /, '') }));
   });
   handle('lsp:change', (ctx, rel, text) => {
     const file = fileIn(ctx, rel);
-    if (file) langs.change(file, text);
+    if (file) langsOf(ctx).change(file, text);
   });
   handle('lsp:close', (ctx, rel) => {
     const file = fileIn(ctx, rel);
-    if (file) langs.close(file);
+    if (file) langsOf(ctx).close(file);
   });
   handle('lsp:request', async (ctx, rel, method, params) => {
     const file = fileIn(ctx, rel);
     if (!file) return null;
-    const r = await langs.request(file, method, params);
+    const r = await langsOf(ctx).request(file, method, params);
     return /definition|references|implementation/i.test(method) ? toPlaces(ctx, r) : r;
   });
-  handle('lsp:restart', () => langs.stopAll());
+  handle('lsp:restart', (ctx) => langsOf(ctx).stopAll());
 
   // ---------- tab autocomplete
   let copilotMissingAt = 0; // don't look for the language server on every keystroke when it isn't there
@@ -1656,12 +1669,13 @@ function registerIpc() {
   // test stops the old one.
   handle('tests:run', async (ctx, { rel, name, cls, key }) => {
     const abs = resolveInWorkspace(ctx, rel);
-    const root = (rootOf(ctx, abs) || { dir: path.dirname(abs) }).dir;
+    const root = (rootOf(ctx, abs) || { dir: P(ctx).dirname(abs) }).dir;
     ctx.testRuns = ctx.testRuns || new Map();
     const old = ctx.testRuns.get(key);
     if (old) old.kill();
-    const env = await cli.childEnv();
+    const env = ctx.remote ? {} : await cli.childEnv();
     try {
+      if (ctx.remote) return await tests.runTest({ abs, root, name, cls, env, remote: ctx.remote, findNode: async () => 'node', findPython: (dir) => jupyter.hostPython(ctx.remote, dir) });
       return await tests.runTest({ abs, root, name, cls, env, findNode: () => agents.findCommand(['node']), findPython: pythonFor, onSpawn: (child) => ctx.testRuns.set(key, child) });
     } finally {
       ctx.testRuns.delete(key);
@@ -1673,9 +1687,10 @@ function registerIpc() {
     const abs = resolveInWorkspace(ctx, rel);
     const kind = debug.kindOf(abs);
     if (!kind) throw new Error('Switchdesk can debug JavaScript, TypeScript and Python files.');
-    const cwd = (rootOf(ctx, abs) || { dir: path.dirname(abs) }).dir;
-    const env = await cli.childEnv();
-    const bin = kind === 'node' ? await agents.findCommand(['node']) : await pythonFor(cwd);
+    const cwd = (rootOf(ctx, abs) || { dir: P(ctx).dirname(abs) }).dir;
+    const env = ctx.remote ? {} : await cli.childEnv();
+    // In an SSH folder the program runs on the host, with the host's node or Python.
+    const bin = ctx.remote ? (kind === 'node' ? 'node' : await jupyter.hostPython(ctx.remote, cwd)) : kind === 'node' ? await agents.findCommand(['node']) : await pythonFor(cwd);
     if (!bin) return { missing: kind === 'node' ? 'node' : 'python' };
     const onEvent = (e) => {
       if (e.frames) for (const f of e.frames) f.rel = f.file ? relOf(ctx, f.file) : null;
@@ -1683,7 +1698,7 @@ function registerIpc() {
       sendTo(ctx, 'debug-event', e);
     };
     const Session = kind === 'node' ? debug.NodeDebug : debug.PythonDebug;
-    const session = new Session({ program: abs, args: args || [], cwd, env: { ...env, PYTHONUNBUFFERED: '1' }, node: bin, python: bin, onEvent });
+    const session = new Session({ program: abs, args: args || [], cwd, env: { ...env, PYTHONUNBUFFERED: '1' }, node: bin, python: bin, onEvent, host: ctx.remote || null });
     if (exceptions) session.pauseOnExceptions = exceptions;
     if (exceptions && kind === 'python') session.exceptionFilters = exceptions === 'all' ? ['raised', 'uncaught'] : exceptions === 'none' ? [] : ['uncaught'];
     ctx.debug = session;

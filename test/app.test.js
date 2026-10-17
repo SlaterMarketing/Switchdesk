@@ -539,6 +539,39 @@ test('an SSH folder: files, search, git, the terminal, an agent and a pull reque
     const git = await w.evaluate(() => desk.git.status());
     assert.equal(git.repo, true);
     assert.deepEqual(git.files.map((f) => `${f.status} ${f.rel}`), ['M cart.js']);
+    // Code intelligence runs the language server on the host.
+    fs.writeFileSync(path.join(dir, 'main.go'), 'package main\n\nfunc main() {}\n');
+    await w.evaluate(() => openFile('main.go'));
+    await until(w, () => monaco.editor.getModelMarkers({}).some((m) => m.message === 'fake problem over ssh'), null, 30000);
+    // A test runs on the host.
+    fs.writeFileSync(path.join(dir, 'sum.test.js'), "const test = require('node:test');\nconst assert = require('assert');\ntest('adds', () => assert.equal(1 + 1, 2));\n");
+    const ran = await w.evaluate(() => desk.tests.run({ rel: 'sum.test.js', name: 'adds', key: 'x' }));
+    assert.ok(ran.passed, ran.output);
+    assert.equal(ran.runner, 'Node');
+    // A notebook's cells run in a kernel on the host.
+    const nb = { cells: [{ cell_type: 'code', id: 'a1', metadata: {}, source: ['import os\n', 'print("on", os.environ.get("SSH_CONNECTION") is not None)'], outputs: [], execution_count: null }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' } }, nbformat: 4, nbformat_minor: 5 };
+    fs.writeFileSync(path.join(dir, 'host.ipynb'), JSON.stringify(nb));
+    await w.evaluate(() => openFile('host.ipynb'));
+    await w.waitForSelector('#nb-view .nb-cell.code .monaco-editor', { timeout: 15000 });
+    await w.click('#nb-bar button:has-text("Run all")');
+    await until(w, () => /on True/.test(document.querySelector('#nb-view .nb-outputs')?.innerText || ''), null, 90000).catch(async (err) => {
+      throw new Error(`${err.message}\n${await w.$eval('#nb-view', (e) => e.innerText.slice(0, 600))}`);
+    });
+    // The debugger runs the program on the host and stops at a breakpoint, for Node and for Python.
+    fs.writeFileSync(path.join(dir, 'calc.js'), "const a = 40;\nconst b = a + 2;\nconsole.log('answer', b);\n");
+    fs.writeFileSync(path.join(dir, 'calc.py'), "a = 40\nb = a + 2\nprint('answer', b)\n");
+    await w.evaluate(() => ((window.dbg = []), desk.debug.onEvent((e) => window.dbg.push(e))));
+    for (const rel of ['calc.js', 'calc.py']) {
+      await w.evaluate(() => (window.dbg.length = 0));
+      const started = await w.evaluate((r) => desk.debug.start({ rel: r, breakpoints: { [r]: [3] } }), rel);
+      assert.ok(!started.missing, `${rel}: ${JSON.stringify(started)}`);
+      await until(w, (r) => window.dbg.some((e) => e.type === 'stopped' && e.frames[0] && e.frames[0].rel === r && e.frames[0].line === 3), rel, 30000);
+      const ev = await w.evaluate(() => desk.debug.evaluate('b', window.dbg.find((e) => e.type === 'stopped').frames[0].id));
+      assert.equal(ev.value, '42', `${rel}: ${JSON.stringify(ev)}`);
+      await w.evaluate(() => desk.debug.cmd('continue'));
+      await until(w, () => window.dbg.some((e) => e.type === 'terminated'), null, 30000);
+      assert.match(await w.evaluate(() => window.dbg.filter((e) => e.type === 'output').map((e) => e.text).join('')), /answer 42/);
+    }
     // The terminal is a shell on the host, in the folder.
     await w.evaluate(async () => {
       toggleTerminal(true);
@@ -555,6 +588,15 @@ test('an SSH folder: files, search, git, the terminal, an agent and a pull reque
     const sent = agentLog(p).filter((m) => m.method === 'session/prompt');
     assert.ok(sent.length && sent.every((m) => m.overSsh), 'the agent ran over ssh');
     await until(w, () => /fake\.txt/.test(activeChat().el.innerText));
+    // Two agents compare in copies on the host, and one is merged back into the folder.
+    await w.evaluate(() => startComparison('compare-test', [{ id: 'cursor', label: 'Cursor' }, { id: 'copilot', label: 'Copilot' }], false));
+    // (Cursor already wrote the same fake.txt in the folder, so only Copilot's copy differs.)
+    await until(w, () => chats.filter((c) => c.compare && c.sessionId && !c.busy && !c.making).length === 2 && chats.some((c) => c.compare && c.agent === 'copilot' && (c.wtChanges || []).length), null, 60000);
+    await w.evaluate(() => switchChat(chats.find((c) => c.compare && c.agent === 'copilot').id));
+    await w.evaluate(() => useComparison(activeChat()));
+    await w.click('.modal button:has-text("Merge")');
+    await until(w, () => chats.some((c) => c.merged), null, 30000);
+    assert.equal(fs.readFileSync(path.join(dir, 'fake.txt'), 'utf8'), 'from copilot\n');
     // A pull request's failing check is fixed by an agent in a copy of the folder on the host, and pushed.
     await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
     await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
