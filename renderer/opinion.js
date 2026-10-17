@@ -80,7 +80,9 @@ function opinionDone(chat, turn) {
   for (const m of monaco.editor.getModels()) applyOpinionMarkers(m);
   // The card shows the findings, so the raw block in the reply isn't needed.
   for (const code of chat.el.querySelectorAll('pre code.language-findings')) code.closest('pre').remove();
-  appendChat(findingsCard(chat, found, who), chat);
+  // The reviewer's overall view: its reply without the findings block.
+  const summary = text.replace(/```(findings|json)[\s\S]*?```/g, '').trim().slice(0, 4000);
+  appendChat(findingsCard(chat, found, who, summary), chat);
 }
 
 function applyOpinionMarkers(model) {
@@ -97,11 +99,14 @@ function applyOpinionMarkers(model) {
   );
 }
 
-function findingsCard(chat, found, who) {
+function findingsCard(chat, found, who, summary) {
   const origin = () => chats.find((c) => c.id === (chat.opinion || {}).origin) || null;
   const fixPrompt = (list) =>
     `${who} reviewed the changes and found ${list.length > 1 ? 'these problems' : 'this problem'}:\n\n${list.map((f) => `- ${f.severity.toUpperCase()} @${f.file}:${f.line}: ${f.title}${f.detail ? `. ${f.detail}` : ''}`).join('\n')}\n\nCheck ${list.length > 1 ? 'each one' : 'it'} against the code. Fix what's real, keep the changes small, and say briefly if you think any finding is wrong and why.`;
+  const pr = chat.opinion && chat.opinion.pr;
   const fix = (list) => {
+    // A pull request's findings are fixed in its own copy, then pushed to it.
+    if (pr) return fixPr(pr, list.map((f) => ({ kind: 'finding', finding: f })));
     // The fix goes to the chat that made the changes, in Agent mode.
     const to = origin();
     if (to) switchChat(to.id);
@@ -121,6 +126,7 @@ function findingsCard(chat, found, who) {
     { class: 'card findings' },
     h('div', { class: 'row' }, h('h4', {}, found.length ? `${who} found ${found.length} thing${found.length > 1 ? 's' : ''}` : `${who} found nothing to raise`), h('span', { class: 'spacer' }), found.length > 1 ? h('button', { class: 'btn small primary', onclick: () => fix(found) }, 'Fix all') : null),
     ...rows,
+    pr ? h('div', { class: 'actions' }, h('button', { class: 'btn small primary', title: `A review on PR #${pr.number}, with a comment on each line`, onclick: (e) => postPrReview(chat, found, summary, e.currentTarget) }, 'Post to the pull request'), h('button', { class: 'btn small', onclick: () => openPr(pr.number) }, 'View PR')) : null,
     found.length ? h('div', { class: 'muted small' }, 'They’re marked in the editor too; the lightbulb there offers a fix.') : null
   );
 }

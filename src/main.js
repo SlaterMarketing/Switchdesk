@@ -17,6 +17,7 @@ const config = require('./config');
 const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
+const github = require('./github');
 const accounts = require('./accounts');
 const debuglog = require('./debuglog');
 const previewBridge = require('./preview-bridge');
@@ -855,6 +856,8 @@ function registerIpc() {
     'agents:sessions': [],
     'agents:history': [],
     'worktree:create': notOverSsh('Working in a copy of the folder'),
+    'worktree:for-pr': notOverSsh('Working on a pull request in a copy of the folder'),
+    'worktree:push': notOverSsh('Pushing from a copy of the folder'),
     'worktree:changes': [],
     'worktree:diff': [],
     'worktree:merge': notOverSsh('Merging a copy'),
@@ -1267,6 +1270,42 @@ function registerIpc() {
     return wt;
   };
   handle('worktree:create', (ctx, name) => worktrees.create(ctx.workspace, name));
+  // A copy at a pull request's latest commit, to fix it there and push to its branch.
+  handle('worktree:for-pr', async (ctx, n, name) => {
+    const repo = await ghRepo(ctx);
+    const pushUrl = await github.pushUrl(settings, repo);
+    const fetchHead = (from) => git(ctx.workspace, ['fetch', '-q', from, `pull/${n}/head`], { env: { GIT_TERMINAL_PROMPT: '0' } });
+    await fetchHead('origin').catch((err) => (pushUrl ? fetchHead(pushUrl) : Promise.reject(err)));
+    const sha = (await git(ctx.workspace, ['rev-parse', 'FETCH_HEAD'])).trim();
+    return worktrees.create(ctx.workspace, name || `pr ${n}`, { rev: sha });
+  });
+  handle('worktree:push', async (ctx, wt, to, message) => worktrees.push(ownCopy(wt), to, { message, pushUrl: await github.pushUrl(settings, await ghRepo(ctx)).catch(() => null) }));
+
+  // GitHub: pull requests and issues for the open folder's repository (github.js).
+  const ghCwd = (ctx) => (ctx.remote ? { remote: ctx.remote, dir: ctx.workspace } : gitCwd(ctx));
+  const ghRepo = async (ctx) => {
+    const repo = ctx.workspace && (await github.repoOf(ghCwd(ctx)));
+    if (!repo) throw new Error("This folder's git repository isn't on GitHub (its origin remote doesn't point to github.com).");
+    return repo;
+  };
+  handle('gh:status', (ctx) => (ctx.workspace ? github.status(settings, ghCwd(ctx)) : { repo: null }));
+  handle('gh:set-token', (ctx, token) => {
+    settings.github = token ? github.sealToken(token.trim()) : undefined;
+    saveSettings();
+    github.forgetCli();
+    return ctx.workspace ? github.status(settings, ghCwd(ctx)) : null;
+  });
+  handle('gh:prs', async (ctx) => github.listPrs(settings, await ghRepo(ctx)));
+  handle('gh:pr', async (ctx, n) => github.getPr(settings, await ghRepo(ctx), n));
+  handle('gh:check-log', async (ctx, check) => github.checkLog(settings, await ghRepo(ctx), check));
+  handle('gh:issues', async (ctx) => github.listIssues(settings, await ghRepo(ctx)));
+  handle('gh:issue', async (ctx, n) => github.getIssue(settings, await ghRepo(ctx), n));
+  handle('gh:review', async (ctx, n, review) => github.postReview(settings, await ghRepo(ctx), n, review));
+  handle('gh:create-pr', async (ctx, p) => {
+    const repo = await ghRepo(ctx);
+    return github.createPr(settings, repo, { ...p, base: p.base || (await github.defaultBranch(settings, repo)) });
+  });
+  handle('gh:reply', async (ctx, n, id, body) => github.reply(settings, await ghRepo(ctx), n, id, body));
   handle('worktree:changes', (ctx, wt) => worktrees.changes(ownCopy(wt)));
   handle('worktree:diff', (ctx, wt, rel) => worktrees.fileDiff(ownCopy(wt), rel));
   handle('worktree:merge', (ctx, wt) => worktrees.merge(ownCopy(wt), ctx.workspace));

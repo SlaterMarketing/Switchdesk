@@ -57,14 +57,19 @@ function renderWorktreeBar() {
   const wt = chat.worktree;
   if (wt.removed) return bar.replaceChildren(h('span', { class: 'wt-icon' }, '⑂'), h('span', { class: 'muted' }, 'This copy was removed. Start a new chat to keep going.'));
   const n = (chat.wtChanges || []).length;
+  // A pull request's copy pushes to it; an issue's copy opens one.
+  const github = chat.pr && chat.pr.sameRepo ? 'push' : chat.issue && !chat.pr ? 'open' : null;
   bar.replaceChildren(
     ...[
       h('span', { class: 'wt-icon' }, '⑂'),
-      h('span', { class: 'wt-label', title: `Branch ${wt.branch}\n${wt.root}` }, 'Own copy'),
+      h('span', { class: 'wt-label', title: `Branch ${wt.branch}\n${wt.root}` }, chat.pr ? `PR #${chat.pr.number}` : chat.issue ? `Issue #${chat.issue.number}` : 'Own copy'),
       h('span', { class: 'muted' }, n ? `${n} file${n > 1 ? 's' : ''} changed` : 'no changes yet'),
       h('span', { class: 'spacer' }),
       n ? h('button', { class: 'btn small', onclick: () => reviewWorktree(chat) }, 'Review') : null,
-      n ? h('button', { class: 'btn small primary', title: 'Bring these changes into your folder', onclick: () => (chat.compare ? useComparison(chat) : mergeWorktree(chat)) }, chat.compare ? 'Use this one' : 'Merge into my folder') : null,
+      chat.pr ? h('button', { class: 'btn small', title: 'Open the pull request', onclick: () => openPr(chat.pr.number) }, 'View PR') : null,
+      github === 'push' && n ? h('button', { class: 'btn small primary', title: `Push the agent's commits to ${chat.pr.head} on GitHub`, onclick: () => pushToPr(chat) }, `Push to PR #${chat.pr.number}`) : null,
+      github === 'open' && n ? h('button', { class: 'btn small primary', title: 'Push this branch and open a pull request that closes the issue', onclick: () => openPrFromCopy(chat) }, 'Open pull request') : null,
+      n && !github ? h('button', { class: 'btn small primary', title: 'Bring these changes into your folder', onclick: () => (chat.compare ? useComparison(chat) : mergeWorktree(chat)) }, chat.compare ? 'Use this one' : 'Merge into my folder') : null,
       h('button', { class: 'btn small danger', title: 'Delete this copy and its branch', onclick: () => discardWorktree(chat) }, 'Discard'),
     ].filter(Boolean)
   );

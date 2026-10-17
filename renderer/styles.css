@@ -832,3 +832,42 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 .ssh-dirs { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
 .ssh-browser.hidden { display: none; }
 .ssh-browser .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* GitHub: pull requests and issues */
+.gh-connect { margin: 6px 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.gh-list { display: flex; flex-direction: column; }
+.gh-row { display: flex; align-items: flex-start; gap: 7px; padding: 4px 10px; cursor: pointer; }
+.gh-row:hover { background: var(--bg-hover); }
+.gh-row .what { min-width: 0; flex: 1; }
+.gh-row .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.gh-empty { padding: 4px 10px; }
+.gh-check { width: 12px; flex: none; text-align: center; font-size: 11px; color: var(--text-dim); padding-top: 2px; }
+.gh-check.passing { color: var(--add); }
+.gh-check.failing { color: var(--err); }
+.gh-check.running { color: var(--warn); }
+#pr-view.hidden { display: none; }
+#pr-view { position: absolute; inset: 0; overflow: auto; padding: 24px max(32px, calc(50% - 420px)) 64px; background: var(--bg); z-index: 5; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+#pr-view h2 { margin: 0 0 4px; font-size: 20px; color: var(--text-strong); }
+#pr-view h3 { margin: 14px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+#pr-view .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.pr-state { display: inline-block; padding: 1px 8px; border-radius: 10px; font-weight: 600; color: #fff; background: var(--add); }
+.pr-state.merged { background: var(--plan); }
+.pr-state.closed { background: var(--err); }
+.pr-state.draft { background: var(--text-dim); }
+.pr-checks { display: flex; flex-direction: column; gap: 2px; }
+.pr-check { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.pr-check .name { color: var(--text); }
+.pr-thread { display: flex; flex-direction: column; gap: 6px; }
+.pr-thread.outdated { opacity: 0.7; }
+.pr-thread textarea { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 8px; font: 12px var(--sans); }
+.pr-where code { font-family: var(--mono); font-size: 12px; }
+.pr-comment { border-left: 2px solid var(--border); padding-left: 10px; }
+.pr-hunk, .pr-patch { font: 11px/1.45 var(--mono); background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 0; overflow-x: auto; white-space: pre; }
+.pr-patch { max-height: 420px; margin: 2px 0 8px 22px; }
+.pr-hunk .add, .pr-patch .add { color: var(--add); }
+.pr-hunk .del, .pr-patch .del { color: var(--del); }
+.pr-hunk .hunk, .pr-patch .hunk { color: var(--text-dim); }
+.issue-modal { max-height: 60vh; overflow: auto; }
+.issue-body { margin: 6px 0; }
+#worktree-bar .btn, #worktree-bar .wt-label, #worktree-bar .muted { white-space: nowrap; }
+#worktree-bar { flex-wrap: wrap; row-gap: 4px; }

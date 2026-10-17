@@ -32,7 +32,8 @@ function slugify(name) {
   );
 }
 
-async function create(workspace, name) {
+// rev: start from that commit (a pull request's head) instead of your folder as it is now.
+async function create(workspace, name, { rev } = {}) {
   let root;
   try {
     root = (await git(workspace, ['rev-parse', '--show-toplevel'])).trim();
@@ -45,7 +46,8 @@ async function create(workspace, name) {
   const branch = `desk/${id}`;
   const dir = path.join(baseDir, `${path.basename(root)}-${crypto.createHash('sha1').update(root).digest('hex').slice(0, 6)}`, id);
   await fsp.mkdir(path.dirname(dir), { recursive: true });
-  await git(root, ['worktree', 'add', '-q', '-b', branch, dir, 'HEAD']);
+  await git(root, ['worktree', 'add', '-q', '-b', branch, dir, rev || 'HEAD']);
+  if (rev) return { id, branch, path: path.join(dir, sub), root: dir, repo: root, sub: sub.split(path.sep).join('/'), base: await writeTree(dir) };
 
   // Bring over uncommitted work: tracked changes as a patch, untracked files as copies.
   const patch = await git(root, ['diff', 'HEAD', '--binary'], { encoding: 'buffer' });
@@ -166,8 +168,28 @@ async function remove(wt) {
   return true;
 }
 
+// Commits what's left uncommitted in the copy, then pushes it to the remote's branch `to`.
+// pushUrl, when given, is tried if the remote refuses (a GitHub token Switchdesk holds).
+async function push(wt, to, { message, pushUrl } = {}) {
+  const env = { GIT_TERMINAL_PROMPT: '0' };
+  if ((await git(wt.root, ['status', '--porcelain'])).trim()) {
+    await git(wt.root, ['add', '-A']);
+    await git(wt.root, ['commit', '-q', '-m', message || 'Changes from Switchdesk'], { env });
+  }
+  const ref = `HEAD:refs/heads/${to}`;
+  try {
+    await git(wt.root, ['push', 'origin', ref], { env });
+  } catch (err) {
+    if (!pushUrl) throw new Error(String(err.stderr || err.message).trim().split('\n').slice(-3).join('\n'));
+    await git(wt.root, ['push', pushUrl, ref], { env }).catch((e) => {
+      throw new Error(String(e.stderr || e.message).replace(pushUrl, 'GitHub').trim().split('\n').slice(-3).join('\n'));
+    });
+  }
+  return { sha: (await git(wt.root, ['rev-parse', 'HEAD'])).trim() };
+}
+
 function exists(wt) {
   return !!(wt && wt.root && isUnder(wt.root) && fs.existsSync(wt.root));
 }
 
-module.exports = { setBaseDir, isUnder, create, changes, fileDiff, merge, remove, exists };
+module.exports = { setBaseDir, isUnder, create, changes, fileDiff, merge, remove, exists, push };

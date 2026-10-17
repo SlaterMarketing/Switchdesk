@@ -2,7 +2,8 @@
 // tests. It answers without a model:
 //   - in plan mode it runs a read-only command (asking permission) and saves a plan with Create Plan;
 //   - "compare-test" in Agent mode writes fake.txt in the session's folder;
-//   - a second-opinion request gets a findings block about cart.js;
+//   - a second-opinion request gets a findings block about cart.js, and so does a pull request review;
+//   - fixing a pull request or an issue writes fixed.txt and commits it;
 //   - anything else is echoed back as "[<agent>] [<mode>] got: …".
 // Every message it receives is appended to $FAKE_AGENT_DIR/log.jsonl.
 'use strict';
@@ -61,7 +62,15 @@ Make the cart total handle an empty cart, in \`cart.js\`.
 
 async function prompt(m) {
   const text = m.params.prompt.map((p) => p.text || '').join('');
-  if (/giving a second opinion/.test(text)) {
+  if (/Review pull request #\d+ "/.test(text)) {
+    say('One real problem.\n\n```findings\n[{"file": "cart.js", "line": 2, "severity": "error", "title": "Null cart throws", "detail": "total(null) throws a TypeError."}]\n```\n');
+  } else if (/Switchdesk (pushes to|opens) the pull request/.test(text) && mode !== 'plan') {
+    // A pull request's or an issue's copy: fix it and commit, as asked.
+    fs.writeFileSync(path.join(cwd, 'fixed.txt'), `fixed by ${NAME}\n`);
+    require('child_process').execFileSync('git', ['add', '-A'], { cwd });
+    require('child_process').execFileSync('git', ['commit', '-q', '-m', `Fix from ${NAME}`], { cwd });
+    say(`Fixed it and committed in ${cwd}.`);
+  } else if (/giving a second opinion/.test(text)) {
     say('Mostly fine, one thing to check.\n\n```findings\n[{"file": "cart.js", "line": 1, "severity": "warning", "title": "Empty cart not handled", "detail": "total() of [] is fine, but null throws."}]\n```\n');
   } else if (mode === 'plan') {
     const cmd = 'ls plans';

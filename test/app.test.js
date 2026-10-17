@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle, sshServer, agentLog } = require('./helpers');
+const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle, sshServer, agentLog, fakeGithub } = require('./helpers');
 
 const until = (w, fn, arg, timeout = 30000) => w.waitForFunction(fn, arg, { timeout });
 
@@ -277,6 +277,75 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   await until(w, () => /43/.test(document.querySelectorAll('#nb-view .nb-outputs')[4]?.innerText || ''), null, 30000).catch(async () => {
     throw new Error('outputs: ' + (await w.$$eval('#nb-view .nb-outputs', (e) => e.map((x) => x.innerText).join(' | '))));
   });
+});
+
+test('pull requests: fix a check and a comment, push, review with an agent, and an issue to a PR', { timeout: 180000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const hub = await fakeGithub(dir);
+  const { app, w, errors } = await launch(p, dir, hub.env);
+  const gitIn = (cwd, ...a) => require('child_process').execFileSync('git', a, { cwd }).toString().trim();
+  try {
+    // New chats use a stand-in agent.
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.evaluate(() => showSidePanel('git'));
+    await w.waitForSelector('.gh-row:has-text("Guard the cart total")', { timeout: 30000 });
+    assert.match(await w.$eval('.gh-row', (e) => e.innerText), /#7 · sam/);
+    // The pull request opens in a tab with its check, comment and files.
+    await w.click('.gh-row:has-text("Guard the cart total")');
+    await w.waitForSelector('#pr-view .pr-thread', { timeout: 15000 });
+    const view = await w.$eval('#pr-view', (e) => e.innerText);
+    for (const want of [/fix-cart/, /1 test failed/, /What about a null cart\?/, /Files changed \(1\)/i]) assert.match(view, want);
+    // A failing check goes to an agent in a copy at the pull request's commit, with its log.
+    await w.click('#pr-view .pr-check button:has-text("Fix with the agent")');
+    await until(w, () => activeChat() && activeChat().pr && activeChat().worktree && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
+    const asked = prompts(p).pop();
+    assert.match(asked, /pull request #7/);
+    assert.match(asked, /total\(null\) threw TypeError/, 'the check log is in the prompt');
+    const copy = await w.evaluate(() => activeChat().worktree.root);
+    assert.equal(gitIn(copy, 'rev-parse', 'HEAD~1'), hub.sha, 'the copy started at the pull request\'s commit');
+    // The review comment goes to the same chat.
+    await w.click('#pr-view .pr-thread button:has-text("Fix with the agent")');
+    await until(w, () => !activeChat().busy && activeChat().pr.threads.length === 1, null, 30000);
+    assert.match(prompts(p).pop(), /What about a null cart\?/);
+    assert.equal(await w.evaluate(() => chats.filter((c) => c.pr).length), 1, 'one chat per pull request');
+    // Push sends the commits to the pull request's branch and answers the comment.
+    await w.click('#worktree-bar button:has-text("Push to PR #7")');
+    await w.click('.modal button:has-text("Push")');
+    await w.waitForFunction(() => /Pushed [0-9a-f]{7} to PR #7/.test(activeChat().el.innerText), null, { timeout: 30000 });
+    assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), gitIn(copy, 'rev-parse', 'HEAD'));
+    assert.ok(hub.posted.some((x) => x.key.endsWith('/comments/900/replies') && /^Fixed in [0-9a-f]{7}/.test(x.body.body)));
+    // Review with an agent: its findings go to GitHub as a review with a line comment.
+    await w.evaluate(() => activateTab('pr:7'));
+    await w.click('#pr-view button:has-text("Review with an agent")');
+    await w.click('.modal .result');
+    await w.waitForSelector('.card.findings button:has-text("Post to the pull request")', { timeout: 60000 });
+    await w.click('.card.findings button:has-text("Post to the pull request")');
+    await w.waitForSelector('.card.findings button:has-text("Posted to GitHub")', { timeout: 15000 });
+    const review = hub.posted.find((x) => x.key.endsWith('/pulls/7/reviews')).body;
+    assert.equal(review.commit_id, hub.sha);
+    assert.deepEqual(review.comments.map((c) => [c.path, c.line]), [['cart.js', 2]]);
+    assert.match(review.comments[0].body, /Null cart throws/);
+    // An issue starts a chat in its own copy, which ends in a pull request that closes it.
+    await w.evaluate(() => ((gh.open.issues = true), renderGit()));
+    await w.click('.gh-row:has-text("Prices need a currency")');
+    await w.click('.modal button:has-text("Start working on it")');
+    await until(w, () => activeChat().issue && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
+    assert.match(prompts(p).pop(), /issue #3: "Prices need a currency"/);
+    await w.click('#worktree-bar button:has-text("Open pull request")');
+    await w.click('.modal button:has-text("Open pull request")');
+    await until(w, () => activeChat().pr && activeChat().pr.number === 8, null, 30000);
+    const opened = hub.posted.find((x) => x.key === 'POST /repos/o/r/pulls').body;
+    assert.equal(opened.title, 'Prices need a currency');
+    assert.match(opened.body, /^Closes #3\./);
+    assert.equal(opened.base, 'main');
+    assert.equal(gitIn(hub.bare, 'rev-parse', opened.head), gitIn(await w.evaluate(() => activeChat().worktree.root), 'rev-parse', 'HEAD'), 'its branch was pushed');
+    assert.deepEqual(errors, []);
+  } finally {
+    hub.close();
+    await app.close().catch(() => {});
+  }
 });
 
 test('an SSH folder: files, search, git, the terminal and an agent all on the host', { timeout: 180000 }, async (t) => {

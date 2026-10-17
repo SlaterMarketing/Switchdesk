@@ -182,7 +182,7 @@ function renderTabs() {
           onclick: () => activateTab(t.id),
           onauxclick: (e) => e.button === 1 && closeTab(t.id),
         },
-        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : t.kind === 'plan' ? h('span', { class: 'badge' }, '◆') : null,
+        t.kind === 'diff' ? h('span', { class: 'badge' }, 'Δ') : t.kind === 'preview' ? h('span', { class: 'badge' }, '◉') : t.kind === 'plan' ? h('span', { class: 'badge' }, '◆') : t.kind === 'pr' ? h('span', { class: 'badge' }, '⇅') : null,
         t.rel.split('/').pop(),
         h('button', { class: 'close', onclick: (e) => (e.stopPropagation(), closeTab(t.id)) }, '×')
       )
@@ -208,6 +208,7 @@ function activateTab(id) {
   $('#diff-bar').classList.toggle('hidden', !isDiff);
   showPlan(t);
   showNotebook(t);
+  showPr(t);
   if (t && (t.kind === 'file' || t.kind === 'plan')) {
     editor.setModel(t.model);
     if (t.viewState) editor.restoreViewState(t.viewState);
@@ -233,6 +234,7 @@ function closeTab(id) {
   notebookClosed(t);
   if (t.kind === 'file' || t.kind === 'plan') t.model.dispose();
   else if (t.kind === 'preview') $('#preview').classList.add('hidden');
+  else if (t.kind === 'pr') showPr(null);
   else {
     t.original.dispose();
     t.modified.dispose();
@@ -248,6 +250,7 @@ function closeTab(id) {
       $('#diff-bar').classList.add('hidden');
       $('#editor').classList.remove('hidden');
       showNotebook(null);
+      showPr(null);
     }
   }
   renderTabs();
@@ -471,6 +474,7 @@ async function setFolder(info) {
     await loadAccounts(); // the folder may use a different account
     await restoreWorkspace(info.key || info.root);
     schedulesFolderOpened();
+    githubFolderOpened();
   } finally {
     restoringWorkspace = false;
   }
@@ -548,7 +552,7 @@ async function saveWorkspace() {
     side: side.rel || null,
     panel: state.sidePanel || 'explorer',
     draft: $('#input').value.slice(0, 20000),
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined, compare: c.compare || undefined, comparePrompt: (c.compare && (compareGroups.get(c.compare) || {}).prompt) || undefined, merged: c.merged || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined, compare: c.compare || undefined, comparePrompt: (c.compare && (compareGroups.get(c.compare) || {}).prompt) || undefined, merged: c.merged || undefined, pr: c.pr || undefined, issue: c.issue || undefined })),
     activeChat: activeChat()?.sessionId || null,
     plans: planSnapshot(),
     planActive: !!(t && t.kind === 'plan'),
@@ -571,6 +575,9 @@ async function restoreWorkspace(root) {
       } catch {
         /* transcript deleted */
       }
+      // A pull request's or an issue's chat still offers Push or Open pull request.
+      const own = (c.pr || c.issue) && chats.find((x) => x.sessionId === c.sessionId);
+      if (own) Object.assign(own, { pr: c.pr || null, issue: c.issue || null });
       // Chats that were compared still show their bar together.
       const chat = c.compare && chats.find((x) => x.sessionId === c.sessionId);
       if (chat) {

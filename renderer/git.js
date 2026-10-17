@@ -179,6 +179,7 @@ function renderGit() {
     conflictRows.length ? h('div', { class: 'git-files' }, ...conflictRows) : null,
     h('div', { class: 'git-section muted small' }, others.length ? 'Changes' : conflictRows.length ? '' : 'No changes since the last commit.'),
     h('div', { class: 'git-files' }, ...others),
+    githubSection(),
     historySection(),
     ].filter(Boolean)
   );
