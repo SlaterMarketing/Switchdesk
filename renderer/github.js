@@ -250,7 +250,7 @@ function renderPr(t) {
         { class: 'actions' },
         failing.length ? h('button', { class: 'btn small primary', onclick: () => fixPr(p, failing.map((c) => ({ kind: 'check', check: c }))) }, `Fix ${failing.length > 1 ? `${failing.length} failing checks` : 'the failing check'}`) : null,
         p.threads.length ? h('button', { class: 'btn small', onclick: () => fixPr(p, p.threads.filter((x) => !x.outdated).map((th) => ({ kind: 'comment', thread: th }))) }, 'Fix all review comments') : null,
-        h('button', { class: 'btn small', onclick: () => reviewPr(p) }, '👁 Review with an agent'),
+        h('button', { class: 'btn small', onclick: () => reviewPr(p) }, '👁\uFE0E Review with an agent'),
         chat ? h('button', { class: 'btn small', onclick: () => switchChat(chat.id) }, 'Open its chat') : null,
         h('span', { class: 'spacer' }),
         h('button', { class: 'btn small', onclick: () => desk.openExternal(p.url) }, 'Open on GitHub ↗'),

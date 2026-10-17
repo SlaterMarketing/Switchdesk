@@ -45,6 +45,7 @@ async function sendToSeveral() {
   if (choices.length < 2) return toast('Sign in to at least two agents first (Settings → Agents).');
   const input = $('#input');
   const text = h('textarea', {
+    class: 'pr-body',
     rows: 4,
     placeholder: 'What should they all do?',
     spellcheck: 'false',

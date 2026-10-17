@@ -72,7 +72,9 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border);
 #titlebar { display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--bg-panel); border-bottom: 1px solid var(--border); -webkit-app-region: drag; }
 body.mac #titlebar { padding-left: 78px; }
 #titlebar button, #titlebar input { -webkit-app-region: no-drag; }
-.title-left, .title-right { display: flex; align-items: center; gap: 6px; flex: 1; }
+.title-left, .title-right { display: flex; align-items: center; gap: 6px; flex: 1 1 0; }
+/* The folder's name gets the room it needs before the search box stays centred. */
+.title-left { flex: 1 1 auto; }
 .title-right { justify-content: flex-end; }
 .title-center { flex: 2; display: flex; justify-content: center; }
 #folder-name { font-weight: 600; color: var(--text-strong); }
@@ -89,10 +91,11 @@ body.mac #titlebar { padding-left: 78px; }
 
 /* layout */
 /* One row that always fits the window; long file lists scroll inside their panel instead of stretching the columns. */
-#workbench { display: grid; grid-template-columns: var(--sidebar-w) 4px 1fr 4px var(--chat-w); grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
+/* On a small window the side panels give way, so the editor keeps some room. */
+#workbench { display: grid; grid-template-columns: min(var(--sidebar-w), 25vw) 4px minmax(0, 1fr) 4px min(var(--chat-w), max(40vw, calc(75vw - 300px))); grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
 #workbench > * { min-height: 0; }
 #sidebar, #chat { overflow: hidden; }
-#workbench.no-sidebar { grid-template-columns: 0 0 1fr 4px var(--chat-w); }
+#workbench.no-sidebar { grid-template-columns: 0 0 minmax(0, 1fr) 4px min(var(--chat-w), max(40vw, calc(75vw - 300px))); }
 #workbench.no-sidebar #sidebar, #workbench.no-sidebar .resizer[data-resize=sidebar] { visibility: hidden; overflow: hidden; border: 0; min-width: 0; }
 .resizer { cursor: col-resize; background: transparent; }
 .resizer:hover, .resizer.dragging { background: var(--accent-soft); }
@@ -160,10 +163,10 @@ body.mac #titlebar { padding-left: 78px; }
 .chat-header { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); height: 38px; }
 #chat-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; }
 #chat-tabs::-webkit-scrollbar { height: 0; }
-.chat-tab { display: flex; align-items: center; gap: 5px; max-width: 170px; padding: 3px 4px 3px 9px; border-radius: 6px; cursor: pointer; color: var(--text-dim); font-size: 12px; white-space: nowrap; flex: none; }
+.chat-tab { display: flex; align-items: center; gap: 5px; max-width: 170px; padding: 3px 4px 3px 9px; border-radius: 6px; cursor: pointer; color: var(--text-dim); font-size: 12px; white-space: nowrap; flex: 0 1 auto; min-width: 52px; }
 .chat-tab:hover { background: var(--bg-hover); }
 .chat-tab.active { background: var(--bg-active); color: var(--text-strong); }
-.chat-tab .t { overflow: hidden; text-overflow: ellipsis; }
+.chat-tab .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .chat-tab .close { border: none; background: none; cursor: pointer; color: inherit; padding: 0 3px; border-radius: 4px; opacity: 0; }
 .chat-tab:hover .close, .chat-tab.active .close { opacity: 0.7; }
 .chat-tab .close:hover { background: var(--bg-hover); opacity: 1; }
@@ -378,7 +381,7 @@ body.mac #titlebar { padding-left: 78px; }
 .git-empty { padding: 16px 12px; display: grid; gap: 8px; justify-items: start; }
 .git-empty p { margin: 0; }
 .git-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px 10px; }
-.git-branch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-strong); border-radius: 6px; padding: 3px 6px; max-width: 150px; outline: none; }
+.git-branch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-strong); border-radius: 6px; padding: 3px 6px; max-width: 150px; min-width: 50px; flex: 0 1 auto; outline: none; }
 .git-commit { padding: 0 8px 8px; display: grid; gap: 6px; }
 .git-commit .row { display: flex; gap: 6px; align-items: center; }
 .git-msg { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 8px; font: 12px var(--sans); resize: vertical; outline: none; }
@@ -432,10 +435,12 @@ body.mac #app-menu { display: none; }
 #folder-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .title-left { min-width: 0; }
 body:not(.mac) #app-menu { border-right: 1px solid var(--border); padding-right: 6px; }
-.title-center { flex: 0 1 460px; min-width: 200px; }
+.title-center { flex: 0 1 420px; min-width: 160px; }
 
 /* search in files */
-.side-tab { padding: 6px 2px; }
+.side-tab { padding: 6px 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-tabs { overflow: hidden; }
+@media (max-width: 1100px) { .side-tab { letter-spacing: 0.02em; font-size: 10px; } }
 #panel-search { overflow: hidden; }
 .search-box { padding: 8px; display: grid; gap: 6px; }
 .search-row { display: flex; align-items: center; gap: 2px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding-right: 3px; }
@@ -893,9 +898,11 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 #diff-bar #diff-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The board (board.js) */
 #board-view { position: absolute; inset: 0; overflow: auto; padding: 20px 24px 48px; background: var(--bg); z-index: 5; display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
-.board-head { display: flex; align-items: center; gap: 12px; }
+.board-head { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; }
+.board-head > * { white-space: nowrap; }
 .board-head h2 { margin: 0; font-size: 18px; }
-.board-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: start; }
+.board-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; align-items: start; }
+.board-col:not(:has(.board-card)) { min-height: 0; }
 .board-col { display: flex; flex-direction: column; gap: 8px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 80px; }
 .board-col-head { text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 600; }
 .board-col.needs .board-col-head { color: var(--accent); }
@@ -910,6 +917,13 @@ pre.nb-out { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, 
 .board-empty { padding: 40px 0; text-align: center; }
 .board-start { min-width: 460px; }
 .board-picks { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; margin: 6px 0; }
-.board-pick { display: flex; flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
-.board-pick input { width: auto; margin: 0; flex: none; }
+.modal label.check { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+.modal label.check input { width: auto; margin: 0; padding: 0; }
+.compare-pick textarea, .board-start textarea { font-family: inherit; font-size: 13px; margin-top: 0; }
+.modal .board-pick { display: flex; flex-direction: row; align-items: baseline; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); padding: 3px 0; }
+.modal .board-pick input { width: auto; margin: 0; padding: 0; flex: none; }
+.board-start select { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 8px; outline: none; font: inherit; font-size: 12px; }
 .board-start .row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* links read in both themes */
+a { color: var(--accent); }

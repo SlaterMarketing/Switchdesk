@@ -91,6 +91,7 @@ function editRule(workspace, scope, rule, add, acct) {
 }
 
 async function runClaude(bin, args, cwd, acct = mainAcct()) {
+  if (!bin) return { ok: false, out: "Claude Code isn't installed. Set it up in Settings → General." };
   const env = await cli.childEnv(acct.env);
   return new Promise((resolve) => {
     execFile(bin, args, { cwd, env, timeout: 60000, windowsHide: true, shell: process.platform === 'win32' && bin.endsWith('.cmd') }, (err, stdout, stderr) =>

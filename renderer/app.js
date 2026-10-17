@@ -811,12 +811,21 @@ function autoGrow() {
 
 function modal(content, { onClose } = {}) {
   const backdrop = h('div', { class: 'modal-backdrop' }, h('div', { class: 'modal' }, ...content));
+  // Esc closes the top one, wherever the focus is (the editor, or nothing in the dialog yet).
+  const onKey = (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || $('#modal-root').lastElementChild !== backdrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+  };
   const close = () => {
+    if (!backdrop.isConnected) return;
+    window.removeEventListener('keydown', onKey, true);
     backdrop.remove();
     onClose && onClose();
   };
   backdrop.addEventListener('mousedown', (e) => e.target === backdrop && close());
-  backdrop.addEventListener('keydown', (e) => e.key === 'Escape' && (e.preventDefault(), close()));
+  window.addEventListener('keydown', onKey, true);
   $('#modal-root').append(backdrop);
   return close;
 }
@@ -867,10 +876,16 @@ let toastTimer;
 function toast(text) {
   let el = $('#toast');
   if (!el) {
-    el = h('div', { id: 'toast', style: 'position:fixed;bottom:36px;left:50%;transform:translateX(-50%);background:var(--bg-elev);border:1px solid var(--border);padding:8px 14px;border-radius:8px;z-index:60;max-width:70vw;box-shadow:0 8px 24px rgba(0,0,0,.3)' });
+    el = h('div', { id: 'toast', onclick: () => el.classList.add('hidden'), style: 'position:fixed;bottom:36px;left:50%;transform:translateX(-50%);background:var(--bg-elev);border:1px solid var(--border);padding:8px 14px;border-radius:8px;z-index:60;max-width:70vw;box-shadow:0 8px 24px rgba(0,0,0,.3)' });
     document.body.append(el);
   }
   el.textContent = text;
+  // Over the middle of the editor, clear of the chat box.
+  const area = $('#editor-area').getBoundingClientRect();
+  if (area.width > 200) {
+    el.style.left = `${area.left + area.width / 2}px`;
+    el.style.maxWidth = `${area.width - 32}px`;
+  }
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 4500);

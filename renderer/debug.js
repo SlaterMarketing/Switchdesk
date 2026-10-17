@@ -329,7 +329,7 @@ function renderDebug() {
     addOutput(r.error ? 'stderr' : 'result', `${r.error || r.value}\n`);
   });
   const out = h('div', { class: 'dbg-console', id: 'dbg-console' });
-  panel.replaceChildren(head, exception, ask ? h('div', { style: 'padding:0 10px 6px' }, ask) : null, stack, vars, watches, bpList, section('Console', out, consoleIn));
+  panel.replaceChildren(...[head, exception, ask ? h('div', { style: 'padding:0 10px 6px' }, ask) : null, stack, vars, watches, bpList, section('Console', out, consoleIn)].filter(Boolean));
   renderConsole();
 }
 

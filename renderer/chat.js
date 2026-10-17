@@ -110,7 +110,7 @@ function renderChatMeta() {
     return;
   }
   const k = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
-  el.textContent = `${chat.usage.turns} turn${chat.usage.turns > 1 ? 's' : ''} · context ${k(chat.usage.context)}`;
+  el.textContent = `${chat.usage.turns} turn${chat.usage.turns > 1 ? 's' : ''}${chat.usage.context ? ` · context ${k(chat.usage.context)}` : ''}`;
   el.title = `${chat.usage.model ? chat.usage.model + ' · ' : ''}Tokens currently in this conversation's context window.`;
 }
 

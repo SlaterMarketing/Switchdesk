@@ -172,13 +172,13 @@ function renderGit() {
 
   panel.replaceChildren(
     ...[
-    h('div', { class: 'git-head' }, repoSel, h('span', { class: 'muted small' }, '⎇'), branchSel, h('span', { class: 'spacer' }), h('button', { class: 'icon-btn', title: 'Second opinion: have another agent review your uncommitted changes', onclick: () => secondOpinion() }, '👁'), prBtn, ...syncBtns, h('button', { class: 'icon-btn', title: 'Refresh', onclick: refreshGit }, '⟳')),
+    h('div', { class: 'git-head' }, repoSel, h('span', { class: 'muted small' }, '⎇'), branchSel, h('span', { class: 'spacer' }), h('button', { class: 'icon-btn', title: 'Second opinion: have another agent review your uncommitted changes', onclick: () => secondOpinion() }, '👁\uFE0E'), prBtn, ...syncBtns, h('button', { class: 'icon-btn', title: 'Refresh', onclick: refreshGit }, '⟳')),
     git.busy && !['suggest', 'commit'].includes(git.busy) ? h('div', { class: 'muted small', style: 'padding:0 10px 6px' }, git.busy === 'pr' ? 'Writing the pull request…' : `Running git ${git.busy}…`) : null,
     opBar,
     op ? null : h('div', { class: 'git-commit' }, msg, h('div', { class: 'row' }, suggest, h('span', { class: 'spacer' }), commitBtn)),
     conflictRows.length ? h('div', { class: 'git-section muted small' }, 'Conflicts') : null,
     conflictRows.length ? h('div', { class: 'git-files' }, ...conflictRows) : null,
-    h('div', { class: 'git-section muted small' }, others.length ? 'Changes' : conflictRows.length ? '' : 'No changes since the last commit.'),
+    others.length ? h('div', { class: 'git-section muted small' }, 'Changes') : conflictRows.length ? null : h('div', { class: 'muted small', style: 'padding:6px 10px 4px' }, 'No changes since the last commit.'),
     h('div', { class: 'git-files' }, ...others),
     githubSection(),
     linearSection(),
