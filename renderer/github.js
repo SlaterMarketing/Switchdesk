@@ -501,13 +501,17 @@ async function openIssue(n) {
   ]);
 }
 
+// A GitHub issue (#12) or a Linear one (ENG-12).
+const issueRef = (i) => (i.identifier ? i.identifier : `#${i.number}`);
+
 async function startIssue(i, mode) {
-  const chat = createChat({ title: `#${i.number} ${i.title}`.slice(0, 60) });
-  chat.issue = { number: i.number, title: i.title };
+  const ref = issueRef(i);
+  const chat = createChat({ title: `${ref} ${i.title}`.slice(0, 60) });
+  chat.issue = i.identifier ? { linear: true, id: i.id, identifier: i.identifier, title: i.title, url: i.url } : { number: i.number, title: i.title };
   chat.making = true;
   renderWorktreeBar();
   try {
-    chat.worktree = await desk.worktree.create(`issue ${i.number} ${i.title}`.slice(0, 40));
+    chat.worktree = await desk.worktree.create((i.identifier ? `${i.identifier} ${i.title}` : `issue ${i.number} ${i.title}`).slice(0, 40));
     chat.wtCount = 0;
   } catch (e) {
     chat.making = false;
@@ -519,9 +523,9 @@ async function startIssue(i, mode) {
   renderWorktreeBar();
   queueSaveWorkspace();
   const talk = i.comments.length ? `\n\nComments on it:\n\n${i.comments.slice(-10).map((c) => `${c.author}: ${c.body}`).join('\n\n')}` : '';
-  const prompt = `Work on GitHub issue #${i.number}: "${i.title}" (opened by ${i.author}).\n\n${i.body.trim() || '(no description)'}${talk}\n\nYou're in your own copy of the repository, on a new branch. Make the change, check it works, and commit with a clear message that mentions #${i.number}. Don't push: Switchdesk opens the pull request when you're done.`;
+  const prompt = `Work on ${i.identifier ? 'Linear' : 'GitHub'} issue ${ref}: "${i.title}" (opened by ${i.author}).\n\n${i.body.trim() || '(no description)'}${talk}\n\nYou're in your own copy of the repository, on a new branch. Make the change, check it works, and commit with a clear message that mentions ${ref}. Don't push: Switchdesk opens the pull request when you're done.`;
   setMode(mode);
-  send(prompt, mode, `Work on issue #${i.number}: ${i.title}`, chat);
+  send(prompt, mode, `Work on issue ${ref}: ${i.title}`, chat);
 }
 
 // The issue's copy, pushed to its branch and opened as a pull request that closes the issue.
@@ -531,12 +535,14 @@ async function openPrFromCopy(chat) {
   const last = [...chat.el.querySelectorAll('.msg-text')].pop();
   const title = h('input', { class: 'big', value: issue.title, spellcheck: 'true' });
   const body = h('textarea', { class: 'pr-body', rows: 10, spellcheck: 'true' });
-  body.value = `Closes #${issue.number}.\n\n${last ? last.innerText.trim() : ''}`.trim();
+  const ref = issueRef(issue);
+  // "Closes #12" closes a GitHub issue when the pull request merges; "Fixes ENG-12" does the same in Linear.
+  body.value = `${issue.linear ? 'Fixes' : 'Closes'} ${ref}.\n\n${last ? last.innerText.trim() : ''}`.trim();
   const draft = h('input', { type: 'checkbox' });
   const green = keepGreenBox();
   const go = h('button', { class: 'btn primary' }, 'Open pull request');
   const close = modal([
-    h('div', { class: 'body' }, h('h3', {}, `Pull request for issue #${issue.number}`), h('p', { class: 'muted small' }, `Pushes the branch ${chat.worktree.branch} to GitHub (committing anything left uncommitted) and opens the pull request.`), title, body, h('label', { class: 'check' }, draft, ' Open it as a draft'), green.el),
+    h('div', { class: 'body' }, h('h3', {}, `Pull request for issue ${ref}`), h('p', { class: 'muted small' }, `Pushes the branch ${chat.worktree.branch} to GitHub (committing anything left uncommitted) and opens the pull request.`), title, body, h('label', { class: 'check' }, draft, ' Open it as a draft'), green.el),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close() }, 'Cancel'), go),
   ]);
   title.focus();
@@ -544,9 +550,10 @@ async function openPrFromCopy(chat) {
     go.disabled = true;
     go.textContent = 'Opening…';
     try {
-      const pushed = await desk.worktree.push(chat.worktree, chat.worktree.branch, `${title.value.trim()} (#${issue.number})`);
+      const pushed = await desk.worktree.push(chat.worktree, chat.worktree.branch, `${title.value.trim()} (${ref})`);
       const r = await desk.github.createPr({ head: chat.worktree.branch, title: title.value.trim(), body: body.value, draft: draft.checked });
       close();
+      if (issue.linear) desk.linear.comment(issue.id, `Pull request: [#${r.number} ${title.value.trim()}](${r.url})`).catch(() => {});
       chat.pr = { number: r.number, title: title.value.trim(), head: chat.worktree.branch, base: null, sameRepo: true, threads: [], pushedSha: pushed.sha };
       if (green.watch()) startWatch(chat, pushed.sha, green.fix());
       appendChat(h('div', { class: 'notice' }, `Opened PR #${r.number}. Changes you make in this chat from now on can be pushed to it.`), chat);

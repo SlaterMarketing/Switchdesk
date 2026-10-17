@@ -17,6 +17,7 @@ const config = require('./config');
 const updater = require('./updater');
 const search = require('./search');
 const worktrees = require('./worktrees');
+const linear = require('./linear');
 const github = require('./github');
 const accounts = require('./accounts');
 const debuglog = require('./debuglog');
@@ -1356,6 +1357,16 @@ function registerIpc() {
     }
     return out;
   });
+  // Linear: your open issues, to start work from (linear.js).
+  handle('linear:status', () => linear.status(settings));
+  handle('linear:set-key', (ctx, key) => {
+    settings.linear = key ? linear.sealKey(key.trim()) : undefined;
+    saveSettings();
+    return linear.status(settings);
+  });
+  handle('linear:issues', () => linear.issues(settings));
+  handle('linear:issue', (ctx, id) => linear.issue(settings, id));
+  handle('linear:comment', (ctx, id, body) => linear.comment(settings, id, body));
   handle('worktree:changes', async (ctx, wt) => copies(ctx).changes(await ownCopy(ctx, wt)));
   handle('worktree:diff', async (ctx, wt, rel) => copies(ctx).fileDiff(await ownCopy(ctx, wt), rel));
   handle('worktree:merge', async (ctx, wt) => copies(ctx).merge(await ownCopy(ctx, wt), ctx.workspace));

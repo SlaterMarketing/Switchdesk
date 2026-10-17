@@ -226,4 +226,23 @@ async function fakeGithub(dir) {
   return Object.assign(hub, { pr, env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
 }
 
-module.exports = { fakeGithub, sshServer, launch, profile, project, openFolder, autoAllow, agentLog, prompts, chatWith, sendMessage, idle, tempDir };
+// A stand-in for Linear's API: one issue (ENG-12) assigned to you. Each request is in .requests.
+async function fakeLinear() {
+  const http = require('http');
+  const issue = { id: 'iss-12', identifier: 'ENG-12', title: 'Totals need tax', description: 'Add 20% tax to the total.', url: 'https://linear.app/o/issue/ENG-12', branchName: 'tester/eng-12-totals-need-tax', state: { name: 'Todo' }, team: { key: 'ENG' }, priorityLabel: 'High', updatedAt: new Date().toISOString(), creator: { name: 'Sam' }, comments: { nodes: [] } };
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const { query, variables } = JSON.parse(body || '{}');
+      requests.push({ auth: req.headers.authorization, query, variables });
+      const data = /commentCreate/.test(query) ? { commentCreate: { success: true } } : /assignedIssues/.test(query) ? { viewer: { assignedIssues: { nodes: [issue] } } } : /issue\(id/.test(query) ? { issue } : { viewer: { name: 'Tester', email: 'test@example.com' } };
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(req.headers.authorization === 'lin_api_test' ? { data } : { errors: [{ message: 'Authentication required, not authenticated' }] }));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { env: { SWITCHDESK_LINEAR_API: `http://127.0.0.1:${server.address().port}/graphql` }, requests, close: () => server.close() };
+}
+
+module.exports = { fakeGithub, fakeLinear, sshServer, launch, profile, project, openFolder, autoAllow, agentLog, prompts, chatWith, sendMessage, idle, tempDir };

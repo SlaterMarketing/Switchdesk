@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle, sshServer, agentLog, fakeGithub } = require('./helpers');
+const { launch, profile, project, autoAllow, prompts, chatWith, sendMessage, idle, sshServer, agentLog, fakeGithub, fakeLinear } = require('./helpers');
 
 const until = (w, fn, arg, timeout = 30000) => w.waitForFunction(fn, arg, { timeout });
 
@@ -428,6 +428,46 @@ test("a pull request from a fork: the fix is pushed to the fork's branch", { tim
     assert.equal(gitIn(hub.bare, 'rev-parse', 'fix-cart'), hub.sha, 'the main repository is untouched');
     assert.deepEqual(errors, []);
   } finally {
+    hub.close();
+    await app.close().catch(() => {});
+  }
+});
+
+test('a Linear issue: start work on it, and its pull request says it fixes it', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const hub = await fakeGithub(dir);
+  const linear = await fakeLinear();
+  const { app, w, errors } = await launch(p, dir, { ...hub.env, ...linear.env });
+  try {
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.evaluate(() => showSidePanel('git'));
+    await w.click('.git-section:has-text("Linear")');
+    await w.click('button:has-text("Connect Linear")');
+    await w.fill('.modal input', 'lin_api_wrong');
+    await w.click('.modal button:has-text("Connect")');
+    await w.waitForFunction(() => /didn't accept/.test(document.querySelector('.modal').innerText));
+    await w.fill('.modal input', 'lin_api_test');
+    await w.click('.modal button:has-text("Connect")');
+    await w.waitForSelector('.gh-row:has-text("Totals need tax")', { timeout: 15000 });
+    assert.match(await w.$eval('.gh-row:has-text("Totals need tax")', (e) => e.innerText), /ENG-12 · Todo · High/);
+    await w.click('.gh-row:has-text("Totals need tax")');
+    await w.click('.modal button:has-text("Start working on it")');
+    await until(w, () => activeChat().issue && !activeChat().busy && (activeChat().wtChanges || []).length > 0, null, 60000);
+    assert.match(prompts(p).pop(), /Linear issue ENG-12: "Totals need tax"[\s\S]*Add 20% tax/);
+    assert.match(await w.$eval('#worktree-bar', (e) => e.innerText), /Issue ENG-12/);
+    await w.click('#worktree-bar button:has-text("Open pull request")');
+    await w.click('.modal button:has-text("Open pull request")');
+    await until(w, () => activeChat().pr && activeChat().pr.number === 8, null, 30000);
+    const opened = hub.posted.find((x) => x.key === 'POST /repos/o/r/pulls').body;
+    assert.match(opened.body, /^Fixes ENG-12\./);
+    const commented = () => linear.requests.find((r) => /commentCreate/.test(r.query));
+    for (let i = 0; i < 50 && !commented(); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(commented().variables, { id: 'iss-12', body: 'Pull request: [#8 Totals need tax](https://github.com/o/r/pull/8)' });
+    assert.deepEqual(errors, []);
+  } finally {
+    linear.close();
     hub.close();
     await app.close().catch(() => {});
   }

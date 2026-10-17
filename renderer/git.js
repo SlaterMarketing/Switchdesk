@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr, queueEditorComments */
+/* global $, h, state, desk, toast, openDiff, openFile, reloadOpenFiles, refreshFiles, showSidePanel, modal, autoGrow, setMode, secondOpinion, gh, githubSection, refreshGithub, openPr, queueEditorComments, linearSection */
 'use strict';
 
 // ------------------------------------------------------------------ source control panel
@@ -181,6 +181,7 @@ function renderGit() {
     h('div', { class: 'git-section muted small' }, others.length ? 'Changes' : conflictRows.length ? '' : 'No changes since the last commit.'),
     h('div', { class: 'git-files' }, ...others),
     githubSection(),
+    linearSection(),
     historySection(),
     ].filter(Boolean)
   );

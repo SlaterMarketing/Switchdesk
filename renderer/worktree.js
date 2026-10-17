@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, activeChat, createChat, switchChat, renderChatTabs, appendChat, openDiff, addReviews,
-   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison, canPushTo */
+   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison, canPushTo, issueRef */
 'use strict';
 
 // ------------------------------------------------------------------ parallel agents (own copies)
@@ -65,7 +65,7 @@ function renderWorktreeBar() {
   bar.replaceChildren(
     ...[
       h('span', { class: 'wt-icon' }, '⑂'),
-      h('span', { class: 'wt-label', title: `Branch ${wt.branch}\n${wt.root}` }, chat.pr ? `PR #${chat.pr.number}` : chat.issue ? `Issue #${chat.issue.number}` : 'Own copy'),
+      h('span', { class: 'wt-label', title: `Branch ${wt.branch}\n${wt.root}` }, chat.pr ? `PR #${chat.pr.number}` : chat.issue ? `Issue ${issueRef(chat.issue)}` : 'Own copy'),
       h('span', { class: 'muted' }, n ? `${n} file${n > 1 ? 's' : ''} changed` : 'no changes yet'),
       h('span', { class: 'spacer' }),
       n ? h('button', { class: 'btn small', onclick: () => reviewWorktree(chat) }, 'Review') : null,

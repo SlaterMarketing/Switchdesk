@@ -110,6 +110,13 @@ contextBridge.exposeInMainWorld('desk', {
     pushBranch: call('gh:push-branch'),
     merge: call('gh:merge'),
   },
+  linear: {
+    status: call('linear:status'),
+    setKey: call('linear:set-key'),
+    issues: call('linear:issues'),
+    issue: call('linear:issue'),
+    comment: call('linear:comment'),
+  },
   preview: { capture: call('preview:capture'), openExternal: call('preview:open-external') },
   rewindApply: call('rewind:apply'),
   onChatEvent: on('chat-event'),
