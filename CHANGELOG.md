@@ -13,6 +13,7 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 ## 0.27.0
 
 - **Desk view.** A Code | Desk switch in the top right. Desk hides the editor and puts the chat in the middle, with your chats down the left, closer to Claude's desktop app. Working in a folder is optional, and anything the agent opens shows beside the chat. Both views share the same chats, so you can switch mid-conversation.
+- Connecting GitHub while Switchdesk was still checking the folder could leave the pull requests and issues empty until the next refresh. They now load straight away.
 - The buttons under the chat box no longer wrap onto a second line when the chat panel is narrow.
 
 ## 0.26.1

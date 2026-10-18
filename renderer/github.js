@@ -12,11 +12,14 @@
 // agent read the pull request and post what it finds as review comments. An issue starts a chat in
 // its own copy on a new branch, which ends in a pull request.
 
-const gh = { status: null, prs: null, issues: null, loading: false, error: '', at: 0, open: { prs: true, issues: false } };
+const gh = { status: null, prs: null, issues: null, loading: false, again: false, error: '', at: 0, open: { prs: true, issues: false } };
 const CHECK_ICON = { passing: '✓', failing: '✗', running: '●', none: '' };
 
 async function refreshGithub(force) {
-  if (!state.folder || gh.loading) return;
+  if (!state.folder) return;
+  // Asked again mid-refresh (say, just after connecting): refresh once more when this one ends,
+  // so the answer isn't the one from before.
+  if (gh.loading) return void (gh.again = gh.again || !!force);
   if (!force && Date.now() - gh.at < 60e3) return renderGit();
   gh.loading = true;
   renderGit();
@@ -31,6 +34,10 @@ async function refreshGithub(force) {
   gh.loading = false;
   renderGit();
   queueEditorComments();
+  if (gh.again) {
+    gh.again = false;
+    refreshGithub(true);
+  }
 }
 
 function githubFolderOpened() {
