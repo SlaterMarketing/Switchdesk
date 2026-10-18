@@ -249,7 +249,7 @@ td code { color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, tra
 .modes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .mode { padding: 26px 24px 28px; border-right: 1px solid var(--line); display: grid; gap: 10px; align-content: start; background: var(--panel); }
 .mode:last-child { border-right: 0; }
-.mode h3 { font-size: 26px; font-weight: 700; display: flex; align-items: baseline; gap: 10px; }
+.mode h3 { font-size: 26px; font-weight: 700; display: grid; gap: 8px; }
 .mode h3 small { font: 500 11px/1 var(--mono); color: var(--faint); letter-spacing: .06em; }
 .mode p { color: var(--muted); font-size: 15px; }
 .mode .flag { font: 500 12px/1.4 var(--mono); color: var(--teal); }
@@ -263,6 +263,8 @@ td code { color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, tra
 .feats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 36px; }
 .feat h4 { margin: 0 0 4px; font: 600 16px/1.35 var(--body); color: var(--fg); }
 .feat p { color: var(--muted); font-size: 15px; }
+.also { grid-column: 2; color: var(--faint); font-size: 14px; margin-top: -18px; }
+.also span { font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--teal); margin-right: 8px; }
 
 /* Trust */
 .trust { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
@@ -322,6 +324,7 @@ footer .legal { max-width: 46em; }
   .mode { border-right: 0; border-bottom: 1px solid var(--line); }
   .mode:last-child { border-bottom: 0; }
   .group { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .also { grid-column: auto; margin-top: 0; }
   .trust { grid-template-columns: minmax(0, 1fr); }
   .trust > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .trust > div:last-child { border-bottom: 0; }
@@ -381,19 +384,18 @@ footer .legal { max-width: 46em; }
         <h1>One desk.<span class="swap grad">Every coding agent.</span></h1>
       </div>
       <div>
-        <p class="lede">Switchdesk is a Cursor-style editor for the agents you already pay for. It runs <strong>Claude Code, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek</strong> through each maker's own CLI, signed in with your own plan or key. Switch agents in the middle of a task, or run several side by side and keep the best.</p>
+        <p class="lede">A Cursor-style editor for the coding agents you already pay for. Each one runs through its maker's own CLI, signed in with your plan or key. Switch agents mid-task, or run several side by side and keep the best.</p>
         <div class="cta">
           <a class="btn primary dl-link" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
             <span class="dl-label">Download Switchdesk</span>
           </a>
-          <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">
-            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
-            Star on GitHub
+          <a class="btn" href="https://youtu.be/pOJg9oDNDxU">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z"/></svg>
+            Watch the tour
           </a>
         </div>
-        <p class="cta-note"><span id="dl-version">Free</span> · <a class="plat" data-plat="win" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Windows</a> · <a class="plat" data-plat="mac-arm64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Apple Silicon)</a> · <a class="plat" data-plat="mac-x64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Intel)</a> · <a class="plat" data-plat="linux" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Linux</a></p>
-        <p class="cta-note"><a href="https://youtu.be/pOJg9oDNDxU">▶ Watch the 50-second tour</a></p>
+        <p class="cta-note"><span id="dl-version">Free</span> · <a class="plat" data-plat="win" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Windows</a> · <a class="plat" data-plat="mac-arm64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac</a> · <a class="plat" data-plat="mac-x64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Intel Mac</a> · <a class="plat" data-plat="linux" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Linux</a></p>
         <p class="ph-badge" data-live-from="2026-10-31T07:00:00Z" hidden><a href="https://www.producthunt.com/products/switchdesk?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-switchdesk" target="_blank" rel="noopener noreferrer"><img alt="Switchdesk - One desk for every coding agent, from Claude Code to Cursor | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1284245&amp;theme=dark"></a></p>
         <p class="cta-note win-note" hidden>Windows may say "Windows protected your PC" the first time. Click <b>More info</b>, then <b>Run anyway</b>.</p>
       </div>
@@ -496,7 +498,7 @@ footer .legal { max-width: 46em; }
         <div class="mode"><h3>Plan <small>THINK FIRST</small></h3><p>Researches, then opens the plan in its own tab, with to-dos that tick off as the agent builds. Edit it, then choose <b>Build it</b> or <b>Keep planning</b>.</p></div>
         <div class="mode"><h3>Agent <small>HANDS ON</small></h3><p>Edits files without asking. Commands run by your rules, and anything else gets an Allow, Always allow or Deny card.</p></div>
         <div class="mode"><h3>Debug <small>FIND THE CAUSE</small></h3><p>Adds temporary logging, asks you to reproduce the bug, then fixes the cause from the logs and cleans up. Works with every agent.</p></div>
-        <div class="mode"><h3>Auto <small>CLAUDE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
+        <div class="mode"><h3>Auto <small>CLAUDE CODE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
       </div>
       <p class="modes-note">Cycle modes with <kbd>Ctrl</kbd> <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>Tab</kbd> in the chat box.</p>
     </div>
@@ -542,10 +544,9 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>Same prompt, several agents</h4><p>Send one message to Claude, Codex, Cursor and the rest. Each works in its own copy of the folder; <b>Use this one</b> merges the winner.</p></div>
             <div class="feat"><h4>The Board</h4><p>Every chat's work in columns: needs you, running, ready to review and pull request open, each with its next step.</p></div>
             <div class="feat"><h4>Second opinion</h4><p>A different agent reviews your changes without touching them. Its findings show in the editor, each with <b>Fix</b>.</p></div>
-            <div class="feat"><h4>Scheduled tasks</h4><p>A prompt that runs by itself every day, on weekdays or every few hours, in its own copy of the folder.</p></div>
             <div class="feat"><h4>Parallel agents</h4><p>Any chat can work in its own git worktree. <b>Merge into my folder</b> brings its changes back for inline review.</p></div>
-            <div class="feat"><h4>Subagents you can open</h4><p>Click a subagent to see its task, thinking, tools and report, live while it runs.</p></div>
           </div>
+          <p class="also"><span>Also</span> Scheduled tasks · Subagents you can open</p>
         </div>
         <div class="group">
           <div><h3>From issue to merged PR</h3><p>The whole GitHub loop, without leaving the app.</p></div>
@@ -562,10 +563,9 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>Hand a chat to another agent</h4><p>Switch agents mid-chat and the new one picks up the conversation in the same tab, where the last one left off.</p></div>
             <div class="feat"><h4>One set of rules</h4><p>Keep your project rules in one <code>AGENTS.md</code>. Switchdesk points <code>CLAUDE.md</code> at it and hands it to agents that don't read it themselves.</p></div>
             <div class="feat"><h4>One set of permissions</h4><p>Allowed and blocked commands, and Always allow, apply to all eight agents, so you never approve the same thing twice.</p></div>
-            <div class="feat"><h4>Commands that travel</h4><p>A slash command you wrote for Claude, Codex, Cursor or Copilot works with every agent, plus <code>/init</code>, <code>/review</code> and <code>/compact</code>.</p></div>
-            <div class="feat"><h4>History from every agent</h4><p>Past chats from Claude Code, Codex, Copilot, Gemini, Qwen and DeepSeek, each tagged with its agent, including ones started in your terminal.</p></div>
             <div class="feat"><h4>Several accounts per agent</h4><p>A work and a personal sign-in for Claude, Codex, Copilot, Cursor or Kimi, or a second API key for the rest. Switch any chat between them.</p></div>
           </div>
+          <p class="also"><span>Also</span> Commands that travel · History from every agent</p>
         </div>
         <div class="group">
           <div><h3>Direct the work</h3><p>Point the agent at exactly what matters, and steer it as it goes.</p></div>
@@ -582,12 +582,9 @@ footer .legal { max-width: 46em; }
             <div class="feat"><h4>Tab autocomplete</h4><p>Grey suggestions as you type, accepted with Tab. It runs GitHub's Copilot language server (Copilot Free works) or your DeepSeek or Qwen key.</p></div>
             <div class="feat"><h4>Code intelligence</h4><p>Go to definition, hover, completions, find references and errors as you type for TypeScript, JavaScript, Python, Go, Rust and C/C++.</p></div>
             <div class="feat"><h4>Run and debug</h4><p>Breakpoints, the call stack, variables, watches and a console for Node and Python. <b>✨ Ask the agent</b> hands it the stop.</p></div>
-            <div class="feat"><h4>Run tests in the editor</h4><p>Run test buttons above Vitest, Jest, Mocha, node --test, pytest and unittest tests, with ✓ or ✗ on each line.</p></div>
-            <div class="feat"><h4>Jupyter notebooks</h4><p><code>.ipynb</code> files open as cells and run in a real kernel, with tables, images and errors underneath.</p></div>
             <div class="feat"><h4>Fix with the agent</h4><p>The lightbulb on any error, warning, failed test or notebook traceback hands it to the chat. <b>Fix all</b> does the whole file.</p></div>
-            <div class="feat"><h4>Search and replace</h4><p>Search by meaning ("where do we retry failed payments") or by regex, and replace across every file with undo.</p></div>
-            <div class="feat"><h4>Split and compare</h4><p>Two files side by side with <kbd>Ctrl</kbd> <kbd>\</kbd>, and a diff of any two files, or a file and your clipboard.</p></div>
           </div>
+          <p class="also"><span>Also</span> Run tests in the editor · Jupyter notebooks · Search and replace · Split and compare</p>
         </div>
         <div class="group">
           <div><h3>Any folder, any machine</h3><p>Work wherever your code lives.</p></div>
@@ -603,11 +600,10 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Live preview the agents can use</h4><p>Your app in a tab beside the code. Agents can open it, click, type, screenshot and read the console to check their own work.</p></div>
             <div class="feat"><h4>Terminal with Fix with Claude</h4><p>A real terminal per project. When a command prints an error, one click sends it to the agent.</p></div>
-            <div class="feat"><h4>Command palette</h4><p><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds every command, settings page, agent, account and recent folder as you type.</p></div>
-            <div class="feat"><h4>Your shortcuts</h4><p>Change any keyboard shortcut by pressing the new keys. The menus and the command palette show your choice.</p></div>
             <div class="feat"><h4>Plan limits at a glance</h4><p>A status bar meter shows how much of the 5-hour and weekly limits you've used, and Usage breaks it down by agent and account.</p></div>
             <div class="feat"><h4>Updates itself</h4><p>On Windows and Linux, new versions download in the background and install with one click. On a Mac, the status bar tells you when one is out.</p></div>
           </div>
+          <p class="also"><span>Also</span> Command palette · Your shortcuts</p>
         </div>
       </div>
     </div>
@@ -788,8 +784,10 @@ footer .legal { max-width: 46em; }
   var os = /Windows/i.test(ua) ? "win" : /Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "mac" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "linux" : null;
   var names = { win: "Windows", mac: "Mac", linux: "Linux" };
   if (os) document.querySelectorAll(".dl-label").forEach(function (l) { l.textContent = "Download for " + names[os]; });
-  // The Windows installer isn't signed, so SmartScreen warns the first time.
-  if (os === "win") document.querySelector(".win-note").hidden = false;
+  // The Windows installer isn't signed, so SmartScreen warns the first time. Say so once they click.
+  if (os === "win") document.querySelectorAll(".dl-link").forEach(function (a) {
+    a.addEventListener("click", function () { document.querySelector(".win-note").hidden = false; });
+  });
   var patterns = { win: /Setup-.*\.exe$/i, "mac-arm64": /mac-arm64\.dmg$/i, "mac-x64": /mac-x64\.dmg$/i, linux: /\.AppImage$/i };
   // Most Macs are Apple Silicon; Chromium browsers can tell us when it's an Intel one.
   var macArch = Promise.resolve("arm64");
