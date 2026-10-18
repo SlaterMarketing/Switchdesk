@@ -26,11 +26,30 @@ function emptyState() {
   return h(
     'div',
     { class: 'empty-chat' },
+    h('h2', { class: 'desk-intro' }, 'What would you like to work on?'),
     state.folder
-      ? h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
+      ? h('p', { class: 'code-intro' }, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
       : h('p', {}, 'Ask anything. With no folder open this is a plain chat. Open a folder to let the agent work on your files.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF or any other file with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : '')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF or any other file with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : ''),
+    // Shown in the Desk view: a few ways in for people who don't live in code.
+    h('div', { class: 'desk-starters' }, ...STARTERS.filter((x) => !x.folder || state.folder).map((x) => h('button', { class: 'starter', onclick: () => useStarter(x.text) }, x.label)))
   );
+}
+
+const STARTERS = [
+  { label: 'Summarise a document', text: 'Summarise the attached document in five bullet points, then list anything I need to act on.' },
+  { label: 'Draft an email', text: 'Draft a short, friendly email to ' },
+  { label: 'Turn notes into a report', text: 'Turn these notes into a clear one-page report:\n\n' },
+  { label: 'Plan a project', text: 'Make a step-by-step plan for ' },
+  { label: 'Organise this folder', text: "Look through this folder and suggest how to organise it. Don't move anything until I say.", folder: true },
+];
+
+function useStarter(text) {
+  const input = $('#input');
+  input.value = text;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
 }
 
 function createChat({ title = 'New chat', sessionId = null } = {}) {
@@ -41,6 +60,7 @@ function createChat({ title = 'New chat', sessionId = null } = {}) {
     account: acct.folderAccount, // which Claude account it runs on (accounts.js)
     agent: (state.settings && state.settings.lastAgent) || 'claude', // which agent runs it (agents.js)
     el: h('div', { class: 'messages-pane' }, emptyState()),
+    outputs: new Map(), // rel -> the latest change to it (deskview.js)
     turn: null,
     busy: false,
     alwaysAllow: new Set(),
@@ -68,6 +88,7 @@ function switchChat(id) {
   renderWorktreeBar();
   renderAgentPicker();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.session === activeChat()?.sessionId);
+  renderDeskOutputs();
 }
 
 async function closeChatTab(id) {
@@ -255,6 +276,8 @@ function clearChat(chat) {
   chat.usage = { context: 0, turns: 0, model: '' };
   chat.alwaysAllow = new Set();
   chat.queue = [];
+  chat.outputs.clear();
+  renderDeskOutputs();
   renderQueue();
   chat.el.replaceChildren(emptyState());
   renderChatTabs();
@@ -732,7 +755,7 @@ function sharedAllowRule(toolName, input) {
         })
       ),
     ];
-    const shown = rules.map((r) => `\`${r}\``).join(', ');
+    const shown = rules.map((r) => `"${r}"`).join(', ');
     return { rules, label: `Always allow ${shown}`, done: `Every agent can now run ${rules.map((r) => `"${r}"`).join(', ')} without asking` };
   }
   if (EDIT_TOOLS.has(toolName)) return { patch: { edits: true }, label: 'Always allow edits', done: 'Every agent can now edit files in the open folders without asking' };
@@ -770,8 +793,19 @@ function handleApproval(req) {
   } else {
     detail = h('pre', { class: 'cmd' }, JSON.stringify(input, null, 2).slice(0, 3000));
   }
+  const about = req.description || input.description;
+  // The Desk view says what the agent wants in plain words and tucks the technical detail away.
+  if (document.body.classList.contains('desk')) {
+    const who = agentLabel(chat);
+    const file = (input.file_path || input.notebook_path || '').split(/[\\/]/).pop();
+    if (isShell(toolName)) title = `${who} wants to run a command on your computer`;
+    else if (EDIT_TOOLS.has(toolName)) title = input.new_string == null && input.content != null ? `${who} wants to write ${file}` : `${who} wants to change ${file}`;
+    else if (toolName === 'WebFetch') title = `${who} wants to open ${(/^https?:\/\/([^/]+)/.exec(input.url || '') || [])[1] || 'a web page'}`;
+    else title = `${who} wants to use ${toolName}`;
+    detail = h('details', { class: 'plain-detail' }, h('summary', {}, isShell(toolName) ? 'Show the command' : EDIT_TOOLS.has(toolName) ? 'Show the change' : 'Show the details'), detail);
+  }
   const reason = h('input', { type: 'text', placeholder: 'Optional: tell Claude what to do instead', class: 'hidden' });
-  const card = h('div', { class: 'card approval' }, h('h4', {}, title), detail, req.description || input.description ? h('div', { class: 'muted small' }, req.description || input.description) : null, reason);
+  const card = h('div', { class: 'card approval' }, h('h4', {}, title), document.body.classList.contains('desk') && about ? h('div', { class: 'plain-about' }, about) : null, detail, about && !document.body.classList.contains('desk') ? h('div', { class: 'muted small' }, about) : null, reason);
   const resolve = (text) => {
     card.classList.add('resolved');
     $('.actions', card).replaceChildren(h('span', { class: 'resolution' }, text));
@@ -1063,6 +1097,7 @@ function changesCard(chat, turnId, changes) {
       state.changedFiles.delete(c.rel);
     }
     if (changes.every((c) => c.undone)) setStatus('Undone');
+    renderDeskOutputs();
     await reloadOpenFiles(list.map((c) => c.rel));
     if (activeTab()?.change && list.includes(activeTab().change)) activateTab(state.activeTab);
     refreshFiles();
@@ -1104,6 +1139,9 @@ function changesCard(chat, turnId, changes) {
   );
   const card = h('div', { class: 'card changes' }, head, body);
   card.undo = undo;
+  // What this chat has made or changed, for the Desk view's panel. The latest change to a file wins.
+  for (const c of changes) if (!c.worktree) chat.outputs.delete(c.rel), chat.outputs.set(c.rel, c);
+  renderDeskOutputs();
   changeCards.set(turnId, card);
   appendChat(card, chat);
   renderTree();

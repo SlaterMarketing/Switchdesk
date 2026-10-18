@@ -10,6 +10,12 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 
 - (Build only.)
 
+## 0.28.0
+
+- **Desk view, part two.** Files the agent makes or changes are listed beside the chat, with a preview of each (documents as text, images as images), and buttons to open it in its own app or show it in its folder. Permission cards say what the agent wants in plain words, with the command or change tucked underneath. A new chat offers a few starting points, like summarising a document or drafting an email.
+- **About** in Settings (and Help → About Switchdesk, or the Switchdesk menu on a Mac): the version, links, and who makes Switchdesk.
+- "Always allow" buttons name commands in quotes instead of showing stray backticks.
+
 ## 0.27.1
 
 - The Mac downloads are back. 0.27.0 went out without them while Apple's signing service was refusing requests. Everything from 0.27.0 is in this release.

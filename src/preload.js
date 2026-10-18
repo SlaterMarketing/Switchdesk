@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('desk', {
   readFile: call('file:read'),
   writeFile: call('file:write'),
   revealFile: call('file:reveal'),
+  previewFile: call('file:preview'),
+  openFileDefault: call('file:open-default'),
 
   listSessions: call('sessions:list'),
   loadSession: call('sessions:load'),

@@ -331,7 +331,9 @@ test('with no folder open, a chat still works, in a folder of its own', { timeou
 test('the Desk view: just the chat with your chats down the left, files beside it when opened, and back to Code', { timeout: 90000 }, async () => {
   const p = profile();
   const dir = project();
-  let { app, w, errors } = await launch(p, dir);
+  const demo = path.join(p.agentDir, 'demo.json');
+  require('fs').writeFileSync(demo, JSON.stringify([{ match: 'write the notes', steps: [{ write: { path: 'notes/plan.md', content: '# The plan\n\nShip it on Tuesday.\n' } }, { say: 'Done.' }] }]));
+  let { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
   const shown = (sel) => w.$eval(sel, (e) => getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0);
   try {
     await w.click('#view-switch [data-view=desk]');
@@ -341,9 +343,16 @@ test('the Desk view: just the chat with your chats down the left, files beside i
     assert.equal(await shown('.side-tabs'), false);
     assert.match(await w.$eval('#desk-folder', (e) => e.innerText), new RegExp(path.basename(dir)));
     await chatWith(w, 'cursor');
+    assert.equal(await shown('.desk-starters'), true);
     await sendMessage(w, 'hello from desk');
     await idle(w);
     assert.match(await w.$eval('#chat', (e) => e.innerText), /got: hello from desk/);
+    // What the agent writes is listed beside the chat, with a preview.
+    await sendMessage(w, 'write the notes');
+    await idle(w);
+    await w.waitForSelector('#desk-outputs .out-row:has-text("plan.md")');
+    await w.waitForSelector('#desk-outputs .out-doc h1:has-text("The plan")');
+    assert.equal(await shown('#editor-area'), false);
     // A file opened from the chat shows beside it, and goes away when closed.
     await w.evaluate(() => openFile('cart.js'));
     await w.waitForFunction(() => document.querySelector('#workbench').classList.contains('peek'));

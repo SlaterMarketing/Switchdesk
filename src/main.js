@@ -919,6 +919,8 @@ function registerIpc() {
   const notOverSsh = (what) => new Error(`${what} isn't available in SSH folders yet.`);
   const LOCAL_ONLY = {
     'file:reveal': null,
+    'file:preview': null,
+    'file:open-default': null,
     'sessions:list': [],
     'sessions:load': [],
     'sessions:subagent': [],
@@ -1311,6 +1313,12 @@ function registerIpc() {
     return true;
   });
   handle('file:reveal', (ctx, rel) => shell.showItemInFolder(resolveInWorkspace(ctx, rel)));
+  // The Desk view's previews: a document as its text, an image as itself, anything else as just its path.
+  handle('file:preview', (ctx, rel) => extract(resolveInWorkspace(ctx, rel)));
+  handle('file:open-default', async (ctx, rel) => {
+    const err = await shell.openPath(resolveInWorkspace(ctx, rel));
+    if (err) throw new Error(err);
+  });
 
   handle('sessions:list', (ctx) => listSessions(ctx));
   handle('sessions:load', (ctx, id, cwd, account) => loadSession(ctx, id, cwd, account));
