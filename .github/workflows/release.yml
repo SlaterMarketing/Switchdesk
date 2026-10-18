@@ -32,6 +32,7 @@ jobs:
           # The notes are this version's section of CHANGELOG.md.
           awk -v v="## ${tag#v}" '$0 == v {on = 1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Switchdesk $tag" > notes.md
+          printf '\n**Installing on Windows:** the installer isn'"'"'t signed, so Windows may say "Windows protected your PC" the first time. Click **More info**, then **Run anyway**.\n' >> notes.md
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Switchdesk $tag" --notes-file notes.md
 
   # Signed with Azure Trusted Signing once its secrets and variables are set (see SIGNING.md);

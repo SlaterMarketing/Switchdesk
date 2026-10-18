@@ -382,6 +382,7 @@ footer .legal { max-width: 46em; }
           </a>
         </div>
         <p class="cta-note"><span id="dl-version">Free</span> · <a class="plat" data-plat="win" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Windows</a> · <a class="plat" data-plat="mac-arm64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Apple Silicon)</a> · <a class="plat" data-plat="mac-x64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Intel)</a> · <a class="plat" data-plat="linux" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Linux</a></p>
+        <p class="cta-note win-note" hidden>Windows may say "Windows protected your PC" the first time. Click <b>More info</b>, then <b>Run anyway</b>.</p>
       </div>
     </div>
 
@@ -749,6 +750,8 @@ footer .legal { max-width: 46em; }
   var os = /Windows/i.test(ua) ? "win" : /Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "mac" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "linux" : null;
   var names = { win: "Windows", mac: "Mac", linux: "Linux" };
   if (os) document.querySelectorAll(".dl-label").forEach(function (l) { l.textContent = "Download for " + names[os]; });
+  // The Windows installer isn't signed, so SmartScreen warns the first time.
+  if (os === "win") document.querySelector(".win-note").hidden = false;
   var patterns = { win: /Setup-.*\.exe$/i, "mac-arm64": /mac-arm64\.dmg$/i, "mac-x64": /mac-x64\.dmg$/i, linux: /\.AppImage$/i };
   // Most Macs are Apple Silicon; Chromium browsers can tell us when it's an Intel one.
   var macArch = Promise.resolve("arm64");
