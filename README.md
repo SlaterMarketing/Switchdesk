@@ -14,7 +14,7 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 [![MIT licence](https://img.shields.io/badge/licence-MIT-a78bfa?labelColor=17181c)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows%20%C2%B7%20Mac%20%C2%B7%20Linux-installers-6366f1?labelColor=17181c)](https://github.com/SlaterMarketing/switchdesk/releases/latest)
 
-[**Website**](https://switchdesk.dev) · [**Download for Windows, Mac or Linux**](https://github.com/SlaterMarketing/switchdesk/releases/latest) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/switchdesk/issues/new/choose)
+[**Website**](https://switchdesk.dev) · [**Download for Windows, Mac or Linux**](https://github.com/SlaterMarketing/switchdesk/releases/latest) · [Watch the 50-second tour](https://youtu.be/pOJg9oDNDxU) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/switchdesk/issues/new/choose)
 
 <img src="site/demo.gif" alt="Asking Claude to fix a bug in Switchdesk: it reads the code, edits two files, runs the tests, and the change shows in the editor to keep or undo" width="860">
 
