@@ -10,6 +10,10 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 
 - (Build only.)
 
+## 0.27.1
+
+- The Mac downloads are back. 0.27.0 went out without them while Apple's signing service was refusing requests. Everything from 0.27.0 is in this release.
+
 ## 0.27.0
 
 - **Desk view.** A Code | Desk switch in the top right. Desk hides the editor and puts the chat in the middle, with your chats down the left, closer to Claude's desktop app. Working in a folder is optional, and anything the agent opens shows beside the chat. Both views share the same chats, so you can switch mid-conversation.

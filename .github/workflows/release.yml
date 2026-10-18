@@ -82,7 +82,10 @@ jobs:
       - run: npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15
       - if: env.SIGN == 'true'
         run: node scripts/signing-config.js mac
+      # If Apple refuses (an expired agreement, say), the release still gets an unsigned Mac build.
       - if: env.SIGN == 'true'
+        id: signed
+        continue-on-error: true
         run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,7 +94,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - if: env.SIGN != 'true'
+      - if: steps.signed.outcome == 'failure'
+        run: |
+          echo "::warning::Signing or notarising the Mac build failed, so this release's Mac build is unsigned. See the step above."
+          git checkout package.json
+          rm -rf dist
+      - if: env.SIGN != 'true' || steps.signed.outcome == 'failure'
         run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
