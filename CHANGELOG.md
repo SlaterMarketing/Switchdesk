@@ -2,6 +2,14 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.26.3
+
+- Mac installers are signed with a Developer ID and notarised.
+
+## 0.26.2
+
+- (Build only.)
+
 ## 0.26.1
 
 - **Attach any file.** Files Switchdesk can't turn into text, such as certificates, zips, old .doc files or scanned PDFs, now attach anyway. The agent is told where the file is and opens it with its own tools. The paperclip's file picker shows all files by default.
