@@ -115,6 +115,8 @@ p { margin: 0; }
 .cta-note { margin-top: 12px; font-size: 13px; color: var(--faint); font-family: var(--mono); }
 .cta-note a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
 .cta-note a:hover { color: var(--fg); border-color: var(--muted); }
+.ph-badge { margin-top: 18px; }
+.ph-badge img { display: block; }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .pill {
   font: 500 12px/1 var(--mono); padding: 7px 10px; border-radius: 99px;
@@ -392,6 +394,7 @@ footer .legal { max-width: 46em; }
         </div>
         <p class="cta-note"><span id="dl-version">Free</span> · <a class="plat" data-plat="win" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Windows</a> · <a class="plat" data-plat="mac-arm64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Apple Silicon)</a> · <a class="plat" data-plat="mac-x64" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Mac (Intel)</a> · <a class="plat" data-plat="linux" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Linux</a></p>
         <p class="cta-note"><a href="https://youtu.be/pOJg9oDNDxU">▶ Watch the 50-second tour</a></p>
+        <p class="ph-badge" data-live-from="2026-10-31T07:00:00Z" hidden><a href="https://www.producthunt.com/products/switchdesk?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-switchdesk" target="_blank" rel="noopener noreferrer"><img alt="Switchdesk - One desk for every coding agent, from Claude Code to Cursor | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1284245&amp;theme=dark"></a></p>
         <p class="cta-note win-note" hidden>Windows may say "Windows protected your PC" the first time. Click <b>More info</b>, then <b>Run anyway</b>.</p>
       </div>
     </div>
@@ -716,6 +719,11 @@ footer .legal { max-width: 46em; }
 <script>
 (function () {
   var REPO = "SlaterMarketing/switchdesk";
+
+  // Show the Product Hunt badge from launch time (midnight Pacific on launch day).
+  document.querySelectorAll("[data-live-from]").forEach(function (el) {
+    if (Date.now() >= Date.parse(el.getAttribute("data-live-from"))) el.hidden = false;
+  });
   var agents = [
     { name: "Claude Code", via: "your Claude plan", cli: "claude -p --output-format stream-json",
       reply: "Old timestamps now drop out of the window on every request, and <code>RATE_LIMIT</code> sets the limit (default 100). Tests pass." },
