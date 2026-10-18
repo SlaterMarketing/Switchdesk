@@ -29,6 +29,7 @@ function paletteCommands() {
     ['Add Selection to Chat', '⌘L', addSelectionToChat],
     ['Edit Selection with the Agent', '⌘K', inlineEdit],
     ['Toggle Sidebar', '⌘B', () => $('#workbench').classList.toggle('no-sidebar')],
+    ['Switch Between Code and Desk View', '', toggleView],
     ['Toggle Terminal', '⌘`', () => toggleTerminal()],
     ['New Terminal', '', () => (toggleTerminal(true), newTerminal())],
     ['Show Explorer', '', () => showSidePanel('explorer')],

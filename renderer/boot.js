@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents, wireCompare, wireOpinion, wireSchedules */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents, wireCompare, wireOpinion, wireSchedules, wireDeskView */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -29,6 +29,7 @@ async function init() {
   wireBoard();
   wireSearch();
   wireAgents();
+  wireDeskView();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));
   $('#status-perms').addEventListener('click', () => openSettings('permissions'));
   renderPermissionBadge();

@@ -28,7 +28,7 @@ function emptyState() {
     { class: 'empty-chat' },
     state.folder
       ? h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
-      : h('p', {}, 'Ask anything. With no folder open this is a plain chat; open a folder to work on code.'),
+      : h('p', {}, 'Ask anything. With no folder open this is a plain chat. Open a folder to let the agent work on your files.'),
     h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF or any other file with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : '')
   );
 }
@@ -289,7 +289,7 @@ async function loadHistory(fresh) {
 function renderHistory(list, rows, loading) {
   rows = rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 150);
   const items = [
-    ...(rows.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, 'No chats in this folder yet.')]),
+    ...(rows.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, state.folder ? 'No chats in this folder yet.' : 'No chats yet.')]),
     ...rows.map((r) =>
       h(
         'div',

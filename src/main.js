@@ -2002,6 +2002,7 @@ function buildMenu() {
         { label: 'Edit Selection with Claude', accelerator: accel('Edit Selection with the Agent', 'CmdOrCtrl+K'), click: menuCmd('inline-edit') },
         { label: 'Cycle Mode', accelerator: accel('Cycle Mode', 'CmdOrCtrl+.'), click: menuCmd('cycle-mode') },
         { label: 'Toggle Sidebar', accelerator: accel('Toggle Sidebar', 'CmdOrCtrl+B'), click: menuCmd('toggle-sidebar') },
+        { label: 'Switch Between Code and Desk View', click: menuCmd('toggle-view') },
         { label: 'Toggle Terminal', accelerator: accel('Toggle Terminal', 'CmdOrCtrl+`'), click: menuCmd('toggle-terminal') },
         { label: 'Split Editor', accelerator: accel('Split Editor', 'CmdOrCtrl+\\'), click: menuCmd('split') },
         { label: 'Compare Active File With…', click: menuCmd('compare') },

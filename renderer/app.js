@@ -189,6 +189,8 @@ function renderTabs() {
     )
   );
   $('#welcome').classList.toggle('hidden', state.tabs.length > 0);
+  // In the Desk view, open tabs show beside the chat.
+  $('#workbench').classList.toggle('peek', state.tabs.length > 0);
   highlightTreeActive();
 }
 
@@ -491,6 +493,7 @@ function showFolderName() {
   const extra = (f && f.extra) || [];
   $('#folder-name').textContent = !f ? 'No folder open' : extra.length ? `${f.name} + ${extra.map((x) => x.name).join(', ')}` : f.name;
   $('#folder-name').title = !f ? '' : [f.root, ...extra.map((x) => x.dir)].join('\n');
+  renderDeskFolder();
 }
 
 // ------------------------------------------------------------------ workspaces
@@ -1128,6 +1131,7 @@ function wire() {
     else if (cmd === 'inline-edit') inlineEdit();
     else if (cmd === 'cycle-mode') setMode(MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]);
     else if (cmd === 'toggle-sidebar') $('#workbench').classList.toggle('no-sidebar');
+    else if (cmd === 'toggle-view') toggleView();
     else if (cmd === 'toggle-terminal') toggleTerminal();
     else if (cmd === 'split') toggleSplit();
     else if (cmd === 'compare') compareActiveWith();

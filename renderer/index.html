@@ -20,6 +20,10 @@
         </div>
         <div class="title-center"><button id="btn-quickopen" class="search-pill">Search files… <kbd>⌘P</kbd></button></div>
         <div class="title-right">
+          <div id="view-switch" class="view-switch" role="group" aria-label="View">
+            <button data-view="code" title="The editor, with the chat beside it">Code</button>
+            <button data-view="desk" title="Just the chat, with your chats down the left">Desk</button>
+          </div>
           <button id="btn-theme" class="icon-btn theme-btn" title="Switch to light mode"></button>
           <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
         </div>
@@ -27,6 +31,7 @@
 
       <main id="workbench">
         <aside id="sidebar">
+          <div id="desk-folder"></div>
           <div class="side-tabs">
             <button class="side-tab active" data-panel="explorer">Explorer</button>
             <button class="side-tab" data-panel="search" title="Search in files (⌘⇧F)">Search</button>
@@ -220,6 +225,7 @@
     <script src="prcomments.js"></script>
     <script src="linear.js"></script>
     <script src="board.js"></script>
+    <script src="deskview.js"></script>
     <script src="search.js"></script>
     <script src="terminal.js"></script>
     <script src="settings.js"></script>

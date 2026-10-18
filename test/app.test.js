@@ -328,6 +328,42 @@ test('with no folder open, a chat still works, in a folder of its own', { timeou
   }
 });
 
+test('the Desk view: just the chat with your chats down the left, files beside it when opened, and back to Code', { timeout: 90000 }, async () => {
+  const p = profile();
+  const dir = project();
+  let { app, w, errors } = await launch(p, dir);
+  const shown = (sel) => w.$eval(sel, (e) => getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0);
+  try {
+    await w.click('#view-switch [data-view=desk]');
+    await w.waitForFunction(() => document.body.classList.contains('desk'));
+    assert.equal(await shown('#editor-area'), false);
+    assert.equal(await shown('#history-list'), true);
+    assert.equal(await shown('.side-tabs'), false);
+    assert.match(await w.$eval('#desk-folder', (e) => e.innerText), new RegExp(path.basename(dir)));
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'hello from desk');
+    await idle(w);
+    assert.match(await w.$eval('#chat', (e) => e.innerText), /got: hello from desk/);
+    // A file opened from the chat shows beside it, and goes away when closed.
+    await w.evaluate(() => openFile('cart.js'));
+    await w.waitForFunction(() => document.querySelector('#workbench').classList.contains('peek'));
+    assert.equal(await shown('#editor-area'), true);
+    await w.evaluate(() => closeTab(state.activeTab));
+    assert.equal(await shown('#editor-area'), false);
+    // The view is remembered.
+    await app.close();
+    ({ app, w, errors } = await launch(p, dir));
+    await w.waitForFunction(() => document.body.classList.contains('desk'));
+    await w.click('#view-switch [data-view=code]');
+    assert.equal(await shown('#editor-area'), true);
+    assert.equal(await shown('.side-tabs'), true);
+    assert.equal(await w.evaluate(() => state.settings.view), 'code');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
 test('pull requests: fix a check and a comment, push, review with an agent, and an issue to a PR', { timeout: 180000 }, async () => {
   const p = profile();
   const dir = project();
