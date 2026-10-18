@@ -10,6 +10,11 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 
 - (Build only.)
 
+## 0.28.1
+
+- The chat list shows chats that are open now, so a new chat appears there straight away instead of "No chats in this folder yet".
+- The website has a section on the Desk view.
+
 ## 0.28.0
 
 - **Desk view, part two.** Files the agent makes or changes are listed beside the chat, with a preview of each (documents as text, images as images), and buttons to open it in its own app or show it in its folder. Permission cards say what the agent wants in plain words, with the command or change tucked underneath. A new chat offers a few starting points, like summarising a document or drafting an email.

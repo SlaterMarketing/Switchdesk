@@ -271,6 +271,14 @@ td code { color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, tra
 .trust svg { width: 26px; height: 26px; }
 
 /* Open source */
+.desk-shot { margin: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--panel); }
+.desk-shot img { display: block; width: 100%; height: auto; }
+.desk-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 28px; }
+.desk-points h3 { font-size: 17px; margin-bottom: 6px; }
+.desk-points p { color: var(--muted); font-size: 15px; }
+@media (max-width: 720px) { .desk-points { grid-template-columns: 1fr; } }
+.made-by { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.made-by a { color: var(--fg); }
 .oss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; }
 .oss .big { font: 800 clamp(56px, 9vw, 112px)/.9 var(--display); letter-spacing: -.04em; }
 .oss p { color: var(--muted); font-size: 17px; margin-top: 18px; max-width: 32em; }
@@ -346,6 +354,7 @@ footer .legal { max-width: 46em; }
     <a class="brand" href="#top" aria-label="Switchdesk home"><img src="icon.svg" alt="">Switchdesk</a>
     <nav class="nav-links" aria-label="Sections">
       <a href="#agents">Agents</a>
+      <a href="#desk">Desk</a>
       <a href="#features">Features</a>
       <a href="#open-source">Open source</a>
       <a href="#faq">FAQ</a>
@@ -486,6 +495,24 @@ footer .legal { max-width: 46em; }
         <div class="mode"><h3>Auto <small>CLAUDE</small></h3><p>Claude Code's auto mode. A safety classifier approves actions and sends you anything it won't.</p></div>
       </div>
       <p class="modes-note">Cycle modes with <kbd>Ctrl</kbd> <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>Tab</kbd> in the chat box.</p>
+    </div>
+  </section>
+
+  <section id="desk">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Not a coder? Use Desk</span>
+        <h2>The same agents, <span class="grad">without the code.</span></h2>
+        <p>Flip the switch in the top right to <b>Desk</b> and Switchdesk becomes a plain chat with your agent. Point it at a folder of notes, spreadsheets or documents, and ask for a brief, a report, an email or a plan. Everything it makes shows beside the chat with a preview, ready to open in Word or wherever you work.</p>
+      </div>
+      <figure class="desk-shot">
+        <img src="screens/desk.png" alt="The Desk view: Claude turns call notes into a launch brief, shown with a preview beside the chat" loading="lazy" width="1440" height="900">
+      </figure>
+      <div class="desk-points">
+        <div><h3>Your files, your plan</h3><p>Work in any folder, or none. It runs on the Claude, ChatGPT or Copilot plan you already pay for.</p></div>
+        <div><h3>See what it made</h3><p>Every file the agent writes is listed with a preview, and Undo puts it back how it was.</p></div>
+        <div><h3>Asks in plain words</h3><p>"Claude wants to run a command on your computer", with what it's for. You allow or deny.</p></div>
+      </div>
     </div>
   </section>
 
@@ -648,6 +675,7 @@ footer .legal { max-width: 46em; }
           <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box. The new agent gets the conversation so far and carries on where the last one left off, and your files stay as they were.</p></details>
         </div>
         <div>
+          <details><summary>I don't write code. Is it for me?</summary><p>Yes. Switch to <b>Desk</b> in the top right and it's a plain chat: summarise documents, draft emails, turn notes into reports, plan projects. Point it at a folder and it can read and write the files there, and everything it makes shows with a preview.</p></details>
           <details><summary>Is it affiliated with Anthropic, OpenAI, GitHub or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
           <details><summary>Does it have Tab autocomplete?</summary><p>Yes. It runs GitHub's own Copilot language server signed in with your GitHub account, and Copilot Free works. You can use your DeepSeek or Qwen API key instead. Pick the engine in Settings → Autocomplete.</p></details>
           <details><summary>Does it work with GitHub pull requests?</summary><p>Yes. The Git panel lists pull requests and issues. You can start work from an issue, review comments in the editor, let an agent fix failing checks, and approve and merge without leaving the app.</p></details>
@@ -673,6 +701,7 @@ footer .legal { max-width: 46em; }
     <div class="legal">
       <a class="brand" href="#top" style="margin-bottom:12px"><img src="icon.svg" alt="">Switchdesk</a>
       <p>Free and open source under the MIT licence. Claude, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+      <p class="made-by">Made by <a href="https://slatermarketing.co.uk">Will Slater</a>, fractional CMO and product lead for startups.</p>
     </div>
     <nav aria-label="Footer">
       <a href="https://github.com/SlaterMarketing/switchdesk">GitHub</a>

@@ -87,7 +87,7 @@ function switchChat(id) {
   renderQueue();
   renderWorktreeBar();
   renderAgentPicker();
-  for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.session === activeChat()?.sessionId);
+  for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.chat ? el.dataset.chat === activeChat()?.id : el.dataset.session === activeChat()?.sessionId);
   renderDeskOutputs();
 }
 
@@ -311,8 +311,19 @@ async function loadHistory(fresh) {
 
 function renderHistory(list, rows, loading) {
   rows = rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 150);
+  // Chats open in tabs that their agent hasn't listed yet go first, so a new chat is there straight away.
+  const listed = new Set(rows.map((r) => r.id));
+  const open = chats.filter((c) => !isPristine(c) && !(c.sessionId && listed.has(c.sessionId)));
   const items = [
-    ...(rows.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, state.folder ? 'No chats in this folder yet.' : 'No chats yet.')]),
+    ...open.map((c) =>
+      h(
+        'div',
+        { class: `history-row${c === activeChat() ? ' active' : ''}`, 'data-chat': c.id, onclick: () => switchChat(c.id) },
+        h('div', { class: 't' }, c.title),
+        h('div', { class: 'd' }, h('span', { class: 'agent-tag' }, agentLabel(c)), 'Open now')
+      )
+    ),
+    ...(rows.length || open.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, state.folder ? 'No chats in this folder yet.' : 'No chats yet.')]),
     ...rows.map((r) =>
       h(
         'div',

@@ -29,6 +29,9 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 <td><img src="site/screens/review.png" alt="Claude's edit shown inline in the editor, with Keep and Undo"><br><sub><b>Inline review.</b> Every change, with Keep and Undo, whichever agent made it.</sub></td>
 <td><img src="site/screens/permissions.png" alt="Settings, Permissions: one set of rules for every agent"><br><sub><b>One set of permissions.</b> The same rules for Claude, Codex, Copilot, Cursor and the rest.</sub></td>
 </tr>
+<tr>
+<td colspan="2"><img src="site/screens/desk.png" alt="The Desk view: Claude turns call notes into a launch brief, with a preview beside the chat"><br><sub><b>Desk view.</b> Not a coder? Flip to Desk for a plain chat that works on your documents, with everything it makes previewed beside it.</sub></td>
+</tr>
 </table>
 
 ## Supported agents
