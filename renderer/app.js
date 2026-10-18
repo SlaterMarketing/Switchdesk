@@ -1132,6 +1132,7 @@ function wire() {
     else if (cmd === 'cycle-mode') setMode(MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]);
     else if (cmd === 'toggle-sidebar') $('#workbench').classList.toggle('no-sidebar');
     else if (cmd === 'toggle-view') toggleView();
+    else if (cmd === 'about') openSettings('about');
     else if (cmd === 'toggle-terminal') toggleTerminal();
     else if (cmd === 'split') toggleSplit();
     else if (cmd === 'compare') compareActiveWith();

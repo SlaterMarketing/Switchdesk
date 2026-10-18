@@ -1948,7 +1948,14 @@ function buildMenu() {
   const recents = (settings.recentFolders || []).filter((f) => fs.existsSync(f));
   const open = [...contexts.values()].filter((c) => c.win && !c.win.isDestroyed());
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [{ label: `About ${app.name}`, click: menuCmd('about') }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
@@ -2045,6 +2052,7 @@ function buildMenu() {
         { label: 'Report a Problem…', click: () => reportProblem() },
         { label: "What's New", click: () => shell.openExternal(`${report.REPO}/releases`) },
         { label: 'Read the Guide', click: () => shell.openExternal(`${report.REPO}#readme`) },
+        ...(isMac ? [] : [{ type: 'separator' }, { label: 'About Switchdesk', click: menuCmd('about') }]),
       ],
     },
   ];

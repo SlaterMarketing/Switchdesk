@@ -17,6 +17,7 @@ const SETTINGS_SECTIONS = [
   ['codebase', 'Codebase search'],
   ['keyboard', 'Keyboard'],
   ['usage', 'Usage'],
+  ['about', 'About'],
 ];
 
 function openSettings(section = 'general') {
@@ -38,7 +39,7 @@ function openSettings(section = 'general') {
     if (focus) id = 'agents';
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage, about: settingsAbout }[id];
     render(body, close)
       .then(() => focus && $(`.agent-card[data-agent="${focus}"]`, body)?.scrollIntoView({ block: 'start' }))
       .catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
@@ -320,6 +321,33 @@ function resetText(at) {
   const d = new Date(t);
   const sameDay = d.toDateString() === new Date().toDateString();
   return `resets ${sameDay ? '' : d.toLocaleDateString(undefined, { weekday: 'short' }) + ' '}${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+// Who makes Switchdesk. Links open in the browser.
+const MAKER = 'https://slatermarketing.co.uk';
+
+async function settingsAbout(body) {
+  const version = await desk.appVersion();
+  const link = (href, text, cls = 'btn small') => h('a', { class: cls, href, target: '_blank', rel: 'noopener' }, text);
+  body.replaceChildren(
+    h(
+      'div',
+      { class: 'about-app' },
+      h('img', { src: '../build/icon.png', alt: '', width: 56, height: 56 }),
+      h('div', {}, h('h3', {}, 'Switchdesk'), h('div', { class: 'muted small' }, `Version ${version} · free and open source (MIT)`), h('div', { class: 'small' }, 'One desk for every coding agent.'))
+    ),
+    h('div', { class: 'about-links' }, link('https://switchdesk.dev', 'Website'), link('https://github.com/SlaterMarketing/switchdesk', 'Source on GitHub'), link('https://github.com/SlaterMarketing/switchdesk/releases', "What's new")),
+    h(
+      'div',
+      { class: 'about-maker' },
+      h('div', { class: 'muted small' }, 'Made by'),
+      h('div', { class: 'about-name' }, 'Will Slater.'),
+      h('div', { class: 'about-role' }, 'Fractional CMO and product lead for startups'),
+      h('p', {}, 'I join a few companies and do the work: marketing, and often the product, the site and the onboarding too, because that’s where the people marketing brings in tend to get lost. At one I rebuilt the product myself; at another I’m CMO and a developer.'),
+      h('p', {}, 'I built Switchdesk because I use all of these agents every day and wanted them in one place. If your startup needs someone senior who does the work, not just the strategy, have a look.'),
+      h('div', { class: 'about-links' }, link(`${MAKER}/apply`, 'Work with me', 'btn small primary'), link(MAKER, 'slatermarketing.co.uk'), link('https://www.linkedin.com/in/will-slater-uk/', 'LinkedIn'))
+    )
+  );
 }
 
 async function settingsUsage(body) {

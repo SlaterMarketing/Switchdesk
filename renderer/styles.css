@@ -954,3 +954,15 @@ body.desk #workbench:not(.peek) .messages-pane, body.desk #workbench:not(.peek) 
 body.desk #workbench:not(.peek) .messages-pane { padding: 20px 24px 28px; }
 body.desk #workbench:not(.peek) #composer { border-top: 0; padding: 8px 24px 18px; }
 body.desk #btn-new-chat-side { width: 100%; }
+
+/* Settings → About */
+.about-app { display: flex; gap: 14px; align-items: center; margin-top: 6px; }
+.about-app h3 { margin: 0 0 2px; }
+.about-app img { border-radius: 12px; }
+.about-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.about-links a { text-decoration: none; }
+.about-maker { margin-top: 24px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); }
+.about-name { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-strong); margin-top: 2px; }
+.about-role { color: var(--text-dim); font-size: 13px; margin-bottom: 8px; }
+.about-maker p { font-size: 13px; line-height: 1.55; margin: 8px 0 0; max-width: 60ch; }
+.about-links a.btn:not(.primary) { color: var(--text); }
