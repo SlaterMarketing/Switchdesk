@@ -42,6 +42,24 @@ appTest('without Claude Code, a signed-in agent is used instead of the setup scr
   assert.notEqual(await w.evaluate(() => agentOf(activeChat())), 'claude');
 });
 
+appTest('an error in a chat can be reported as a GitHub issue, filled in', async ({ app, w }) => {
+  await app.evaluate(({ shell }) => {
+    global.opened = [];
+    shell.openExternal = async (url) => global.opened.push(url);
+  });
+  await w.evaluate(() => appendChat(turnError('Cursor stopped: something broke', activeChat())));
+  await w.click('.turn-error .err-report');
+  const url = await (async () => {
+    for (let i = 0; i < 50; i++) {
+      const u = await app.evaluate(() => global.opened[0]);
+      if (u) return new URL(u);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  })();
+  assert.equal(url.pathname, '/SlaterMarketing/switchdesk/issues/new');
+  assert.match(url.searchParams.get('extra'), /Switchdesk \d+\.\d+\.\d+[\s\S]*What it said:[\s\S]*something broke/);
+});
+
 appTest('replaces across files and undoes', async ({ w, dir }) => {
   await w.evaluate(() => openReplace());
   await w.fill('#search-query', 'price');

@@ -21,6 +21,7 @@ const linear = require('./linear');
 const github = require('./github');
 const accounts = require('./accounts');
 const debuglog = require('./debuglog');
+const report = require('./report');
 const previewBridge = require('./preview-bridge');
 const tests = require('./tests');
 const usage = require('./usage');
@@ -1017,6 +1018,7 @@ function registerIpc() {
 
   // Agents: Claude, Codex, Kimi, and API-key models through Gemini CLI and Qwen Code.
   // Debug mode's log collector, one channel per chat.
+  handle('report:problem', (ctx, info) => reportProblem(info));
   handle('debuglog:open', (ctx, chatId) => debuglog.open(chatKey(ctx, chatId), (count) => sendTo(ctx, 'debuglog-count', { chatId, count })));
   handle('debuglog:take', (ctx, chatId) => debuglog.take(chatKey(ctx, chatId)));
   handle('agents:list', (ctx) =>
@@ -2038,10 +2040,22 @@ function buildMenu() {
       submenu: [
         { label: `Switchdesk ${app.getVersion()}`, enabled: false },
         { label: 'Check for Updates…', click: () => updater.checkNow() },
+        { type: 'separator' },
+        { label: 'Report a Problem…', click: () => reportProblem() },
+        { label: "What's New", click: () => shell.openExternal(`${report.REPO}/releases`) },
+        { label: 'Read the Guide', click: () => shell.openExternal(`${report.REPO}#readme`) },
       ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// Opens a new GitHub issue, filled in with the version, the system and the installed agents (and
+// the error and agent, when it's from a chat). You read it and submit it yourself.
+async function reportProblem({ agent, error } = {}) {
+  const list = await Promise.all(Object.entries(agents.AGENTS).map(async ([id, a]) => ({ label: a.label, installed: !!(await agents.findBin(id, settings).catch(() => null)) })));
+  const label = agent && agents.AGENTS[agent] ? agents.AGENTS[agent].label : null;
+  shell.openExternal(report.issueUrl({ version: app.getVersion(), electron: process.versions.electron, agents: list, agent: label, error }));
 }
 
 // The preview pane is a <webview>: no preload or Node in it, and links that open new windows stay inside it.

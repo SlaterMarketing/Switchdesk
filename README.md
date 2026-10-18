@@ -16,9 +16,20 @@ Each agent runs through its maker's own CLI, signed in with your own plan or API
 
 [**Website**](https://switchdesk.dev) · [**Download for Windows, Mac or Linux**](https://github.com/SlaterMarketing/switchdesk/releases/latest) · [Run from source](#run-it) · [Report a bug](https://github.com/SlaterMarketing/switchdesk/issues/new/choose)
 
-<img src="site/og.png" alt="Switchdesk: one desk, every coding agent" width="760">
+<img src="site/demo.gif" alt="Asking Claude to fix a bug in Switchdesk: it reads the code, edits two files, runs the tests, and the change shows in the editor to keep or undo" width="860">
 
 </div>
+
+<table>
+<tr>
+<td><img src="site/screens/board.png" alt="The board: every chat's work in columns, with several started at once"><br><sub><b>The board.</b> Start several issues or tasks at once and see what each one needs.</sub></td>
+<td><img src="site/screens/compare.png" alt="The same task sent to Cursor and Copilot, each in its own copy of the folder"><br><sub><b>Same prompt, several agents.</b> Compare what each did, keep the one you like.</sub></td>
+</tr>
+<tr>
+<td><img src="site/screens/review.png" alt="Claude's edit shown inline in the editor, with Keep and Undo"><br><sub><b>Inline review.</b> Every change, with Keep and Undo, whichever agent made it.</sub></td>
+<td><img src="site/screens/permissions.png" alt="Settings, Permissions: one set of rules for every agent"><br><sub><b>One set of permissions.</b> The same rules for Claude, Codex, Copilot, Cursor and the rest.</sub></td>
+</tr>
+</table>
 
 ## Supported agents
 
@@ -189,6 +200,16 @@ npm run dist:linux   # AppImage
 - In a folder that isn't a git repository, Undo only covers files changed by Edit and Write. The git panel can turn the folder into a repository in one click.
 - The app isn't code-signed (that needs a paid certificate).
 - In Plan mode, Claude's question cards send your answer back as text.
+
+## Privacy
+
+Switchdesk has no account, no analytics and no telemetry. It doesn't send your code or your chats anywhere itself.
+
+- **Your agents** talk to their own makers with your own sign-in or API key, the same as they do in a terminal. Switchdesk never sees your logins, and keys you paste in are stored encrypted on your computer.
+- **GitHub and Linear** are only contacted when you connect them, with your own token.
+- **Updates** are checked against this repository's releases on GitHub.
+- **Search by meaning** (off unless you turn it on) downloads a small model from Hugging Face once, then runs on your computer. Nothing is sent anywhere.
+- **Report a problem** opens a GitHub issue in your browser with your version and system filled in. Nothing is sent until you submit it there.
 
 ## Terms
 

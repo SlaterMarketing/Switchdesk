@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, activeTab, activateTab, renderTabs, switchChat, createChat, renderChatTabs, renderWorktreeBar, appendChat,
-   send, setMode, cleanErr, agentLabel, compareChoices, agentOf, activeChat, queueSaveWorkspace, gh, lin, refreshGithub, refreshLinear, startIssue, issueRef, openPr,
+   send, setMode, cleanErr, runningInBackground, agentLabel, compareChoices, agentOf, activeChat, queueSaveWorkspace, gh, lin, refreshGithub, refreshLinear, startIssue, issueRef, openPr,
    openPrFromCopy, pushToPr, canPushTo */
 'use strict';
 
@@ -55,7 +55,7 @@ function needsYou(chat) {
 
 function columnOf(chat) {
   if (needsYou(chat)) return 'needs';
-  if (chat.busy || chat.making) return 'running';
+  if (chat.busy || chat.making || runningInBackground(chat)) return 'running';
   if (chat.pr && !(chat.worktree && chat.worktree.removed)) return 'pr';
   if (chat.worktree && !chat.worktree.removed && (chat.wtChanges || []).length) return 'review';
   return 'idle';
@@ -65,7 +65,7 @@ function columnOf(chat) {
 function lastWords(chat) {
   const texts = chat.el.querySelectorAll('.msg-text, .turn-error, .notice');
   const el = texts[texts.length - 1];
-  const text = el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  const text = el ? ($('.err-text', el) || el).textContent.replace(/\s+/g, ' ').trim() : '';
   return text.length > 160 ? text.slice(0, 159) + '…' : text;
 }
 
@@ -88,7 +88,7 @@ function boardCard(chat) {
   return h(
     'div',
     { class: `board-card ${col}${chat === activeChat() ? ' active' : ''}`, 'data-chat': chat.id },
-    h('div', { class: 'board-title', title: chat.title, onclick: open }, chat.busy ? h('span', { class: 'spinner' }) : null, chat.title),
+    h('div', { class: 'board-title', title: chat.title, onclick: open }, chat.busy || runningInBackground(chat) ? h('span', { class: 'spinner' }) : null, h('span', { class: 'board-name' }, chat.title)),
     h('div', { class: 'muted small' }, bits.join(' · ')),
     col === 'needs' ? h('div', { class: 'board-why small' }, needsYou(chat)) : null,
     lastWords(chat) ? h('div', { class: 'board-last small' }, lastWords(chat)) : null,

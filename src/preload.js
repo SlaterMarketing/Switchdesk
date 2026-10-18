@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('desk', {
   sendLoginCode: call('setup:login-code'),
   cancelLogin: call('setup:login-cancel'),
   openExternal: call('open-external'),
+  reportProblem: call('report:problem'),
   onSetupLog: on('setup-log'),
   onLoginUrl: on('setup-login-url'),
   onLoginExit: on('setup-login-exit'),

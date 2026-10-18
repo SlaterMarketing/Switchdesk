@@ -3,6 +3,8 @@
 // starts a background subagent and ends the turn while it runs, the way Claude does with
 // run_in_background; when the subagent finishes, it carries on by itself and proposes a plan with
 // ExitPlanMode, asking permission. What the app answers is appended to $FAKE_AGENT_DIR/claude.jsonl.
+// With $FAKE_AGENT_DEMO set to a JSON file of { match, steps }, a matching message plays those steps
+// instead (reads, edits, commands and replies), for screenshots.
 'use strict';
 
 const fs = require('fs');
@@ -66,6 +68,35 @@ async function turn(text) {
   result(2);
 }
 
+async function demo(steps) {
+  init();
+  let turns = 0;
+  for (const s of steps) {
+    const id = `toolu_demo_${++n}`;
+    if (s.wait) await later(s.wait);
+    else if (s.say) assistant([{ type: 'text', text: s.say }]);
+    else if (s.read) {
+      const file = path.join(process.cwd(), s.read);
+      assistant([{ type: 'tool_use', id, name: 'Read', input: { file_path: file } }]);
+      toolResult(id, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+    } else if (s.write) {
+      const file = path.join(process.cwd(), s.write.path);
+      const input = { file_path: file, content: s.write.content };
+      assistant([{ type: 'tool_use', id, name: 'Write', input }]);
+      const answer = await permission('Write', input, id);
+      if (answer.behavior === 'allow') fs.writeFileSync(file, s.write.content);
+      toolResult(id, answer.behavior === 'allow' ? 'File written.' : answer.message);
+    } else if (s.run) {
+      const input = { command: s.run.command, description: s.run.description || '' };
+      assistant([{ type: 'tool_use', id, name: 'Bash', input }]);
+      const answer = await permission('Bash', input, id);
+      toolResult(id, answer.behavior === 'allow' ? s.run.output || '' : answer.message);
+    }
+    turns++;
+  }
+  result(turns);
+}
+
 let buf = '';
 process.stdin.on('data', (c) => {
   buf += c;
@@ -85,7 +116,10 @@ process.stdin.on('data', (c) => {
       pending.delete(m.response.request_id);
     } else if (m.type === 'user') {
       const c = m.message.content;
-      turn(typeof c === 'string' ? c : c.map((b) => b.text || '').join(''));
+      const text = typeof c === 'string' ? c : c.map((b) => b.text || '').join('');
+      const scripted = process.env.FAKE_AGENT_DEMO && JSON.parse(fs.readFileSync(process.env.FAKE_AGENT_DEMO, 'utf8')).find((d) => text.includes(d.match) && (!d.agent || d.agent === 'claude'));
+      if (scripted) demo(scripted.steps);
+      else turn(text);
     }
   }
 });

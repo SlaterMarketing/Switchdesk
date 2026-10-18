@@ -16,6 +16,12 @@ let activeChatId = null;
 const activeChat = () => chats.find((c) => c.id === activeChatId) || null;
 const chatById = (id) => chats.find((c) => c.id === id) || null;
 
+// An error that ended a turn, with a way to report it (a GitHub issue you read before sending).
+function turnError(text, chat) {
+  const report = h('button', { class: 'err-report', title: 'Open a GitHub issue with this error, your version and system filled in. You can edit it before sending.', onclick: () => desk.reportProblem({ agent: agentOf(chat), error: text }) }, 'Report this');
+  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), report);
+}
+
 function emptyState() {
   return h(
     'div',
@@ -600,7 +606,7 @@ function handleEvent(chat, ev) {
       if (chat.id === activeChatId) renderChatMeta();
       if (turn) {
         if (turn.interrupted) appendChat(h('div', { class: 'notice' }, turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
-        else if (ev.is_error) appendChat(h('div', { class: 'turn-error' }, ev.result || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`), chat);
+        else if (ev.is_error) appendChat(turnError(ev.result || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`, chat), chat);
         else {
           const secs = Math.round((ev.duration_ms || Date.now() - turn.started) / 1000);
           const denied = (ev.permission_denials || []).length;
@@ -1311,7 +1317,7 @@ async function dispatch(chat, { content, shown, mode, images, rwText, compact })
     });
     if (r && r.turnId) bubble.rw.turnId = r.turnId;
   } catch (e) {
-    appendChat(h('div', { class: 'turn-error' }, String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')), chat);
+    appendChat(turnError(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), chat), chat);
     endTurn(chat);
   }
 }
@@ -1402,7 +1408,7 @@ desk.onChatExit(({ chatId, code, stderr }) => {
   if (!chat) return;
   if (chat.busy) {
     if (chat.turn && chat.turn.interrupted) appendChat(h('div', { class: 'notice' }, chat.turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
-    else appendChat(h('div', { class: 'turn-error' }, `Claude Code stopped unexpectedly (code ${code}).\n${(stderr || '').trim().slice(-1500)}`.trim()), chat);
+    else appendChat(turnError(`Claude Code stopped unexpectedly (code ${code}).\n${(stderr || '').trim().slice(-1500)}`.trim(), chat), chat);
     endTurn(chat);
   }
 });

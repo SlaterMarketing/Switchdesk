@@ -4,6 +4,8 @@
 //   - "compare-test" in Agent mode writes fake.txt in the session's folder;
 //   - a second-opinion request gets a findings block about cart.js, and so does a pull request review;
 //   - fixing a pull request or an issue writes fixed.txt and commits it;
+//   - with $FAKE_AGENT_DEMO set to a JSON file of { match, steps }, a matching prompt plays those
+//     steps (reads, file writes, commands and replies), for screenshots;
 //   - anything else is echoed back as "[<agent>] [<mode>] got: …".
 // Every message it receives is appended to $FAKE_AGENT_DIR/log.jsonl.
 'use strict';
@@ -60,8 +62,38 @@ Make the cart total handle an empty cart, in \`cart.js\`.
 - Keep the rest as it is
 `;
 
+// A scripted turn from $FAKE_AGENT_DEMO: { read }, { write: { path, content } }, { run: { command, output } },
+// { say } and { wait } steps, each shown the way a real agent's would be.
+async function demo(steps) {
+  const later = (ms) => new Promise((r) => setTimeout(r, ms));
+  let n = 0;
+  for (const s of steps) {
+    const id = `d${++n}`;
+    if (s.wait) await later(s.wait);
+    else if (s.say) say(s.say);
+    else if (s.read) {
+      up({ sessionUpdate: 'tool_call', toolCallId: id, title: `Read ${s.read}`, kind: 'read', status: 'pending', locations: [{ path: path.join(cwd, s.read) }], rawInput: { path: path.join(cwd, s.read) } });
+      up({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' });
+    } else if (s.write) {
+      const file = path.join(cwd, s.write.path);
+      up({ sessionUpdate: 'tool_call', toolCallId: id, title: `Edit ${s.write.path}`, kind: 'edit', status: 'pending', locations: [{ path: file }], rawInput: { path: file } });
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, s.write.content);
+      up({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' });
+    } else if (s.run) {
+      up({ sessionUpdate: 'tool_call', toolCallId: id, title: s.run.command, kind: 'execute', status: 'pending', rawInput: { command: s.run.command } });
+      up({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: s.run.output || '' } }] });
+    }
+  }
+}
+
 async function prompt(m) {
   const text = m.params.prompt.map((p) => p.text || '').join('');
+  const scripted = process.env.FAKE_AGENT_DEMO && JSON.parse(fs.readFileSync(process.env.FAKE_AGENT_DEMO, 'utf8')).find((d) => text.includes(d.match) && (!d.agent || d.agent === NAME));
+  if (scripted) {
+    await demo(scripted.steps);
+    return send({ id: m.id, result: { stopReason: 'end_turn' } });
+  }
   if (/Review pull request #\d+ "/.test(text)) {
     say('One real problem.\n\n```findings\n[{"file": "cart.js", "line": 2, "severity": "error", "title": "Null cart throws", "detail": "total(null) throws a TypeError."}]\n```\n');
   } else if (/Switchdesk (pushes to|opens) the pull request/.test(text) && mode !== 'plan') {

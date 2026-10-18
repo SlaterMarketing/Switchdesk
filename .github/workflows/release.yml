@@ -29,11 +29,18 @@ jobs:
             git tag "$tag"
             git push origin "$tag"
           fi
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --notes "Switchdesk $tag"
+          # The notes are this version's section of CHANGELOG.md.
+          awk -v v="## ${tag#v}" '$0 == v {on = 1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Switchdesk $tag" > notes.md
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Switchdesk $tag" --notes-file notes.md
 
+  # Signed with Azure Trusted Signing once its secrets and variables are set (see SIGNING.md);
+  # unsigned until then, so Windows shows a SmartScreen warning on first run.
   windows:
     needs: prepare
     runs-on: windows-latest
+    env:
+      SIGN: ${{ secrets.AZURE_CLIENT_SECRET != '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -41,15 +48,28 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - if: env.SIGN == 'true'
+        run: node scripts/signing-config.js win
+        env:
+          AZURE_SIGN_ENDPOINT: ${{ vars.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ vars.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ vars.AZURE_SIGN_PROFILE }}
+          AZURE_SIGN_PUBLISHER: ${{ vars.AZURE_SIGN_PUBLISHER }}
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
   # Apple Silicon and Intel, each as a .dmg (to install) and a .zip (what updates read). Signed
-  # ad hoc, not with a Developer ID, so the first open needs right-click → Open.
+  # with a Developer ID and notarised once the Apple secrets are set (see SIGNING.md); until then
+  # signed ad hoc, so the first open needs right-click → Open.
   mac:
     needs: prepare
     runs-on: macos-latest
+    env:
+      SIGN: ${{ secrets.MAC_CSC_LINK != '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -59,7 +79,19 @@ jobs:
       - run: npm ci
       # The terminal's native module for both kinds of Mac, not just the runner's.
       - run: npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15
-      - run: npx electron-builder --mac --publish always
+      - if: env.SIGN == 'true'
+        run: node scripts/signing-config.js mac
+      - if: env.SIGN == 'true'
+        run: npx electron-builder --mac --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - if: env.SIGN != 'true'
+        run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

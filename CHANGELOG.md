@@ -1,0 +1,34 @@
+# What's new
+
+Each release's notes, newest first. The release page on GitHub shows the same notes.
+
+## 0.26.0
+
+- **Report a problem** from the Help menu, or from any error in a chat. It opens a GitHub issue with your version, system and agents already filled in. You read it and send it yourself.
+- **Screenshots and a demo** in the README, so you can see what Switchdesk does before you download it.
+- **A privacy section** in the README: Switchdesk has no account, no analytics and no telemetry.
+- Signing for the Mac and Windows installers is ready to switch on.
+- Fixes: the sidebar tabs fit again when Git has changes, the board shows a chat with a background task as running, long board titles end in "…", and the buttons under an agent's changes no longer wrap.
+
+## 0.25.2
+
+- **Chat with no folder open.** Any agent works as a plain AI chat, in a folder of its own, so nothing it writes lands in your files.
+
+## 0.25.1
+
+- A clean-up of the whole interface: checkboxes in dialogs sit next to their labels, Esc closes dialogs, notifications no longer cover the chat box, and small windows keep room for the editor.
+
+## 0.25.0
+
+- **The board**: every chat's work at a glance, and start several issues or tasks at once, each in its own copy of the folder.
+- **Always ask first**: commands like `rm -rf` and `git push --force` ask you every time, even when prompts are skipped or the agent is in Auto.
+- **✨ commit messages and pull requests** are written by the chat's own agent.
+- **SSH folders**: code intelligence, tests, notebooks, the debugger and comparing agents all run on the host.
+
+## 0.24.0
+
+- **Pull request comments in the editor**: read, reply and comment on a line, or hand a comment to an agent to fix.
+- **Pull requests from forks**: fixes are pushed to the fork's branch.
+- **Linear**: start work on an issue assigned to you, and its pull request says it fixes it.
+
+Earlier releases are on [GitHub](https://github.com/SlaterMarketing/switchdesk/releases).
