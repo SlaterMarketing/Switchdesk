@@ -29,7 +29,7 @@ function emptyState() {
     state.folder
       ? h('p', {}, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
       : h('p', {}, 'Ask anything. With no folder open this is a plain chat; open a folder to work on code.'),
-    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF and other documents with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : '')
+    h('p', { class: 'small' }, 'Paste a screenshot with Ctrl+V, or attach Word, PDF or any other file with the paperclip. Pick the agent below: Claude, Codex, Copilot, Cursor, Kimi or an API-key model.', state.folder ? ` It works in ${state.folder.name}.` : '')
   );
 }
 
@@ -1496,7 +1496,12 @@ function addImageFile(file) {
   reader.readAsDataURL(file);
 }
 
+function fileSize(n) {
+  return n < 1024 ? `${n} bytes` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
 // Documents from anywhere on the computer (Word, PDF, Excel, PowerPoint, text) become text chips.
+// Any other file goes to the agent as its path.
 async function attachFiles(paths) {
   if (!paths.length) return;
   const pending = paths.map((p) => ({ kind: 'context', icon: '📄', label: `Reading ${p.split(/[\\/]/).pop()}…`, loading: true, context: '' }));
@@ -1507,6 +1512,13 @@ async function attachFiles(paths) {
   for (const r of results) {
     if (r.kind === 'error') toast(r.error);
     else if (r.kind === 'image') state.chips.push({ kind: 'image', mediaType: r.mediaType, data: r.data });
+    else if (r.kind === 'file')
+      state.chips.push({
+        kind: 'context',
+        icon: '📎',
+        label: r.name,
+        context: `The attached file "${r.name}" is at ${r.file} (${fileSize(r.size)}). Switchdesk can't show its contents here, so open it with your own tools if you need what's inside.`,
+      });
     else
       state.chips.push({
         kind: 'context',

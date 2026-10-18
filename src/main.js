@@ -1803,8 +1803,8 @@ function registerIpc() {
       title: 'Attach files to the chat',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Documents and images', extensions: ['docx', 'pdf', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'csv', 'json', 'html', 'htm', 'xml', 'log', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
         { name: 'All files', extensions: ['*'] },
+        { name: 'Documents and images', extensions: ['docx', 'pdf', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'csv', 'json', 'html', 'htm', 'xml', 'log', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
       ],
     });
     return r.canceled ? [] : r.filePaths;

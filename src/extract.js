@@ -236,7 +236,9 @@ function looksBinary(buf) {
   return odd > sample.length * 0.1;
 }
 
-// Returns { kind: 'image', name, mediaType, data } or { kind: 'doc', name, file, text, truncated, note }.
+// Returns { kind: 'image', name, mediaType, data }, { kind: 'doc', name, file, text, truncated, note },
+// or, for anything it can't turn into text, { kind: 'file', name, file, size }: the agent gets the path
+// and opens the file with its own tools.
 async function extract(file) {
   const name = path.basename(file);
   const ext = path.extname(file).toLowerCase();
@@ -246,7 +248,8 @@ async function extract(file) {
     if (stat.size > MAX_IMAGE) throw new Error(`${name} is over 5 MB. Try a smaller image.`);
     return { kind: 'image', name, mediaType: IMAGES[ext], data: fs.readFileSync(file).toString('base64') };
   }
-  if (stat.size > MAX_FILE) throw new Error(`${name} is over 50 MB, too big to attach.`);
+  const asFile = { kind: 'file', name, file, size: stat.size };
+  if (stat.size > MAX_FILE) return asFile;
   const buf = fs.readFileSync(file);
   let text;
   let note = '';
@@ -259,13 +262,12 @@ async function extract(file) {
     text = r.text;
     note = `${r.pages} page${r.pages === 1 ? '' : 's'}`;
   } else if (ext === '.rtf') text = rtfText(buf.toString('latin1'));
-  else if (['.doc', '.xls', '.ppt'].includes(ext)) throw new Error(`${name} is an old-style Office file. Save it as ${ext}x in Office and attach that.`);
-  else if (looksBinary(buf)) throw new Error(`${name} isn't a document Switchdesk can read. Word, PowerPoint, Excel, PDF, RTF, OpenDocument and text files work.`);
+  else if (['.doc', '.xls', '.ppt'].includes(ext) || looksBinary(buf)) return asFile;
   else {
     text = buf.toString('utf8').replace(/^﻿/, '');
     if (ext === '.html' || ext === '.htm') text = htmlToText(text).text;
   }
-  if (!text || !text.trim()) throw new Error(`${name} has no text in it.`);
+  if (!text || !text.trim()) return asFile;
   const truncated = text.length > MAX_TEXT;
   return { kind: 'doc', name, file, text: truncated ? text.slice(0, MAX_TEXT) : text, truncated, note };
 }

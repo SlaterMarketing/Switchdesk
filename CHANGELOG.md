@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.26.1
+
+- **Attach any file.** Files Switchdesk can't turn into text, such as certificates, zips, old .doc files or scanned PDFs, now attach anyway. The agent is told where the file is and opens it with its own tools. The paperclip's file picker shows all files by default.
+
 ## 0.26.0
 
 - **Report a problem** from the Help menu, or from any error in a chat. It opens a GitHub issue with your version, system and agents already filled in. You read it and send it yourself.
