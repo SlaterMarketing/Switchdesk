@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code GUI: a free desktop app for Claude Code | Switchdesk</title>
+<meta name="description" content="Switchdesk is a free, open-source desktop GUI for Claude Code on Windows, Mac and Linux. Inline diffs with Keep and Undo, plan mode, permission cards, several accounts, and your own Claude plan.">
+<meta name="theme-color" content="#111216">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://switchdesk.dev/claude-code-gui/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://switchdesk.dev/claude-code-gui/">
+<meta property="og:title" content="Claude Code GUI: a free desktop app for Claude Code">
+<meta property="og:description" content="Switchdesk is a free, open-source desktop GUI for Claude Code on Windows, Mac and Linux. Inline diffs with Keep and Undo, plan mode, permission cards, several accounts, and your own Claude plan.">
+<meta property="og:image" content="https://switchdesk.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../guide.css">
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Switchdesk", "applicationCategory": "DeveloperApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "url": "https://switchdesk.dev/", "downloadUrl": "https://github.com/SlaterMarketing/switchdesk/releases/latest"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is Switchdesk made by Anthropic?", "acceptedAnswer": {"@type": "Answer", "text": "No. Switchdesk is an independent open-source project. It runs Anthropic's own Claude Code CLI, which you install and sign in to yourself."}}, {"@type": "Question", "name": "Does it cost anything?", "acceptedAnswer": {"@type": "Answer", "text": "Switchdesk is free and MIT licensed. Claude Code uses your existing Claude plan or API key, as it does in the terminal."}}, {"@type": "Question", "name": "Do I need to install Claude Code first?", "acceptedAnswer": {"@type": "Answer", "text": "Switchdesk checks when it starts. If Claude Code isn't there, it offers to install it and walks you through signing in."}}, {"@type": "Question", "name": "How is it different from Claude's own desktop app?", "acceptedAnswer": {"@type": "Answer", "text": "Claude's desktop app is a chat. Switchdesk is an editor built around Claude Code, with inline review, git, a terminal and a debugger, plus other agents in the same window. If you want just the chat, flip the switch in the top right to Desk."}}, {"@type": "Question", "name": "Does it work on Windows?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. There are installers for Windows, Mac (Apple Silicon and Intel) and Linux."}}]}]</script>
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../icon.svg" alt="">Switchdesk</a>
+    <a class="btn small primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download</a>
+  </div>
+</header>
+<main>
+  <section class="hero wrap">
+    <p class="eyebrow">Claude Code GUI</p>
+    <h1>A desktop app for <span class="grad">Claude Code</span></h1>
+    <p class="lede">Switchdesk gives Claude Code a proper window: an editor with Claude's changes shown inline, a chat with plan and permission cards, and tabs for several conversations at once. It runs the official <code>claude</code> CLI signed in with your own Claude plan, so there's nothing extra to pay.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download Switchdesk</a>
+      <a class="btn" href="https://youtu.be/pOJg9oDNDxU">Watch the 50-second tour</a>
+    </div>
+    <p class="note">Free and open source · Windows, Mac and Linux · No account</p>
+    <figure class="shot"><img src="../screens/review.png" alt="Claude&#x27;s edit to cart.js shown inline in the Switchdesk editor, with Keep and Undo on each change" width="1439" height="899"></figure>
+  </section>
+  <section class="wrap block">
+    <h2>Why use a GUI for Claude Code?</h2>
+    <p class="body">Claude Code in a terminal is fast, but it's hard to see what it changed, step back through a plan, or keep several tasks going. Switchdesk keeps everything the CLI does and adds the parts a window is good at.</p>
+    <div class="cards">
+      <div class="card"><h3>See every change inline</h3><p>Claude's edits appear in a VS Code-style editor in green and red, each with its own Keep and Undo. A card after every turn lists the files it touched, and you can undo one file or all of them.</p></div>
+      <div class="card"><h3>Plans you can edit</h3><p>Plan mode opens Claude's plan as a document in its own tab. Edit it, then Build it, or send feedback with Keep planning.</p></div>
+      <div class="card"><h3>Permission cards</h3><p>Before Claude runs a command you get Allow, Always allow or Deny. Your rules apply in Auto mode too, and risky commands like <code>git push --force</code> always ask.</p></div>
+      <div class="card"><h3>Several chats and accounts</h3><p>Run conversations side by side in tabs, each with its own Claude process. Sign in to more than one Claude account and pick which one a folder uses.</p></div>
+      <div class="card"><h3>Rewind</h3><p>Hover any message to go back to just before it, edit it and resend. Your files can go back too.</p></div>
+      <div class="card"><h3>Your Claude Code setup</h3><p>Your CLAUDE.md, slash commands, skills, MCP servers and permission rules are Claude Code's own files, so they work the same here and in the terminal.</p></div>
+    </div>
+  </section>
+  <section class="wrap block">
+    <h2>How it works</h2>
+    <p class="body">Switchdesk starts the official Claude Code CLI (<code>claude -p --input-format stream-json</code>) and draws what it streams back. It never sees your login: Claude Code signs in exactly as it does in the terminal, with your Pro or Max plan or an API key.</p>
+    <p class="body">When you want a second view, switch the same chat to Codex, Copilot, Cursor or Gemini from the menu in the chat box. The new agent picks up the conversation where Claude left off.</p>
+  </section>
+  <section class="wrap block">
+    <h2>Questions</h2>
+    <div class="faq">
+      <details><summary>Is Switchdesk made by Anthropic?</summary><p>No. Switchdesk is an independent open-source project. It runs Anthropic's own Claude Code CLI, which you install and sign in to yourself.</p></details>
+      <details><summary>Does it cost anything?</summary><p>Switchdesk is free and MIT licensed. Claude Code uses your existing Claude plan or API key, as it does in the terminal.</p></details>
+      <details><summary>Do I need to install Claude Code first?</summary><p>Switchdesk checks when it starts. If Claude Code isn't there, it offers to install it and walks you through signing in.</p></details>
+      <details><summary>How is it different from Claude's own desktop app?</summary><p>Claude's desktop app is a chat. Switchdesk is an editor built around Claude Code, with inline review, git, a terminal and a debugger, plus other agents in the same window. If you want just the chat, flip the switch in the top right to Desk.</p></details>
+      <details><summary>Does it work on Windows?</summary><p>Yes. There are installers for Windows, Mac (Apple Silicon and Intel) and Linux.</p></details>
+    </div>
+  </section>
+  <section class="wrap final">
+    <h2>Try it on your own plan</h2>
+    <p>Free, open source, and set up in a couple of minutes.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download Switchdesk</a>
+      <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">View on GitHub</a>
+    </div>
+    <p class="more">More: <a href="../cursor-alternative/">Cursor alternative</a> · <a href="../codex-gemini-copilot-gui/">Codex, Gemini and Copilot GUI</a> · <a href="../">Home</a></p>
+  </section>
+</main>
+<footer>
+  <div class="wrap">
+    <p>Free and open source under the MIT licence. Claude, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+    <p class="made-by">Made by <a href="https://slatermarketing.co.uk">Will Slater</a>, fractional CMO and product lead for startups.</p>
+  </div>
+</footer>
+</body>
+</html>

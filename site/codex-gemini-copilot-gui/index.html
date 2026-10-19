@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A desktop GUI for Codex, Gemini CLI and Copilot CLI | Switchdesk</title>
+<meta name="description" content="Use OpenAI Codex, Gemini CLI, GitHub Copilot CLI, Kimi, Qwen and DeepSeek in one free desktop app, with inline review, plans and shared permission rules. Open source, for Windows, Mac and Linux.">
+<meta name="theme-color" content="#111216">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://switchdesk.dev/codex-gemini-copilot-gui/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://switchdesk.dev/codex-gemini-copilot-gui/">
+<meta property="og:title" content="A desktop GUI for Codex, Gemini CLI and Copilot CLI">
+<meta property="og:description" content="Use OpenAI Codex, Gemini CLI, GitHub Copilot CLI, Kimi, Qwen and DeepSeek in one free desktop app, with inline review, plans and shared permission rules. Open source, for Windows, Mac and Linux.">
+<meta property="og:image" content="https://switchdesk.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../guide.css">
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Switchdesk", "applicationCategory": "DeveloperApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "url": "https://switchdesk.dev/", "downloadUrl": "https://github.com/SlaterMarketing/switchdesk/releases/latest"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is this an official Codex or Gemini app?", "acceptedAnswer": {"@type": "Answer", "text": "No. Switchdesk is independent and not affiliated with OpenAI, Google or GitHub. It runs their official CLIs, which you install and sign in to yourself."}}, {"@type": "Question", "name": "Do I need all of them?", "acceptedAnswer": {"@type": "Answer", "text": "No. Use any one, and add others when you want. Switchdesk shows only the agents you've set up."}}, {"@type": "Question", "name": "Does it cost anything?", "acceptedAnswer": {"@type": "Answer", "text": "Switchdesk is free and open source. Each agent uses your own plan or API key."}}, {"@type": "Question", "name": "Can I use my own slash commands?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Command files from .claude/commands, .codex/prompts, .cursor/commands and .github/prompts work with every agent."}}]}]</script>
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../icon.svg" alt="">Switchdesk</a>
+    <a class="btn small primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download</a>
+  </div>
+</header>
+<main>
+  <section class="hero wrap">
+    <p class="eyebrow">Codex, Gemini and Copilot GUI</p>
+    <h1>Codex, Gemini and Copilot <span class="grad">in one window</span></h1>
+    <p class="lede">Every AI lab now ships a coding agent for the terminal. Switchdesk runs them all in one free desktop app, through each maker's own CLI, so you can switch agents mid-task and review every change the same way.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download Switchdesk</a>
+      <a class="btn" href="https://youtu.be/pOJg9oDNDxU">Watch the 50-second tour</a>
+    </div>
+    <p class="note">Free and open source · Windows, Mac and Linux · No account</p>
+    <figure class="shot"><img src="../screens/board.png" alt="The Switchdesk board, with several agents working on tasks at once" width="1439" height="899"></figure>
+  </section>
+  <section class="wrap block">
+    <h2>Supported agents</h2>
+    <p class="body">Switchdesk starts each agent through the command its maker publishes, signed in the way that agent normally is. It never sees your logins.</p>
+    <div class="cards">
+      <div class="card"><h3>OpenAI Codex</h3><p>Your ChatGPT plan or an OpenAI API key, through <code>codex app-server</code>.</p></div>
+      <div class="card"><h3>Gemini CLI</h3><p>Your Gemini API key, through <code>gemini --acp</code>.</p></div>
+      <div class="card"><h3>GitHub Copilot CLI</h3><p>Your Copilot plan, through <code>copilot --acp</code> after <code>copilot login</code>.</p></div>
+      <div class="card"><h3>Claude Code</h3><p>Your Claude plan, with several accounts side by side.</p></div>
+      <div class="card"><h3>Cursor, Kimi, Qwen and DeepSeek</h3><p>Cursor's agent with your Cursor plan, Kimi with a Kimi Code membership, and Qwen Code for Qwen and DeepSeek keys.</p></div>
+      <div class="card"><h3>One set of permissions</h3><p>Rules you set once apply to every agent: commands to always allow, always block or always ask about.</p></div>
+    </div>
+  </section>
+  <section class="wrap block">
+    <h2>Why one app for several agents?</h2>
+    <p class="body">Each agent has strengths, limits and usage caps. In Switchdesk, when one gets stuck or you run out of usage, pick another from the menu in the chat box and it carries on with the conversation so far. Or send the same task to several at once and keep the best result.</p>
+  </section>
+  <section class="wrap block">
+    <h2>Questions</h2>
+    <div class="faq">
+      <details><summary>Is this an official Codex or Gemini app?</summary><p>No. Switchdesk is independent and not affiliated with OpenAI, Google or GitHub. It runs their official CLIs, which you install and sign in to yourself.</p></details>
+      <details><summary>Do I need all of them?</summary><p>No. Use any one, and add others when you want. Switchdesk shows only the agents you've set up.</p></details>
+      <details><summary>Does it cost anything?</summary><p>Switchdesk is free and open source. Each agent uses your own plan or API key.</p></details>
+      <details><summary>Can I use my own slash commands?</summary><p>Yes. Command files from .claude/commands, .codex/prompts, .cursor/commands and .github/prompts work with every agent.</p></details>
+    </div>
+  </section>
+  <section class="wrap final">
+    <h2>Try it on your own plan</h2>
+    <p>Free, open source, and set up in a couple of minutes.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download Switchdesk</a>
+      <a class="btn" href="https://github.com/SlaterMarketing/switchdesk">View on GitHub</a>
+    </div>
+    <p class="more">More: <a href="../claude-code-gui/">Claude Code GUI</a> · <a href="../cursor-alternative/">Cursor alternative</a> · <a href="../">Home</a></p>
+  </section>
+</main>
+<footer>
+  <div class="wrap">
+    <p>Free and open source under the MIT licence. Claude, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+    <p class="made-by">Made by <a href="https://slatermarketing.co.uk">Will Slater</a>, fractional CMO and product lead for startups.</p>
+  </div>
+</footer>
+</body>
+</html>
