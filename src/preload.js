@@ -213,6 +213,9 @@ contextBridge.exposeInMainWorld('desk', {
     mcpRemove: call('cfg:mcp-remove'),
     mcpAdd: call('cfg:mcp-add'),
     mcpLogin: call('cfg:mcp-login'),
+    gatewayList: call('cfg:gateway-list'),
+    gatewayConnect: call('cfg:gateway-connect'),
+    gatewayRemove: call('cfg:gateway-remove'),
   },
 
   menuLabels: call('menu:labels'),

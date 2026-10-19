@@ -2,6 +2,12 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.30.0
+
+- **Every agent can connect services now.** Ask Codex, Cursor, Copilot, Kimi, Gemini, Qwen or DeepSeek to "connect me to Linear" (or Jira, Notion, Sentry, Asana, Stripe…), and Switchdesk opens the sign-in in your browser, keeps the sign-in safe, and gives that agent the service's tools from your next message. Switchdesk knows the address of well-known services; for others the agent can give it one. Switching agents mid-chat keeps the same connections.
+- Settings → MCP servers has a section for these, with Sign in and Remove.
+- claude.ai connectors (Gmail, Google Drive, Google Sheets and so on) still only work in Claude chats. If you ask another agent for one, it says so and suggests switching the chat to Claude.
+
 ## 0.29.2
 
 - **Connecting a service takes one prompt.** Ask Claude to connect you to something, like Google Sheets. If you have it, Switchdesk signs you in. If you don't, it opens claude.ai's connector page so you can add it, waits, and picks it up as soon as it's there.

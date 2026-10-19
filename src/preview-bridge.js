@@ -26,8 +26,8 @@ function start() {
       req.on('end', async () => {
         let out;
         try {
-          const { name, args } = JSON.parse(body || '{}');
-          out = await run(name, args || {});
+          const { name, args, agent } = JSON.parse(body || '{}');
+          out = await run(name, args || {}, agent || '');
         } catch (err) {
           out = { error: String(err.message || err) };
         }

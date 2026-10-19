@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme, screen, safeStorage } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -24,6 +24,7 @@ const debuglog = require('./debuglog');
 const report = require('./report');
 const previewBridge = require('./preview-bridge');
 const mcpConnect = require('./mcp-connect');
+const { createGateway, known: knownMcp } = require('./mcp-gateway');
 const tests = require('./tests');
 const usage = require('./usage');
 const codebase = require('./codebase');
@@ -87,8 +88,13 @@ const ctxOfWindow = (bw) => (bw && contexts.get(bw.webContents.id)) || null;
 
 // A Preview tool call from an agent, answered by the window's renderer (preview.js).
 const previewCalls = new Map(); // id -> resolve
-function previewTool(ctx, name, args) {
-  if (name === 'connect_mcp_server') return connectMcp(ctx, args);
+function previewTool(ctx, name, args, agent) {
+  if (name === 'connect_mcp_server') return agent && agent !== 'claude' ? connectGateway(ctx, args) : connectMcp(ctx, args);
+  if (name === 'gateway_tools') return gateway().tools().then((tools) => ({ tools }));
+  if (name === 'gateway_call')
+    return gateway()
+      .call(args.tool, args.arguments)
+      .then((mcp) => ({ mcp }), (err) => ({ mcp: { content: [{ type: 'text', text: String(err.message || err) }], isError: true } }));
   if (!ctx.win || ctx.win.isDestroyed()) return Promise.resolve({ error: 'The Switchdesk window was closed.' });
   const id = crypto.randomUUID();
   return new Promise((resolve) => {
@@ -101,6 +107,63 @@ function previewTool(ctx, name, args) {
 // Signs the user in to an MCP server (adding it first when there's a URL and it isn't set up yet),
 // for the agent's connect_mcp_server tool and Settings → MCP servers. The browser does the sign-in.
 // Open Claude chats then reconnect to it, or pick it up with their next message.
+// Switchdesk's own MCP connections, for the agents that aren't Claude Code. Sign-ins are sealed
+// with the system's keychain, like API keys.
+let mcpGateway = null;
+function gateway() {
+  if (!mcpGateway) {
+    const enc = () => safeStorage.isEncryptionAvailable();
+    mcpGateway = createGateway({
+      file: path.join(app.getPath('userData'), 'mcp-servers.json'),
+      seal: (s) => (enc() ? 'enc:' + safeStorage.encryptString(s).toString('base64') : s),
+      unseal: (s) => (s.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(s.slice(4), 'base64')) : s),
+    });
+  }
+  return mcpGateway;
+}
+
+// The connect_mcp_server tool for the other agents: adds the service (from its address, or one
+// Switchdesk knows) and signs in in the browser. Their chats load its tools with the next message.
+// Some agents give up on a tool call after a minute, so a sign-in still open by then carries on
+// in the background.
+const GATEWAY_WAIT = Number(process.env.SWITCHDESK_MCP_GATEWAY_WAIT_MS) || 50000;
+async function connectGateway(ctx, { name, url } = {}) {
+  name = String(name || '').trim();
+  if (!name) return { error: 'Say which service to connect, by name.' };
+  const gw = gateway();
+  let server = gw.find(name);
+  if (!server || url) {
+    const k = knownMcp(name);
+    const address = String(url || (k && k.url) || '').trim();
+    if (!address)
+      return {
+        error: `Switchdesk doesn't know the MCP address for ${name}. If its provider has an official remote MCP server, call this again with its url. If ${name} is a claude.ai connector (such as Gmail, Google Drive or Google Sheets), it only works in Claude chats: the user can switch this chat to Claude in the agent menu under the chat box, then ask again.`,
+      };
+    if (!/^https:\/\//.test(address) && !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(address)) return { error: 'The address must start with https://.' };
+    server = gw.add(server ? server.name : k && !url ? k.name : name, address);
+  }
+  let opened = false;
+  const openUrl = (u) => {
+    if (!/^https?:\/\//.test(u)) return;
+    opened = true;
+    sendTo(ctx, 'mcp-signing-in', { name: server.name });
+    shell.openExternal(u);
+  };
+  const run = gw.signIn(server.name, openUrl);
+  run.then(
+    () => {
+      for (const c of chats.values()) if (c.ctx === ctx && c.agent !== 'claude' && c.session.alive) c.mcpStale = true;
+      if (opened) sendTo(ctx, 'mcp-signed-in', { name: server.name, ok: true });
+    },
+    () => opened && sendTo(ctx, 'mcp-signed-in', { name: server.name, ok: false })
+  );
+  const r = await Promise.race([run.then((entry) => ({ entry }), (err) => ({ err })), new Promise((res) => setTimeout(() => res({ waiting: true }), GATEWAY_WAIT))]);
+  if (r.err) return { error: `Couldn't connect to ${server.name}: ${r.err.message}` };
+  if (r.waiting) return { text: `The sign-in page for ${server.name} is open in the user's browser. Tell them to finish signing in there; its tools load with their next message once they have.` };
+  const tools = r.entry.tools.map((t) => t.name);
+  return { text: `Connected to ${server.name}.${tools.length ? ` Its tools: ${tools.join(', ')}.` : ''} They load when the user sends their next message, so tell them it's ready and ask them to say go.` };
+}
+
 const CONNECTORS_URL = 'https://claude.ai/customize/connectors';
 const MCP_WAIT = Number(process.env.SWITCHDESK_MCP_WAIT_MS) || 240000;
 const MCP_POLL = Number(process.env.SWITCHDESK_MCP_POLL_MS) || 4000;
@@ -740,7 +803,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   if (sessionId && agent === 'claude' && !ctx.remote) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
   // The Preview tools (preview-mcp.js), so the agent can open and check the running app itself.
-  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)), agent);
+  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args, agent) => previewTool(ctx, name, args, agent)), agent);
   const hostArgs = (args) => ctx.remote.spawnArgs(chat.cwd, [bin, ...args]);
   chat.session = new Session({
     mcp,
@@ -1912,6 +1975,9 @@ function registerIpc() {
   handle('cfg:mcp-list', async (ctx) => config.mcpList(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), folderAcct(ctx)));
   handle('cfg:mcp-remove', async (ctx, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), name, folderAcct(ctx)));
   handle('cfg:mcp-login', (ctx, name) => connectMcp(ctx, { name }));
+  handle('cfg:gateway-list', () => gateway().status());
+  handle('cfg:gateway-connect', (ctx, spec) => connectGateway(ctx, spec || {}));
+  handle('cfg:gateway-remove', (ctx, name) => gateway().remove(name));
   handle('cfg:mcp-add', async (ctx, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), spec, folderAcct(ctx)));
 }
 

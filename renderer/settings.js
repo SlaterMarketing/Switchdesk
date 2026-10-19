@@ -255,6 +255,7 @@ async function settingsMcp(body, added) {
   const target = h('input', { type: 'text', placeholder: 'https://example.com/mcp', spellcheck: 'false' });
   transport.addEventListener('change', () => (target.placeholder = transport.value === 'stdio' ? 'npx -y some-mcp-server' : 'https://example.com/mcp'));
   const out = h('pre', { class: 'setup-log hidden' });
+  const others = h('div', { class: 'gateway-mcp' });
   const addBtn = h('button', { class: 'btn small primary' }, 'Add');
   addBtn.addEventListener('click', async () => {
     if (!name.value.trim() || !target.value.trim()) return toast('Give the server a name and a URL or command.');
@@ -303,10 +304,54 @@ async function settingsMcp(body, added) {
           )
         : h('div', { class: 'muted small' }, raw && !/No MCP servers/i.test(raw) ? raw.slice(0, 400) : 'No MCP servers yet.')
     ),
-    h('div', { class: 'set-box' }, h('b', {}, 'Add a server'), h('div', { class: 'row' }, name, transport), target, h('div', { class: 'row' }, h('span', { class: 'spacer' }), addBtn), out)
+    h('div', { class: 'set-box' }, h('b', {}, 'Add a server'), h('div', { class: 'row' }, name, transport), target, h('div', { class: 'row' }, h('span', { class: 'spacer' }), addBtn), out),
+    others
   );
+  otherAgentsMcp(others);
   const fresh = added && servers.find((s) => s.name === added && s.needsAuth);
   if (fresh) signIn(fresh, [...body.querySelectorAll('.rule')].find((r) => r.querySelector('b').textContent === added)?.querySelector('.btn'));
+}
+
+// The servers Switchdesk connects for the agents that aren't Claude Code (mcp-gateway.js).
+async function otherAgentsMcp(box) {
+  const head = [h('h3', {}, 'For the other agents'), h('p', { class: 'muted small' }, 'Codex, Cursor, Copilot, Kimi, Gemini, Qwen and DeepSeek use these, signed in by Switchdesk. You can also ask any of them in a chat to connect you to a service.')];
+  box.replaceChildren(...head, h('div', { class: 'muted small' }, 'Checking…'));
+  const list = await desk.cfg.gatewayList();
+  const connect = async (spec, btn) => {
+    if (btn) (btn.disabled = true), (btn.textContent = 'Signing in…');
+    const r = await desk.cfg.gatewayConnect(spec);
+    if (r.error) toast(r.error);
+    else if (/still open|is open/.test(r.text)) toast('Finish signing in in your browser.');
+    if (box.isConnected) otherAgentsMcp(box);
+  };
+  const name = h('input', { type: 'text', placeholder: 'Name, e.g. linear', spellcheck: 'false' });
+  const url = h('input', { type: 'text', placeholder: 'https://mcp.example.com/mcp (not needed for well-known services)', spellcheck: 'false' });
+  const add = h('button', { class: 'btn small primary', onclick: (e) => name.value.trim() && connect({ name: name.value.trim(), url: url.value.trim() || undefined }, e.currentTarget) }, 'Connect');
+  box.replaceChildren(
+    ...head,
+    h(
+      'div',
+      { class: 'set-box' },
+      list.length
+        ? h(
+            'div',
+            { class: 'rules' },
+            ...list.map((s) =>
+              h(
+                'div',
+                { class: 'rule' },
+                h('b', {}, s.name),
+                h('span', { class: 'muted small mcp-detail', title: s.url }, `${s.url} - ${s.status === 'connected' ? '✓ Connected' : s.status === 'needs-auth' ? '! Needs authentication' : '✗ ' + (s.error || 'Failed to connect')}`),
+                h('span', { class: 'spacer' }),
+                s.status === 'connected' ? null : h('button', { class: 'btn small primary', onclick: (e) => connect({ name: s.name }, e.currentTarget) }, 'Sign in'),
+                h('button', { class: 'icon-btn', title: 'Remove', onclick: async () => confirm(`Remove ${s.name}?`) && (await desk.cfg.gatewayRemove(s.name), otherAgentsMcp(box)) }, '✕')
+              )
+            )
+          )
+        : h('div', { class: 'muted small' }, 'None yet.')
+    ),
+    h('div', { class: 'set-box' }, h('b', {}, 'Connect a service'), name, url, h('div', { class: 'row' }, h('span', { class: 'spacer' }), add))
+  );
 }
 
 // ------------------------------------------------------------------ usage

@@ -793,3 +793,35 @@ appTest('MCP servers sign in from Settings, and /mcp opens them', async ({ app, 
   for (let i = 0; i < 100 && !fs.existsSync(cfg); i++) await w.waitForTimeout(100);
   assert.ok(fs.existsSync(cfg), 'the chat restarted to load the new connector');
 });
+
+appTest('the other agents connect services through Switchdesk, and get their tools', async ({ app, w, p }) => {
+  const { spawn } = require('child_process');
+  const fake = spawn(process.execPath, [path.join(__dirname, 'fake-oauth-mcp.js'), '0']);
+  const port = await new Promise((r) => fake.stdout.once('data', (d) => r(String(d).trim())));
+  try {
+    // The "browser" approves the sign-in straight away.
+    await app.evaluate(({ shell }) => (shell.openExternal = async (url) => void fetch(url)));
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'hello');
+    await idle(w);
+    const starts = () => agentLog(p).filter((m) => m.agent === 'cursor' && (m.method === 'session/new' || m.method === 'session/load') && m.params.mcpServers.length);
+    const spec = starts().pop().params.mcpServers[0];
+    const env = Object.fromEntries(spec.env.map((e) => [e.name, e.value]));
+    assert.equal(env.SWITCHDESK_AGENT, 'cursor');
+    const call = (name, args) => fetch(env.SWITCHDESK_PREVIEW_URL, { method: 'POST', body: JSON.stringify({ name, args, agent: 'cursor' }) }).then((r) => r.json());
+    assert.match((await call('connect_mcp_server', { name: 'Google Sheets' })).error, /claude\.ai connector[\s\S]*switch this chat to Claude/);
+    assert.match((await call('connect_mcp_server', { name: 'tracker', url: `http://127.0.0.1:${port}/mcp` })).text, /^Connected to tracker\. Its tools: list_tickets\. They load when the user sends their next message/);
+    assert.deepEqual((await call('gateway_tools', {})).tools.map((t) => t.name), ['tracker__list_tickets']);
+    assert.equal((await call('gateway_call', { tool: 'tracker__list_tickets', arguments: {} })).mcp.content[0].text, 'TICKET-1: Fix the login page');
+    // The chat picks the tools up with the next message.
+    const before = starts().length;
+    await sendMessage(w, 'list my tickets');
+    await idle(w);
+    assert.equal(starts().length, before + 1, 'the agent restarted on the same conversation');
+    // And Settings lists it for the other agents.
+    await w.evaluate(() => openSettings('mcp'));
+    await w.waitForSelector('.gateway-mcp .rule:has-text("tracker") >> text=Connected');
+  } finally {
+    fake.kill();
+  }
+});
