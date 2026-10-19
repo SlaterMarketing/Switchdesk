@@ -150,7 +150,7 @@ Switchdesk isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere
 Download from the [latest release](https://github.com/SlaterMarketing/switchdesk/releases/latest):
 
 - **Windows:** **Switchdesk-Setup-x.y.z.exe**. It installs for your user (no admin rights), adds Desktop and Start Menu shortcuts, and opens the app. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
-- **Mac:** **Switchdesk-x.y.z-mac-arm64.dmg** for Apple Silicon (M1 and later) or **…-mac-x64.dmg** for Intel. Drag Switchdesk to Applications. It isn't signed with an Apple Developer ID, so the first time, right-click it and choose **Open** (on recent macOS: try to open it, then System Settings → Privacy & Security → **Open Anyway**).
+- **Mac:** **Switchdesk-x.y.z-mac-arm64.dmg** for Apple Silicon (M1 and later) or **…-mac-x64.dmg** for Intel. Drag Switchdesk to Applications. It's signed and notarised by Apple, so it opens like any other app.
 - **Linux:** **Switchdesk-x.y.z-linux-x86_64.AppImage**. Make it executable (`chmod +x`) and run it.
 
 Then:
