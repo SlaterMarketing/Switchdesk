@@ -70,7 +70,7 @@ function renderWorktreeBar() {
       h('span', { class: 'spacer' }),
       n ? h('button', { class: 'btn small', onclick: () => reviewWorktree(chat) }, 'Review') : null,
       chat.pr ? h('button', { class: 'btn small', title: 'Open the pull request', onclick: () => openPr(chat.pr.number) }, 'View PR') : null,
-      chat.pr && chat.pr.watch ? h('span', { class: 'muted small', title: 'Switchdesk tells you when its checks pass or fail' }, '● watching checks') : null,
+      chat.pr && chat.pr.watch ? h('span', { class: 'muted small', title: chat.pr.watch.babysit ? "Switchdesk fixes its checks, comments and conflicts until it's merged" : 'Switchdesk tells you when its checks pass or fail' }, chat.pr.watch.babysit ? '● babysitting' : '● watching checks') : null,
       github === 'push' && n && unpushed ? h('button', { class: 'btn small primary', title: `Push the agent's commits to ${chat.pr.head} on GitHub`, onclick: () => pushToPr(chat) }, `Push to PR #${chat.pr.number}`) : null,
       github === 'open' && n ? h('button', { class: 'btn small primary', title: 'Push this branch and open a pull request that closes the issue', onclick: () => openPrFromCopy(chat) }, 'Open pull request') : null,
       n && !github ? h('button', { class: 'btn small primary', title: 'Bring these changes into your folder', onclick: () => (chat.compare ? useComparison(chat) : mergeWorktree(chat)) }, chat.compare ? 'Use this one' : 'Merge into my folder') : null,

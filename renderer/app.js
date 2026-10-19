@@ -558,7 +558,7 @@ async function saveWorkspace() {
     side: side.rel || null,
     panel: state.sidePanel || 'explorer',
     draft: $('#input').value.slice(0, 20000),
-    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined, compare: c.compare || undefined, comparePrompt: (c.compare && (compareGroups.get(c.compare) || {}).prompt) || undefined, merged: c.merged || undefined, pr: c.pr || undefined, issue: c.issue || undefined })),
+    chats: chats.filter((c) => c.sessionId && !(c.worktree && c.worktree.removed)).map((c) => ({ sessionId: c.sessionId, title: c.title, worktree: c.worktree || undefined, account: c.account || undefined, agent: c.agent || undefined, agentAccount: c.agentAccount || undefined, auto: c.auto || undefined, compare: c.compare || undefined, comparePrompt: (c.compare && (compareGroups.get(c.compare) || {}).prompt) || undefined, merged: c.merged || undefined, pr: c.pr || undefined, issue: c.issue || undefined })),
     activeChat: activeChat()?.sessionId || null,
     plans: planSnapshot(),
     planActive: !!(t && t.kind === 'plan'),
@@ -584,6 +584,8 @@ async function restoreWorkspace(root) {
       // A pull request's or an issue's chat still offers Push or Open pull request.
       const own = (c.pr || c.issue) && chats.find((x) => x.sessionId === c.sessionId);
       if (own) Object.assign(own, { pr: c.pr || null, issue: c.issue || null });
+      const auto = c.auto && chats.find((x) => x.sessionId === c.sessionId);
+      if (auto) auto.auto = true;
       // Chats that were compared still show their bar together.
       const chat = c.compare && chats.find((x) => x.sessionId === c.sessionId);
       if (chat) {

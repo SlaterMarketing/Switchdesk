@@ -84,7 +84,7 @@ function boardCard(chat) {
           : col === 'review' && chat.pr && canPushTo(chat.pr)
             ? h('button', { class: 'btn small primary', onclick: () => (switchChat(chat.id), pushToPr(chat)) }, `Push to PR #${chat.pr.number}`)
             : null;
-  const bits = [agentLabel(chat), chat.issue ? `issue ${issueRef(chat.issue)}` : null, wt ? (changes ? `${changes} file${changes > 1 ? 's' : ''} changed` : 'own copy') : null, chat.pr && chat.pr.watch ? 'watching checks' : null].filter(Boolean);
+  const bits = [agentLabel(chat), chat.issue ? `issue ${issueRef(chat.issue)}` : null, wt ? (changes ? `${changes} file${changes > 1 ? 's' : ''} changed` : 'own copy') : null, chat.pr && chat.pr.watch ? (chat.pr.watch.babysit ? 'babysitting its PR' : 'watching checks') : null].filter(Boolean);
   return h(
     'div',
     { class: `board-card ${col}${chat === activeChat() ? ' active' : ''}`, 'data-chat': chat.id },

@@ -241,7 +241,8 @@ function renderPr(t) {
       h('h2', {}, p.title, h('span', { class: 'muted' }, ` #${p.number}`)),
       h('div', { class: 'muted small' }, h('span', { class: `pr-state ${p.state}${p.draft ? ' draft' : ''}` }, p.draft ? 'Draft' : p.state === 'merged' ? 'Merged' : p.state === 'closed' ? 'Closed' : 'Open'), ` ${p.author} wants to merge `, h('code', {}, p.head), ' into ', h('code', {}, p.base)),
       reviewLine(p),
-      chat && chat.pr.watch ? h('div', { class: 'small pr-watch' }, h('span', { class: 'spinner' }), ` Watching its checks${chat.pr.watch.autoFix ? `; failures go back to ${agentLabel(chat)} to fix (${chat.pr.watch.tries} of ${MAX_FIXES} tries used)` : ''}.`, h('a', { href: '#', onclick: (e) => (e.preventDefault(), (chat.pr.watch = null), queueSaveWorkspace(), renderPr(t)) }, ' Stop')) : null,
+      chat && chat.pr.watch && chat.pr.watch.babysit ? h('div', { class: 'small pr-watch' }, h('span', { class: 'spinner' }), ` Babysitting it until it's merged: failing checks, review comments and conflicts go to ${agentLabel(chat)}, and its fixes are pushed.`, h('a', { href: '#', onclick: (e) => (e.preventDefault(), (chat.pr.watch = null), queueSaveWorkspace(), renderWorktreeBar(), renderPr(t)) }, ' Stop')) : null,
+      chat && chat.pr.watch && !chat.pr.watch.babysit ? h('div', { class: 'small pr-watch' }, h('span', { class: 'spinner' }), ` Watching its checks${chat.pr.watch.autoFix ? `; failures go back to ${agentLabel(chat)} to fix (${chat.pr.watch.tries} of ${MAX_FIXES} tries used)` : ''}.`, h('a', { href: '#', onclick: (e) => (e.preventDefault(), (chat.pr.watch = null), queueSaveWorkspace(), renderPr(t)) }, ' Stop')) : null,
       p.state === 'open'
         ? h(
             'div',
@@ -257,6 +258,9 @@ function renderPr(t) {
         { class: 'actions' },
         failing.length ? h('button', { class: 'btn small primary', onclick: () => fixPr(p, failing.map((c) => ({ kind: 'check', check: c }))) }, `Fix ${failing.length > 1 ? `${failing.length} failing checks` : 'the failing check'}`) : null,
         p.threads.length ? h('button', { class: 'btn small', onclick: () => fixPr(p, p.threads.filter((x) => !x.outdated).map((th) => ({ kind: 'comment', thread: th }))) }, 'Fix all review comments') : null,
+        p.state === 'open' && p.canPush && !(chat && chat.pr.watch && chat.pr.watch.babysit)
+          ? h('button', { class: 'btn small', title: "Watch it until it's merged. Failing checks, new review comments and merge conflicts go to an agent to fix, and its fixes are pushed for you.", onclick: () => babysitPr(t) }, 'Babysit it')
+          : null,
         h('button', { class: 'btn small', onclick: () => reviewPr(p) }, '👁\uFE0E Review with an agent'),
         chat ? h('button', { class: 'btn small', onclick: () => switchChat(chat.id) }, 'Open its chat') : null,
         h('span', { class: 'spacer' }),
@@ -349,6 +353,10 @@ async function sendFixes(chat, p, items, note = '') {
       const th = it.thread;
       chat.pr.threads = [...new Set([...(chat.pr.threads || []), th.id])];
       parts.push(`### Review comment on \`${th.path}${th.line ? ':' + th.line : ''}\`\n\n${th.hunk ? '```diff\n' + th.hunk.split('\n').slice(-6).join('\n') + '\n```\n\n' : ''}${th.replies.map((r) => `${r.author}: ${r.body}`).join('\n\n')}`);
+    } else if (it.kind === 'talk') {
+      parts.push(`### Comment from ${it.comment.author}${it.comment.review === 'CHANGES_REQUESTED' ? ' (asking for changes)' : ''}\n\n${it.comment.body}`);
+    } else if (it.kind === 'conflict') {
+      parts.push(`### Merge conflicts with \`${p.base}\`\n\nBring \`${p.base}\` in with \`git fetch origin ${p.base} && git merge origin/${p.base}\`, resolve the conflicts so both sides' changes still work, and commit the merge.`);
     } else if (it.kind === 'finding') {
       const f = it.finding;
       parts.push(`### ${f.severity} at \`${f.file}:${f.line}\`: ${f.title}\n\n${f.detail || ''}`);
@@ -621,6 +629,7 @@ async function watchStep(chat) {
   const w = pr.watch;
   watchBusy.add(chat.id);
   try {
+    if (w.babysit) return await babysitStep(chat);
     const c = await desk.github.checks(w.sha);
     if (pr.watch !== w) return;
     const failing = c.list.filter((x) => x.state === 'failing');
@@ -659,21 +668,109 @@ function stopWatch(chat, text, good) {
   gh.at = 0;
 }
 
+// Babysitting: watching a pull request until it's merged or closed. Each time round, failing checks
+// (up to MAX_FIXES tries in a row), new review comments and merge conflicts go to the agent in one
+// prompt, its fix is pushed, and the comments it fixed get a "Fixed in …" reply.
+async function babysitPr(t) {
+  const p = t.pr.data;
+  const chat = await chatForPr(p);
+  if (!chat) return;
+  const me = gh.status && gh.status.login;
+  // Comments already there count as new when a reviewer had the last word on them.
+  const open = (th) => !th.outdated && !isOurs(th.replies[th.replies.length - 1], me) && th.replies[th.replies.length - 1].author !== p.author;
+  const seen = [...p.threads.filter((th) => !open(th)).flatMap((th) => th.replies.map((r) => r.id)), ...p.talk.map((c) => c.id)];
+  chat.pr.watch = { babysit: true, sha: p.headSha, since: Date.now(), tries: 0, autoFix: true, fixing: false, seen, replyTo: [], greenSha: null, conflictSha: null };
+  chat.pr.pushedSha = p.headSha;
+  queueSaveWorkspace();
+  renderWorktreeBar();
+  appendChat(h('div', { class: 'notice' }, `Babysitting PR #${p.number} until it's merged. Failing checks, review comments and conflicts go to ${agentLabel(chat)}, and Switchdesk pushes its fixes.`), chat);
+  renderPr(t);
+  watchStep(chat);
+}
+
+// A comment Switchdesk (or a bot) wrote, which needs nothing doing.
+const isOurs = (c, me) => !c || /\[bot\]$/i.test(c.author) || /^Fixed in [0-9a-f]{7}/.test(c.body) || (!!me && c.author === me && /^Switchdesk/.test(c.body));
+
+async function babysitStep(chat) {
+  const pr = chat.pr;
+  const w = pr.watch;
+  const p = await desk.github.pr(pr.number);
+  if (pr.watch !== w) return;
+  if (p.state !== 'open') return stopWatch(chat, p.state === 'merged' ? `PR #${pr.number} was merged, so Switchdesk stopped babysitting it.` : `PR #${pr.number} was closed, so Switchdesk stopped babysitting it.`, p.state === 'merged');
+  const me = gh.status && gh.status.login;
+  const seen = new Set(w.seen);
+  const items = [];
+  // Someone else pushed to the branch: the copy needs their commits before the next fix.
+  const behind = p.headSha !== w.sha;
+  if (behind) w.sha = p.headSha;
+  const failing = p.checks.filter((x) => x.state === 'failing');
+  if (p.checksState === 'passing') {
+    w.tries = 0;
+    if (w.greenSha !== p.headSha) {
+      w.greenSha = p.headSha;
+      say(chat, `✓ Checks pass on PR #${pr.number}. Still babysitting it for review comments until it's merged.`, true);
+    }
+  } else if (p.checksState === 'failing' && w.tries < MAX_FIXES) items.push(...failing.map((check) => ({ kind: 'check', check })));
+  else if (p.checksState === 'failing' && w.tries === MAX_FIXES) {
+    w.tries++;
+    say(chat, `Checks still fail on PR #${pr.number} after ${MAX_FIXES} tries, so they need you: ${failing.map((x) => x.name).join(', ')}. Switchdesk is still babysitting its comments.`);
+  }
+  for (const th of p.threads) {
+    const fresh = th.replies.filter((r) => !seen.has(r.id));
+    th.replies.forEach((r) => seen.add(r.id));
+    if (!th.outdated && fresh.some((r) => !isOurs(r, me))) items.push({ kind: 'comment', thread: th });
+  }
+  for (const c of p.talk) {
+    if (!seen.has(c.id) && c.body.trim() && !isOurs(c, me)) items.push({ kind: 'talk', comment: c });
+    seen.add(c.id);
+  }
+  if (p.mergeState === 'dirty' && w.conflictSha !== p.headSha) {
+    w.conflictSha = p.headSha;
+    items.push({ kind: 'conflict' });
+  }
+  w.seen = [...seen];
+  queueSaveWorkspace();
+  if (!items.length) return;
+  if (items.some((x) => x.kind === 'check')) w.tries++;
+  w.fixing = true;
+  w.replyTo = items.filter((x) => x.kind === 'comment').map((x) => x.thread.id);
+  const what = [items.some((x) => x.kind === 'check') && 'a failing check', items.some((x) => x.kind === 'comment' || x.kind === 'talk') && 'new review comments', items.some((x) => x.kind === 'conflict') && 'merge conflicts'].filter(Boolean).join(' and ');
+  appendChat(h('div', { class: 'notice' }, `PR #${pr.number} has ${what}. Asking ${agentLabel(chat)} to fix it.`), chat);
+  const pull = behind ? `Someone pushed to the branch since your copy was made, so first bring their commits in with \`git fetch origin pull/${pr.number}/head && git merge FETCH_HEAD\`. ` : '';
+  await sendFixes(chat, { number: pr.number, title: p.title, head: p.head, base: p.base }, items, `Switchdesk is babysitting this pull request until it's merged, and pushes your commit for you. ${pull}`);
+}
+
+// A notice in the chat that also notifies you.
+function say(chat, text, good) {
+  appendChat(h('div', { class: `notice${good ? ' good' : ''}` }, text), chat);
+  try {
+    const n = new Notification('Switchdesk', { body: text });
+    n.onclick = () => (window.focus(), chats.includes(chat) && switchChat(chat.id));
+  } catch {
+    /* notifications off */
+  }
+  refreshPrTab(chat.pr.number);
+}
+
 // The agent's turn on a failing check ended (chat.js calls this): push its fix and keep watching.
 async function prTurnEnded(chat, failed) {
   const pr = chat.pr;
   const w = pr && pr.watch;
   if (!w || !w.fixing) return;
   w.fixing = false;
+  if (failed && w.babysit) return say(chat, `${agentLabel(chat)} stopped before fixing PR #${pr.number}, so that needs you. Switchdesk is still babysitting it.`);
   if (failed) return stopWatch(chat, `The agent stopped before fixing PR #${pr.number}'s checks, so it needs you.`);
   try {
     const head = await desk.worktree.head(chat.worktree);
+    if (head.sha === w.sha && !head.dirty && w.babysit) return say(chat, `${agentLabel(chat)} didn't change anything on PR #${pr.number} this time (see its answer above). Switchdesk is still babysitting it.`);
     if (head.sha === w.sha && !head.dirty) return stopWatch(chat, `${agentLabel(chat)} didn't change anything for PR #${pr.number}'s failing checks, so it needs you.`);
     const r = await desk.worktree.push(chat.worktree, pr.head, `Fix failing checks on #${pr.number}`, pr.headRepo || null);
     pr.pushedSha = r.sha;
     w.sha = r.sha;
     w.since = Date.now();
-    appendChat(h('div', { class: 'notice' }, `Pushed ${r.sha.slice(0, 7)} to PR #${pr.number}. Watching its checks again.`), chat);
+    for (const id of w.replyTo || []) await desk.github.reply(pr.number, id, `Fixed in ${r.sha.slice(0, 7)}.`).catch(() => {});
+    w.replyTo = [];
+    appendChat(h('div', { class: 'notice' }, `Pushed ${r.sha.slice(0, 7)} to PR #${pr.number}. ${w.babysit ? 'Still babysitting it.' : 'Watching its checks again.'}`), chat);
     queueSaveWorkspace();
     refreshWorktree(chat);
     refreshPrTab(pr.number);

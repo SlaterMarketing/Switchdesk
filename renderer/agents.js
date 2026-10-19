@@ -59,7 +59,7 @@ function renderAgentButton() {
   const id = agentOf(chat);
   const info = agentInfo(id);
   const account = id === 'claude' ? (multiAccount() ? accountName(chatAccount(chat)) : '') : agentAccounts(id).length > 1 ? agentAccountName(id, agentAccountOf(chat)) : '';
-  btn.textContent = account ? `${info.label} · ${account}` : info.label;
+  btn.textContent = `${chat && chat.auto ? 'Auto · ' : ''}${account ? `${info.label} · ${account}` : info.label}`;
   btn.title = `This chat runs on ${info.label}${account ? ` (${account} account)` : info.vendor ? ` (${info.vendor})` : ''}. Click to change.`;
 }
 
@@ -129,7 +129,8 @@ function fillAgentMenu(menu, fresh) {
   const ruled = folder && current === 'claude' && acct.rules[folder.root] === currentAccount;
   const items = [
     h('div', { class: 'menu-head' }, 'Run this chat on'),
-    ...rows,
+    h('button', { class: chat && chat.auto ? 'active' : '', title: 'Switchdesk picks the agent you have the most room on, and moves the chat on when one nears its limit.', onclick: () => (close(), setAuto(chat, true)) }, h('b', {}, 'Auto'), h('span', { class: 'acct-detail' }, 'Picks the agent with room to spare')),
+    ...rows.map((r) => (chat && chat.auto && r.classList.remove('active'), r)),
     checking ? h('div', { class: 'menu-note' }, 'Checking your other agents…') : null,
     h('div', { class: 'menu-sep' }),
     folder && current === 'claude' && multiAccount()
@@ -155,6 +156,7 @@ function fillAgentMenu(menu, fresh) {
 }
 
 async function chooseAgent(id, account) {
+  setAuto(activeChat(), false);
   if (agentOf(activeChat()) !== id) await pickAgent(id, id === 'claude' ? undefined : account);
   else if (id !== 'claude' && account && agentAccountOf(activeChat()) !== account) await switchAgentAccount(activeChat(), account);
   if (id === 'claude' && account) await switchChatAccount(activeChat(), account);
@@ -436,6 +438,98 @@ function agentAccountsBox(a, rerender, close) {
     h('div', { class: 'row' }, nameInput, h('button', { class: 'btn small', onclick: add }, 'Add account')),
     h('div', { class: 'muted small' }, a.key ? 'Each account uses its own key. Pick the account for a chat from the agent menu in the chat box.' : `Each account has its own ${a.label} sign-in and chat history. Pick it for a chat from the agent menu in the chat box.`)
   );
+}
+
+// ---------- Auto: Switchdesk picks the agent
+
+// The agents and accounts that are ready, in the order Auto prefers them: Claude's accounts first,
+// then the others as Settings lists them.
+async function readyAgents() {
+  if (!agentState.list.length) await loadAgents();
+  const out = [];
+  for (const a of acct.accounts) {
+    const auth = acct.status.has(a.id) ? acct.status.get(a.id) : await accountStatus(a.id).catch(() => null);
+    if (auth && auth.loggedIn) out.push({ id: 'claude', account: a.id, key: `claude:${a.id}`, label: multiAccount() ? `Claude (${a.name})` : 'Claude' });
+  }
+  for (const a of agentState.list) {
+    if (a.id === 'claude') continue;
+    for (const x of agentAccounts(a.id)) {
+      const s = await agentStatus(a.id, false, x.id);
+      if (s && s.installed && s.loggedIn) out.push({ id: a.id, account: x.id, key: x.id === 'default' ? a.id : `${a.id}:${x.id}`, label: agentAccounts(a.id).length > 1 ? `${a.label} (${x.name})` : a.label });
+    }
+  }
+  return out;
+}
+
+// Limits an agent ran into, by usage key: until when (or 5 hours, when it didn't say).
+const limitHits = new Map();
+function noteLimitHit(chat) {
+  const key = usageKey(chat);
+  const u = acct.usage.get(key);
+  const resets = [u && u.short && u.short.resetsAt, u && u.long && u.long.resetsAt].map((t) => (typeof t === 'number' ? (t < 1e12 ? t * 1000 : t) : Date.parse(t || ''))).filter((t) => t > Date.now());
+  limitHits.set(key, resets.length ? Math.min(...resets) : Date.now() + 5 * 3600e3);
+}
+
+// How much of its plan an agent has left, 0 to 100, as last reported. Agents that don't report it
+// count as half full.
+const AUTO_LOW = 10;
+function roomOf(key) {
+  if ((limitHits.get(key) || 0) > Date.now()) return 0;
+  const u = acct.usage.get(key);
+  const live = (w) => w && !(w.resetsAt && (typeof w.resetsAt === 'number' ? (w.resetsAt < 1e12 ? w.resetsAt * 1000 : w.resetsAt) : Date.parse(w.resetsAt)) < Date.now());
+  if (!u || !(live(u.short) || live(u.long))) return 50;
+  return 100 - Math.max(live(u.short) ? u.short.pct : 0, live(u.long) ? u.long.pct : 0);
+}
+
+function setAuto(chat, on) {
+  if (!chat || !!chat.auto === on) return;
+  chat.auto = on;
+  state.settings.autoAgent = on;
+  desk.setSettings({ autoAgent: on });
+  renderAgentButton();
+  queueSaveWorkspace();
+  if (on) toast('Auto: Switchdesk picks the agent you have the most room on, and moves the chat on when one runs low.');
+}
+
+// Before each message on Auto: a new chat goes to the agent with the most room; a chat whose
+// agent is running low moves to the next one with room, taking the conversation with it.
+async function autoPick(chat) {
+  const list = await readyAgents().catch(() => []);
+  if (!list.length || chat.busy) return;
+  const key = usageKey(chat);
+  const here = list.find((c) => c.key === key);
+  if (here && roomOf(key) > AUTO_LOW && !isPristine(chat)) return;
+  let best = list.filter((c) => roomOf(c.key) > AUTO_LOW);
+  if (!best.length) return;
+  // A new chat takes the one with the most room; a chat moving on takes the first with room.
+  const pick = isPristine(chat) ? best.reduce((a, b) => (roomOf(b.key) > roomOf(a.key) ? b : a)) : best[0];
+  if (pick.key === key) return;
+  const why = !isPristine(chat) ? (roomOf(key) === 0 ? `${agentLabel(chat)} is out of usage` : `${agentLabel(chat)} is at ${100 - roomOf(key)}% of its plan limit`) : '';
+  await moveTo(chat, pick);
+  if (why) appendChat(h('div', { class: 'notice' }, `Auto: ${why}, so this chat carries on in ${pick.label}.`), chat);
+  return pick;
+}
+
+async function moveTo(chat, pick) {
+  if (pick.id === 'claude') {
+    if (agentOf(chat) !== 'claude') await pickAgent('claude');
+    await switchChatAccount(chat, pick.account);
+  } else if (agentOf(chat) !== pick.id) await pickAgent(pick.id, pick.account);
+  else await switchAgentAccount(chat, pick.account);
+  renderAgentButton();
+}
+
+// An agent on Auto hit its limit mid-task: carry on in the next one with room, a few times at most.
+async function autoCarryOn(chat) {
+  for (let i = 0; i < 50 && chat.busy; i++) await new Promise((r) => setTimeout(r, 200)); // the failed turn ends first
+  if (!chats.includes(chat) || chat.busy) return;
+  chat.autoCarried = (chat.autoCarried || 0) + 1;
+  if (chat.autoCarried > 3) return appendChat(h('div', { class: 'notice' }, 'Auto has moved this chat on three times, so it stopped. Pick an agent to carry on.'), chat);
+  if (chat !== activeChat()) switchChat(chat.id);
+  const from = agentLabel(chat);
+  const pick = await autoPick(chat);
+  if (!pick) return appendChat(h('div', { class: 'notice' }, `${from} is out of usage and no other agent has room right now. Set up another one in Settings → Agents, or wait for it to reset.`), chat);
+  send(CARRY_ON, null, null, chat);
 }
 
 function wireAgents() {

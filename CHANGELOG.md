@@ -2,6 +2,12 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.32.0
+
+- **Babysit a pull request.** Click Babysit it on a pull request and Switchdesk watches it until it's merged. Failing checks, new review comments and merge conflicts go to an agent in the PR's own copy, its fix is pushed for you, and the comments it fixed get a "Fixed in …" reply. It tells you when checks pass, stops after three tries on the same failing check, and stops when the PR is merged or closed.
+- **Auto picks the agent for you.** Choose Auto at the top of the agent menu and Switchdesk runs each new chat on the agent or Claude account with the most room left on its plan. When one gets low or runs out mid-task, the chat carries on in the next one with the conversation so far, without you clicking anything.
+- **Talk instead of typing.** The mic button next to the paperclip starts your computer's own dictation in the chat box (Win+H on Windows, Dictation on a Mac).
+
 ## 0.31.0
 
 - **Carry on when an agent hits its limit.** When Claude, Codex or another agent runs out of usage, the error now offers buttons to carry on in another agent you're signed in to, or another Claude account, with the conversation so far. One click switches the chat and picks up where it stopped.

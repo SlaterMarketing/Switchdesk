@@ -1393,6 +1393,20 @@ function registerIpc() {
   });
   handle('preview:open-external', (ctx, url) => /^https?:\/\//.test(url) && shell.openExternal(url));
   handle('app:version', (ctx) => app.getVersion());
+  // Talking instead of typing: starts the system's own dictation, which types into the chat box
+  // (focused first). Win+H on Windows, Edit → Start Dictation on a Mac.
+  handle('dictate', (ctx) => {
+    ctx.win.focus();
+    ctx.win.webContents.focus();
+    if (process.env.SWITCHDESK_DICTATE_LOG) return fs.appendFileSync(process.env.SWITCHDESK_DICTATE_LOG, 'start\n'), true;
+    if (process.platform === 'darwin') return Menu.sendActionToFirstResponder('startDictation:'), true;
+    if (process.platform !== 'win32') return false;
+    const winH =
+      "Add-Type -Name K -Namespace W -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);';" +
+      '[W.K]::keybd_event(0x5B,0,0,[UIntPtr]::Zero);[W.K]::keybd_event(0x48,0,0,[UIntPtr]::Zero);[W.K]::keybd_event(0x48,0,2,[UIntPtr]::Zero);[W.K]::keybd_event(0x5B,0,2,[UIntPtr]::Zero)';
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', winH], { windowsHide: true }, () => {});
+    return true;
+  });
   handle('open-external', (ctx, url) => {
     if (/^https:\/\/([a-z0-9-]+\.)*(claude\.ai|claude\.com|anthropic\.com|git-scm\.com)\//i.test(url)) shell.openExternal(url);
   });

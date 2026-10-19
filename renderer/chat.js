@@ -19,7 +19,11 @@ const chatById = (id) => chats.find((c) => c.id === id) || null;
 // An error that ended a turn, with a way to report it (a GitHub issue you read before sending).
 function turnError(text, chat) {
   const report = h('button', { class: 'err-report', title: 'Open a GitHub issue with this error, your version and system filled in. You can edit it before sending.', onclick: () => desk.reportProblem({ agent: agentOf(chat), error: text }) }, 'Report this');
-  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), LIMIT_RE.test(text) ? null : report, LIMIT_RE.test(text) ? limitOptions(chat) : null);
+  const limit = LIMIT_RE.test(text);
+  if (limit) noteLimitHit(chat);
+  // On Auto, Switchdesk carries on in the next agent by itself.
+  if (limit && chat.auto) setTimeout(() => autoCarryOn(chat), 0);
+  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), limit ? null : report, limit && !chat.auto ? limitOptions(chat) : null);
 }
 
 // What agents say when a plan or API key has run out for now.
@@ -88,6 +92,7 @@ function createChat({ title = 'New chat', sessionId = null } = {}) {
     sessionId,
     account: acct.folderAccount, // which Claude account it runs on (accounts.js)
     agent: (state.settings && state.settings.lastAgent) || 'claude', // which agent runs it (agents.js)
+    auto: !!(state.settings && state.settings.autoAgent), // Switchdesk picks the agent (agents.js)
     el: h('div', { class: 'messages-pane' }, emptyState()),
     outputs: new Map(), // rel -> the latest change to it (deskview.js)
     turn: null,
@@ -1382,6 +1387,7 @@ async function send(textOverride, modeOverride, display, target) {
 }
 
 async function dispatch(chat, { content, shown, mode, images, rwText, compact }) {
+  if (chat.auto && chat === activeChat()) await autoPick(chat);
   // A chat taken over from another agent sends that conversation with its first message.
   if (chat.handoff) {
     content = [...content, { type: 'text', text: '\n\n' + chat.handoff }];
@@ -1656,4 +1662,10 @@ function wireImageInput() {
     attachFiles(docs);
   });
   $('#attach-btn').addEventListener('click', pickAttachments);
+  // Dictation is the system's own: Windows and Mac have it, Linux doesn't.
+  if (!['win32', 'darwin'].includes(window.desk.platform)) $('#mic-btn').classList.add('hidden');
+  $('#mic-btn').addEventListener('click', () => {
+    $('#input').focus();
+    window.desk.dictate();
+  });
 }

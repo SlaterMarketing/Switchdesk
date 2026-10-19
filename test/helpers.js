@@ -167,13 +167,14 @@ async function fakeGithub(dir) {
     'GET /user': () => ({ login: 'tester' }),
     'GET /repos/o/r': () => ({ default_branch: 'main' }),
     'GET /repos/o/r/pulls': () => [pr],
-    'GET /repos/o/r/pulls/7': () => pr,
+    // Its head is wherever the branch is now, as on GitHub.
+    'GET /repos/o/r/pulls/7': () => ({ ...pr, head: { ...pr.head, sha: execFileSync('git', ['rev-parse', 'fix-cart'], { cwd: bare }).toString().trim() } }),
     'GET /repos/o/r/pulls/7/files': () => [{ filename: 'cart.js', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1,3 +1,3 @@\n function total(items) {\n-  return items.reduce((sum, i) => sum + i.price, 0);\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;\n }' }],
     'GET /repos/o/r/pulls/7/comments': () => comments,
     'POST /repos/o/r/pulls/7/comments': (b) => (comments.push({ id: 950 + comments.length, path: b.path, line: b.line, original_line: b.line, body: b.body, user: { login: 'tester' }, created_at: new Date().toISOString(), diff_hunk: '' }), { id: 950 }),
     [`GET /repos/o/r/compare/${baseSha}...${sha}`]: () => ({ merge_base_commit: { sha: baseSha } }),
     'GET /repos/o/r/pulls/7/reviews': () => [],
-    'GET /repos/o/r/issues/7/comments': () => [],
+    'GET /repos/o/r/issues/7/comments': () => talk,
     'GET /repos/o/r/collaborators': () => [{ login: 'sam' }, { login: 'alex' }],
     'POST /repos/o/r/pulls/7/requested_reviewers': () => ({}),
     'PUT /repos/o/r/pulls/7/merge': () => ({ merged: true }),
@@ -184,10 +185,12 @@ async function fakeGithub(dir) {
     'GET /repos/o/r/issues/3': () => issue,
     'GET /repos/o/r/issues/3/comments': () => [],
     'POST /repos/o/r/pulls/7/comments/900/replies': () => ({ id: 901 }),
+    'POST /repos/o/r/pulls/7/comments/990/replies': () => ({ id: 991 }),
     'POST /repos/o/r/pulls/7/reviews': () => ({ id: 1 }),
     'POST /repos/o/r/pulls': () => ({ number: 8, html_url: 'https://github.com/o/r/pull/8' }),
   };
   const comments = [{ id: 900, path: 'cart.js', line: 2, original_line: 2, body: 'What about a null cart?', user, created_at: new Date().toISOString(), diff_hunk: '@@ -1,3 +1,3 @@\n+  return items.reduce((sum, i) => sum + i.price, 0) || 0;' }];
+  const talk = [];
   const posted = [];
   const shas = [sha];
   const hub = { passFrom: 2 };
@@ -223,7 +226,7 @@ async function fakeGithub(dir) {
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return Object.assign(hub, { pr, env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
+  return Object.assign(hub, { pr, comments, talk, env: { SWITCHDESK_GITHUB_API: `http://127.0.0.1:${server.address().port}`, SWITCHDESK_GITHUB_REPO: 'o/r' }, posted, bare, sha, shas, close: () => server.close() });
 }
 
 // A stand-in for Linear's API: one issue (ENG-12) assigned to you. Each request is in .requests.

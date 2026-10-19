@@ -470,7 +470,7 @@ test('pull requests: fix a check and a comment, push, review with an agent, and 
     await w.click('.card.findings button:has-text("Post to the pull request")');
     await w.waitForSelector('.card.findings button:has-text("Posted to GitHub")', { timeout: 15000 });
     const review = hub.posted.find((x) => x.key.endsWith('/pulls/7/reviews')).body;
-    assert.equal(review.commit_id, hub.sha);
+    assert.equal(review.commit_id, gitIn(hub.bare, 'rev-parse', 'fix-cart'), 'the review is on its latest commit');
     assert.deepEqual(review.comments.map((c) => [c.path, c.line]), [['cart.js', 2]]);
     assert.match(review.comments[0].body, /Null cart throws/);
     // Ask for a review, approve, and merge, all from the pull request's tab.
@@ -837,4 +837,98 @@ appTest('when an agent hits its limit, the chat carries on in another one', asyn
   const sent = prompts(p, 'copilot').pop();
   assert.match(sent, /pineapple/, 'Copilot gets the conversation so far');
   assert.match(sent, /hit its usage limit/);
+});
+
+test('the mic button starts the computer’s dictation in the chat box', { timeout: 120000 }, async () => {
+  const p = profile();
+  const log = path.join(p.userData, 'dictate.log');
+  const { app, w, errors } = await launch(p, project(), { SWITCHDESK_DICTATE_LOG: log });
+  try {
+    // Linux has no dictation, so the button is hidden there. Show it to click it.
+    await w.evaluate(() => document.querySelector('#mic-btn').classList.remove('hidden'));
+    await w.click('#mic-btn');
+    await until(w, () => document.activeElement && document.activeElement.id === 'input');
+    for (let i = 0; i < 50 && !fs.existsSync(log); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(fs.readFileSync(log, 'utf8'), 'start\n');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test('babysitting a pull request: checks, then new review comments, until it is merged', { timeout: 180000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const hub = await fakeGithub(dir);
+  hub.passFrom = 1; // the first fix makes the checks pass
+  const { app, w, errors } = await launch(p, dir, hub.env);
+  const chatText = () => w.evaluate(() => chats.find((c) => c.pr && c.pr.number === 7).el.innerText);
+  const step = () => w.evaluate(() => checkWatches());
+  try {
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ lastAgent: 'cursor' })));
+    await w.evaluate(() => desk.github.setToken('test-token').then(() => refreshGithub(true)));
+    await w.evaluate(() => openPr(7));
+    await w.click('#pr-view button:has-text("Babysit it")');
+    // The failing check goes to the agent and its fix is pushed.
+    await until(w, () => /Pushed [0-9a-f]{7} to PR #7\. Still babysitting it/.test(chats.find((c) => c.pr && c.pr.number === 7).el.innerText), null, 60000);
+    assert.match(prompts(p).pop(), /total\(null\) threw TypeError/);
+    assert.doesNotMatch(await chatText(), /new review comments/, "the author's own comment from before isn't counted");
+    // Checks pass: it says so and keeps babysitting.
+    await step();
+    await until(w, () => /Checks pass on PR #7\. Still babysitting/.test(chats.find((c) => c.pr && c.pr.number === 7).el.innerText));
+    assert.ok(await w.evaluate(() => chats.find((c) => c.pr && c.pr.number === 7).pr.watch.babysit));
+    // A reviewer leaves comments: they go to the agent, the fix is pushed and the comment answered.
+    const now = new Date().toISOString();
+    hub.comments.push({ id: 990, path: 'cart.js', line: 2, original_line: 2, body: 'Please add a test for this.', user: { login: 'alex' }, created_at: now, diff_hunk: '' });
+    hub.talk.push({ id: 77, body: 'Also mention it in the README.', user: { login: 'alex' }, created_at: now });
+    await step();
+    await until(w, () => (chats.find((c) => c.pr && c.pr.number === 7).el.innerText.match(/Still babysitting it\./g) || []).length >= 2, null, 60000);
+    const asked = prompts(p).pop();
+    assert.match(asked, /Please add a test for this\./);
+    assert.match(asked, /Also mention it in the README\./);
+    assert.ok(hub.posted.some((x) => x.key.endsWith('/comments/990/replies') && /^Fixed in [0-9a-f]{7}/.test(x.body.body)));
+    // Nothing new: nothing is sent.
+    const before = prompts(p).length;
+    await step();
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal(prompts(p).length, before);
+    // Merged: it stops.
+    hub.pr.merged_at = new Date().toISOString();
+    await step();
+    await until(w, () => /PR #7 was merged, so Switchdesk stopped babysitting it/.test(chats.find((c) => c.pr && c.pr.number === 7).el.innerText));
+    assert.equal(await w.evaluate(() => chats.find((c) => c.pr && c.pr.number === 7).pr.watch), null);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+    hub.close();
+  }
+});
+
+appTest('Auto picks the agent with the most room, and moves on when one runs out', async ({ w, p }) => {
+  await w.evaluate(() => loadAgents());
+  await w.click('#agent-btn');
+  await w.click('#agent-menu button:has-text("Auto")');
+  assert.match(await w.$eval('#agent-btn', (e) => e.textContent), /^Auto · /);
+  // Claude is nearly out, Copilot has the most room.
+  await w.evaluate(() => {
+    for (const a of acct.accounts) acct.usage.set(`claude:${a.id}`, { short: { pct: 95 }, long: { pct: 40 } });
+    acct.usage.set('copilot', { short: { pct: 5 } });
+  });
+  await sendMessage(w, 'remember the word pineapple');
+  await until(w, () => agentOf(activeChat()) === 'copilot');
+  await idle(w);
+  assert.match(prompts(p, 'copilot').pop(), /pineapple/);
+  // Copilot runs out mid-task: the chat carries on by itself in the next agent with room.
+  await w.evaluate(() => appendChat(turnError("You've hit your usage limit.", activeChat()), activeChat()));
+  await until(w, () => agentOf(activeChat()) !== 'copilot' && !activeChat().busy && /carries on in/.test(activeChat().el.innerText), null, 30000);
+  const now = await w.evaluate(() => agentOf(activeChat()));
+  assert.equal(now, 'cursor');
+  assert.match(await w.evaluate(() => activeChat().el.innerText), /Auto: Copilot is out of usage, so this chat carries on in Cursor/);
+  const sent = prompts(p, 'cursor').pop();
+  assert.match(sent, /pineapple/, 'Cursor gets the conversation so far');
+  assert.match(sent, /hit its usage limit/);
+  // Picking an agent yourself turns Auto off.
+  await w.click('#agent-btn');
+  await w.click('#agent-menu button:has-text("Copilot")');
+  assert.doesNotMatch(await w.$eval('#agent-btn', (e) => e.textContent), /Auto/);
 });
