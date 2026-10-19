@@ -101,6 +101,9 @@ function previewTool(ctx, name, args) {
 // Signs the user in to an MCP server (adding it first when there's a URL and it isn't set up yet),
 // for the agent's connect_mcp_server tool and Settings → MCP servers. The browser does the sign-in.
 // Open Claude chats then reconnect to it, or pick it up with their next message.
+const CONNECTORS_URL = 'https://claude.ai/customize/connectors';
+const MCP_WAIT = Number(process.env.SWITCHDESK_MCP_WAIT_MS) || 240000;
+const MCP_POLL = Number(process.env.SWITCHDESK_MCP_POLL_MS) || 4000;
 async function connectMcp(ctx, { name, url } = {}) {
   name = String(name || '').trim();
   if (!name) return { error: 'Say which MCP server to connect, by name.' };
@@ -126,8 +129,22 @@ async function connectMcp(ctx, { name, url } = {}) {
   // This window's Claude chats, the one at work (the one asking) first.
   const open = [...chats.values()].filter((c) => c.ctx === ctx && c.agent === 'claude' && c.session.alive && c.session.control).sort((a, b) => !!b.turn - !!a.turn);
   let r = await mcpConnect.connect({ bin, cwd, env: acct.env, name, openUrl, sessions: open.map((c) => c.session) });
-  const known = r.missing && mcpConnect.findServer(listed, name);
-  if (known) {
+  let known = r.missing && mcpConnect.findServer(listed, name);
+  // Not set up anywhere: claude.ai's connector directory, in the browser, where most services are
+  // a click and a sign-in away. Connectors added there show up in Claude Code by themselves.
+  const added = r.missing && !known && !url;
+  if (added) {
+    sendTo(ctx, 'mcp-finding', { name });
+    shell.openExternal(CONNECTORS_URL);
+    for (const until = Date.now() + MCP_WAIT; !known && Date.now() < until; ) {
+      await new Promise((res) => setTimeout(res, MCP_POLL));
+      known = mcpConnect.findServer((await config.mcpList(bin, cwd, acct)).servers, name);
+    }
+    if (!known) return { error: `${name} wasn't added at ${CONNECTORS_URL} (opened in the user's browser) in time. If claude.ai has no connector for it, call this again with the service's official MCP address as url, if it has one.` };
+  }
+  // Connected already (a connector turned on after these chats started, say): nothing to sign in to.
+  if (known && /connected$/i.test(known.detail.trim())) r = { ok: true, name: known.name, tools: [], already: !added };
+  else if (known) {
     sendTo(ctx, 'mcp-signing-in', { name: known.name });
     opened = true;
     r = await mcpConnect.loginInTerminal({ bin, cwd, env: await cli.childEnv(acct.env), name: known.name });
@@ -147,9 +164,7 @@ async function connectMcp(ctx, { name, url } = {}) {
   }
   const tools = r.tools.length ? ` Its tools: ${r.tools.join(', ')}.` : '';
   return {
-    text: r.already
-      ? `${r.name} was already connected.${tools}`
-      : `Connected to ${r.name}.${tools}${later ? " Its tools will be available from the user's next message." : ''}`,
+    text: `${r.already ? `${r.name} was already connected.` : `Connected to ${r.name}.`}${tools}${later ? " This chat loads its tools when the user sends their next message, so tell them it's ready and ask them to say go." : ''}`,
   };
 }
 

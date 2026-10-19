@@ -15,6 +15,9 @@ const isWin = process.platform === 'win32';
 // that would change something asks first, and the app declines those requests.
 const PERMISSION_MODE = { ask: 'default', plan: 'plan', agent: 'acceptEdits', debug: 'acceptEdits', auto: 'auto' };
 
+const CONNECT_HINT =
+  "You are running inside Switchdesk, a desktop app. When the user asks to connect a service or connector (Jira, Google Sheets, Gmail, Slack, Linear and so on), when an MCP server needs authentication, or when tools you'd expect from a connector the user has turned on are missing, call the connect_mcp_server tool (from switchdesk-preview; search for it if it isn't loaded) with the service's name. It signs the user in through their browser and makes the tools available, so don't tell them to run /mcp, visit settings or start a new session until it has failed.";
+
 class ChatSession {
   constructor({ bin, cwd, dirs, env, sessionId, resumeAt, model, effort, mode, mcp, via, onEvent, onPermission, onExit, askRules }) {
     Object.assign(this, { bin, cwd, dirs: dirs || [], extraEnv: env || {}, sessionId, resumeAt, model, effort, mode, mcp, via, onEvent, onPermission, onExit, askRules });
@@ -40,6 +43,8 @@ class ChatSession {
     for (const d of this.dirs) args.push('--add-dir', d); // the workspace's other folders
     // Switchdesk's own tools (the Preview), alongside the user's MCP servers.
     if (this.mcp) args.push('--mcp-config', JSON.stringify({ mcpServers: { [this.mcp.name]: { type: 'stdio', command: this.mcp.command, args: this.mcp.args, env: this.mcp.env } } }));
+    // Claude Code tells the model to send the user to /mcp, a terminal menu. Switchdesk does it itself.
+    if (this.mcp) args.push('--append-system-prompt', CONNECT_HINT);
     // The always-ask rules (permissions.js), which Claude then asks about in its Auto mode too.
     if (this.askRules && this.askRules.length) args.push('--settings', JSON.stringify({ permissions: { ask: this.askRules } }));
     if (this.model) args.push('--model', this.model);

@@ -103,6 +103,8 @@ appTest('Claude carries on after its background subagents, and a subagent opens 
   assert.equal(await w.$$eval('.sub-view', (e) => e.length), 0);
   await w.click('.card.plan button:has-text("Build it")');
   await idle(w);
+  await sendMessage(w, 'go');
+  await idle(w);
   const answers = fs.readFileSync(path.join(p.agentDir, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.equal(answers[0].answer.behavior, 'allow', 'the plan was approved, not turned away');
 });
@@ -739,8 +741,16 @@ test('an SSH folder: files, search, git, the terminal, an agent and a pull reque
 appTest('MCP servers sign in from Settings, and /mcp opens them', async ({ app, w, p }) => {
   fs.mkdirSync(p.agentDir, { recursive: true });
   fs.writeFileSync(path.join(p.agentDir, 'mcp.json'), JSON.stringify([{ name: 'claude.ai Atlassian Rovo', url: 'https://mcp.atlassian.com/v1/mcp', status: 'needs-auth' }]));
-  // The "browser" opens the sign-in page, which signs in.
-  await app.evaluate(({ shell }) => (shell.openExternal = async (url) => void fetch(url)));
+  // The "browser" opens the sign-in page, which signs in. On claude.ai's connector page, the user
+  // adds Google Sheets.
+  await app.evaluate(({ shell }, file) => {
+    const fs = process.mainModule.require('fs');
+    const sheets = { name: 'claude.ai Google Sheets', url: 'https://sheets.example.com/mcp', status: 'connected', hidden: true };
+    shell.openExternal = async (url) => {
+      if (url !== 'https://claude.ai/customize/connectors') return void fetch(url);
+      fs.writeFileSync(file, JSON.stringify([...JSON.parse(fs.readFileSync(file, 'utf8')), sheets]));
+    };
+  }, path.join(p.agentDir, 'mcp.json'));
   await w.evaluate(async (bin) => {
     state.settings = await desk.setSettings({ claudePath: bin });
     await checkCli();
@@ -766,11 +776,20 @@ appTest('MCP servers sign in from Settings, and /mcp opens them', async ({ app, 
   const { env } = JSON.parse(fs.readFileSync(cfg, 'utf8')).mcpServers['switchdesk-preview'];
   assert.equal(env.SWITCHDESK_AGENT, 'claude');
   const call = (args) => fetch(env.SWITCHDESK_PREVIEW_URL, { method: 'POST', body: JSON.stringify({ name: 'connect_mcp_server', args }) }).then((r) => r.json());
-  assert.match((await call({ name: 'wiki' })).error, /no MCP server called "wiki"[\s\S]*claude\.ai Atlassian Rovo \(connected\)/);
   assert.match((await call({ name: 'wiki', url: 'https://wiki.example.com/mcp' })).text, /^Connected to wiki\. Its tools: list_tickets\./);
   assert.match((await call({ name: 'wiki' })).text, /wiki was already connected/);
   // A connector `claude mcp list` shows but Claude Code doesn't load: signed in through a terminal.
   const listed = JSON.parse(fs.readFileSync(path.join(p.agentDir, 'mcp.json'), 'utf8'));
   fs.writeFileSync(path.join(p.agentDir, 'mcp.json'), JSON.stringify([...listed, { name: 'claude.ai Notion', url: 'https://mcp.notion.com/mcp', status: 'needs-auth', hidden: true }]));
   assert.match((await call({ name: 'notion' })).text, /^Connected to claude\.ai Notion\./);
+  // Not set up at all: claude.ai's connector page opens, the user adds it there, and the chat
+  // reloads to get it.
+  assert.match((await call({ name: 'Google Sheets' })).text, /^Connected to claude\.ai Google Sheets\. This chat loads its tools when the user sends their next message/);
+  assert.ok(env.SWITCHDESK_AGENT && fs.readFileSync(cfg, 'utf8'));
+  fs.rmSync(cfg);
+  await w.click('.card.plan button:has-text("Build it")');
+  await idle(w);
+  await w.evaluate(() => send('go'));
+  for (let i = 0; i < 100 && !fs.existsSync(cfg); i++) await w.waitForTimeout(100);
+  assert.ok(fs.existsSync(cfg), 'the chat restarted to load the new connector');
 });

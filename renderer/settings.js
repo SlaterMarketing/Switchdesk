@@ -237,6 +237,7 @@ async function claudePermissionBoxes(body) {
 
 // Signing in happens in the browser, whether it was started here or by the agent in a chat.
 desk.mcpSignIn.onStart(({ name }) => toast(`Finish signing in to ${name} in your browser.`));
+desk.mcpSignIn.onFind(({ name }) => toast(`Add ${name} on claude.ai in your browser, then come back. Switchdesk will pick it up.`));
 desk.mcpSignIn.onEnd(({ name, ok }) => ok && toast(`Connected to ${name}.`));
 
 // added: a server just added, which is signed in to straight away if it needs it.

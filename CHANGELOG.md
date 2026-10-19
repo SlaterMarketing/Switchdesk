@@ -2,6 +2,12 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.29.2
+
+- **Connecting a service takes one prompt.** Ask Claude to connect you to something, like Google Sheets. If you have it, Switchdesk signs you in. If you don't, it opens claude.ai's connector page so you can add it, waits, and picks it up as soon as it's there.
+- A connector you turn on partway through a chat now works in that chat: it loads its tools with your next message, so you don't need to start a new chat.
+- Claude now knows it can connect services itself in Switchdesk, instead of telling you to run /mcp or start a new session.
+
 ## 0.29.1
 
 - Asking Claude to connect you to a claude.ai connector (like Atlassian Rovo for Jira) now works. In 0.29.0 Claude was told no servers were set up, because the sign-in ran in a fresh copy of Claude Code that hadn't loaded your connectors. It now signs in through the chat that asked, and falls back to Claude Code's own sign-in if that chat can't see the server either.

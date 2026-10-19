@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('desk', {
   onLoginExit: on('setup-login-exit'),
   tests: { run: call('tests:run') },
   previewTools: { onCall: on('preview-tool'), answer: call('preview:tool-result') },
-  mcpSignIn: { onStart: on('mcp-signing-in'), onEnd: on('mcp-signed-in') },
+  mcpSignIn: { onStart: on('mcp-signing-in'), onFind: on('mcp-finding'), onEnd: on('mcp-signed-in') },
   debugLog: { open: call('debuglog:open'), take: call('debuglog:take'), onCount: on('debuglog-count') },
   agents: {
     list: call('agents:list'),
