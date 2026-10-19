@@ -29,6 +29,11 @@ if (arg[0] === 'mcp' && arg[1] === 'list') {
   if (!list.length) return console.log('No MCP servers configured.');
   return console.log(['Checking MCP server health…', '', ...list.map((s) => `${s.name}: ${s.url} (HTTP) - ${STATUS[s.status]}`)].join('\n'));
 }
+if (arg[0] === 'mcp' && arg[1] === 'login') {
+  fs.writeFileSync(MCP, JSON.stringify(mcpServers().map((s) => (s.name === arg[2] ? { ...s, status: 'connected' } : s))));
+  fs.appendFileSync(path.join(DIR, 'claude.jsonl'), JSON.stringify({ mcp: 'login', server: arg[2], tty: !!process.stdin.isTTY }) + '\n');
+  return console.log(`Authentication successful. Connected to ${arg[2]}.`);
+}
 if (arg[0] === 'mcp' && arg[1] === 'add') {
   const rest = arg.slice(2).filter((a, i, all) => !a.startsWith('-') && !(all[i - 1] || '').startsWith('-'));
   fs.writeFileSync(MCP, JSON.stringify([...mcpServers(), { name: rest[0], url: rest[1], status: 'needs-auth' }]));
@@ -117,13 +122,14 @@ async function demo(steps) {
 
 function control(id, req) {
   const ok = (response = {}) => out({ type: 'control_response', response: { subtype: 'success', request_id: id, response } });
-  if (req.subtype === 'mcp_status') return ok({ mcpServers: mcpServers().map((s) => ({ name: s.name, status: s.status, tools: s.status === 'connected' ? [{ name: 'list_tickets' }] : undefined })) });
+  // hidden: one `mcp list` shows but a session doesn't load, as can happen with claude.ai connectors.
+  if (req.subtype === 'mcp_status') return ok({ mcpServers: mcpServers().filter((s) => !s.hidden).map((s) => ({ name: s.name, status: s.status, tools: s.status === 'connected' ? [{ name: 'list_tickets' }] : undefined })) });
   if (req.subtype !== 'mcp_authenticate') return ok();
   if (!mcpServers().some((s) => s.name === req.serverName)) return out({ type: 'control_response', response: { subtype: 'error', request_id: id, error: `Server not found: ${req.serverName}` } });
   // The "provider's" sign-in page, which signs in as soon as it's opened.
   const page = require('http').createServer((q, res) => {
     fs.writeFileSync(MCP, JSON.stringify(mcpServers().map((s) => (s.name === req.serverName ? { ...s, status: 'connected' } : s))));
-    log({ mcp: 'signed-in', server: req.serverName });
+    log({ mcp: 'signed-in', server: req.serverName, pid: process.pid });
     res.end('Signed in');
     page.close();
   });

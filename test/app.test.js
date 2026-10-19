@@ -769,4 +769,8 @@ appTest('MCP servers sign in from Settings, and /mcp opens them', async ({ app, 
   assert.match((await call({ name: 'wiki' })).error, /no MCP server called "wiki"[\s\S]*claude\.ai Atlassian Rovo \(connected\)/);
   assert.match((await call({ name: 'wiki', url: 'https://wiki.example.com/mcp' })).text, /^Connected to wiki\. Its tools: list_tickets\./);
   assert.match((await call({ name: 'wiki' })).text, /wiki was already connected/);
+  // A connector `claude mcp list` shows but Claude Code doesn't load: signed in through a terminal.
+  const listed = JSON.parse(fs.readFileSync(path.join(p.agentDir, 'mcp.json'), 'utf8'));
+  fs.writeFileSync(path.join(p.agentDir, 'mcp.json'), JSON.stringify([...listed, { name: 'claude.ai Notion', url: 'https://mcp.notion.com/mcp', status: 'needs-auth', hidden: true }]));
+  assert.match((await call({ name: 'notion' })).text, /^Connected to claude\.ai Notion\./);
 });

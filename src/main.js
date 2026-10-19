@@ -109,9 +109,9 @@ async function connectMcp(ctx, { name, url } = {}) {
   if (!bin) return { error: "Claude Code isn't installed." };
   const acct = folderAcct(ctx);
   const cwd = ctx.workspace || os.homedir();
+  const { servers: listed } = await config.mcpList(bin, cwd, acct);
   if (url) {
-    const { servers } = await config.mcpList(bin, cwd, acct);
-    if (!mcpConnect.findServer(servers, name)) {
+    if (!mcpConnect.findServer(listed, name)) {
       const r = await config.mcpAdd(bin, cwd, { name, target: url, transport: /\/sse\/?$/.test(url) ? 'sse' : 'http', scope: 'user' }, acct);
       if (!r.ok) return { error: `Couldn't add ${name}: ${r.out.trim().split('\n').pop()}` };
     }
@@ -123,10 +123,18 @@ async function connectMcp(ctx, { name, url } = {}) {
     sendTo(ctx, 'mcp-signing-in', { name: server });
     shell.openExternal(u);
   };
-  const r = await mcpConnect.connect({ bin, cwd, env: acct.env, name, openUrl });
+  // This window's Claude chats, the one at work (the one asking) first.
+  const open = [...chats.values()].filter((c) => c.ctx === ctx && c.agent === 'claude' && c.session.alive && c.session.control).sort((a, b) => !!b.turn - !!a.turn);
+  let r = await mcpConnect.connect({ bin, cwd, env: acct.env, name, openUrl, sessions: open.map((c) => c.session) });
+  const known = r.missing && mcpConnect.findServer(listed, name);
+  if (known) {
+    sendTo(ctx, 'mcp-signing-in', { name: known.name });
+    opened = true;
+    r = await mcpConnect.loginInTerminal({ bin, cwd, env: await cli.childEnv(acct.env), name: known.name });
+  }
   if (opened) sendTo(ctx, 'mcp-signed-in', { name: r.name || name, ok: r.ok });
   if (!r.ok) {
-    const list = (r.servers || []).map((s) => `${s.name} (${s.status})`).join(', ');
+    const list = (r.servers && r.servers.length ? r.servers : listed.map((s) => ({ name: s.name, status: s.detail.split(' - ').pop() }))).map((s) => `${s.name} (${s.status})`).join(', ');
     return { error: `${r.error}${list ? ` The servers set up are: ${list}.` : ' No MCP servers are set up.'}${url ? '' : " To add a new one, call this again with its URL."}` };
   }
   let later = false;

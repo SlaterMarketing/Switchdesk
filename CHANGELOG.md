@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.29.1
+
+- Asking Claude to connect you to a claude.ai connector (like Atlassian Rovo for Jira) now works. In 0.29.0 Claude was told no servers were set up, because the sign-in ran in a fresh copy of Claude Code that hadn't loaded your connectors. It now signs in through the chat that asked, and falls back to Claude Code's own sign-in if that chat can't see the server either.
+
 ## 0.29.0
 
 - **Connect services from the chat.** Ask Claude "connect me to Jira" (or Linear, Notion, a claude.ai connector…) and Switchdesk opens the sign-in page in your browser, then the server's tools are ready in the same chat. Claude adds the server first if it isn't set up yet.
