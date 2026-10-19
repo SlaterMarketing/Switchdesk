@@ -104,8 +104,9 @@ async function mcpList(bin, cwd, acct) {
   const r = await runClaude(bin, ['mcp', 'list'], cwd, acct);
   const servers = [];
   for (const line of r.out.split('\n')) {
-    const m = /^([\w.@-]+):\s+(.*)$/.exec(line.trim());
-    if (m && !/^(Checking|Usage|Error)/.test(m[1])) servers.push({ name: m[1], detail: m[2] });
+    // Names can have spaces: claude.ai connectors are listed as "claude.ai Atlassian Rovo".
+    const m = /^(\S.*?):\s+(.*)$/.exec(line.trim());
+    if (m && !/^(Checking|Usage|Error)/.test(m[1])) servers.push({ name: m[1], detail: m[2], needsAuth: /needs auth/i.test(m[2]) });
   }
   return { servers, raw: r.out.trim() };
 }
@@ -114,8 +115,9 @@ async function mcpRemove(bin, cwd, name, acct) {
   return runClaude(bin, ['mcp', 'remove', name], cwd, acct);
 }
 
-async function mcpAdd(bin, cwd, { name, target, transport }, acct) {
+async function mcpAdd(bin, cwd, { name, target, transport, scope }, acct) {
   const args = ['mcp', 'add'];
+  if (scope) args.push('--scope', scope);
   if (transport && transport !== 'stdio') args.push('--transport', transport);
   args.push(name);
   if (transport && transport !== 'stdio') args.push(target);

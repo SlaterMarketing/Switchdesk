@@ -186,7 +186,7 @@ const SLASH_DESCRIPTIONS = {
   'security-review': 'Security review of the pending changes',
   simplify: 'Clean up the changed code',
   memory: 'Edit Claude memory files',
-  mcp: 'Show MCP server status',
+  mcp: 'Connect and sign in to MCP servers',
   model: 'Show or change the model',
   agents: 'List subagents',
   recap: 'Summarise the conversation so far',
@@ -429,6 +429,8 @@ function toolLabel(name, input = {}) {
       return [h('b', {}, 'Updated the to-do list')];
     case 'ExitPlanMode':
       return [h('b', {}, 'Proposed a plan')];
+    case 'mcp__switchdesk-preview__connect_mcp_server':
+      return [h('b', {}, 'Connecting to '), input.name || 'an MCP server'];
     default:
       return [h('b', {}, name.replace(/^mcp__/, '').replace(/__/g, ' › ') + ' ')];
   }
@@ -1290,6 +1292,12 @@ async function send(textOverride, modeOverride, display, target) {
   if (!textOverride && state.chips.some((c) => c.loading)) return toast('Still loading the page. One moment.');
   const mode = modeOverride || state.mode;
   const slash = !textOverride && /^\/[\w:.-]+/.exec(text);
+  // Claude Code's /mcp is a menu in its terminal app. Here it's the settings page that does the same.
+  if (slash && slash[0] === '/mcp' && agentOf(chat) === 'claude') {
+    input.value = '';
+    autoGrow();
+    return openSettings('mcp');
+  }
   if (slash && SLASH_LOCAL.has(slash[0].slice(1))) {
     if (chat.busy) return toast('Wait for Claude to finish, or stop it, before clearing the chat.');
     input.value = '';

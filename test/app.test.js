@@ -735,3 +735,38 @@ test('an SSH folder: files, search, git, the terminal, an agent and a pull reque
     server.stop();
   }
 });
+
+appTest('MCP servers sign in from Settings, and /mcp opens them', async ({ app, w, p }) => {
+  fs.mkdirSync(p.agentDir, { recursive: true });
+  fs.writeFileSync(path.join(p.agentDir, 'mcp.json'), JSON.stringify([{ name: 'claude.ai Atlassian Rovo', url: 'https://mcp.atlassian.com/v1/mcp', status: 'needs-auth' }]));
+  // The "browser" opens the sign-in page, which signs in.
+  await app.evaluate(({ shell }) => (shell.openExternal = async (url) => void fetch(url)));
+  await w.evaluate(async (bin) => {
+    state.settings = await desk.setSettings({ claudePath: bin });
+    await checkCli();
+  }, path.join(__dirname, 'fake-claude', 'claude'));
+  await chatWith(w, 'claude');
+  await w.fill('#input', '/mcp');
+  await w.press('#input', 'Enter'); // picks it from the menu
+  await w.press('#input', 'Enter');
+  await w.waitForSelector('.rule:has-text("claude.ai Atlassian Rovo") >> text=Needs authentication');
+  await w.click('.rule:has-text("claude.ai Atlassian Rovo") button:has-text("Sign in")');
+  await w.waitForSelector('.rule:has-text("claude.ai Atlassian Rovo") >> text=Connected');
+  assert.equal(await w.$('.rule button:has-text("Sign in")'), null);
+  // Adding a server that needs signing in signs in to it straight away.
+  await w.fill('input[placeholder^="Name"]', 'tracker');
+  await w.fill('input[placeholder^="https"]', 'https://tracker.example.com/mcp');
+  await w.click('.set-box button:has-text("Add")');
+  await w.waitForSelector('.rule:has-text("tracker") >> text=Connected');
+  // The agent's tool, as Claude calls it from a chat: adds the server, then signs in.
+  await w.click('.settings-top button[title="Close"]');
+  await sendMessage(w, 'connect me to the wiki');
+  const cfg = path.join(p.agentDir, 'mcp-config.json');
+  for (let i = 0; i < 100 && !fs.existsSync(cfg); i++) await w.waitForTimeout(100);
+  const { env } = JSON.parse(fs.readFileSync(cfg, 'utf8')).mcpServers['switchdesk-preview'];
+  assert.equal(env.SWITCHDESK_AGENT, 'claude');
+  const call = (args) => fetch(env.SWITCHDESK_PREVIEW_URL, { method: 'POST', body: JSON.stringify({ name: 'connect_mcp_server', args }) }).then((r) => r.json());
+  assert.match((await call({ name: 'wiki' })).error, /no MCP server called "wiki"[\s\S]*claude\.ai Atlassian Rovo \(connected\)/);
+  assert.match((await call({ name: 'wiki', url: 'https://wiki.example.com/mcp' })).text, /^Connected to wiki\. Its tools: list_tickets\./);
+  assert.match((await call({ name: 'wiki' })).text, /wiki was already connected/);
+});

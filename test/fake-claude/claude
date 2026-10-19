@@ -5,6 +5,8 @@
 // ExitPlanMode, asking permission. What the app answers is appended to $FAKE_AGENT_DIR/claude.jsonl.
 // With $FAKE_AGENT_DEMO set to a JSON file of { match, steps }, a matching message plays those steps
 // instead (reads, edits, commands and replies), for screenshots.
+// MCP servers live in $FAKE_AGENT_DIR/mcp.json: `mcp list` and `mcp add` read and change it, and
+// signing in to one hands back a page on 127.0.0.1 that connects it when opened.
 'use strict';
 
 const fs = require('fs');
@@ -16,6 +18,22 @@ fs.mkdirSync(DIR, { recursive: true });
 const arg = process.argv.slice(2);
 if (arg[0] === '--version') return console.log('2.1.0 (Claude Code)');
 if (arg[0] === 'auth') return console.log(JSON.stringify({ loggedIn: true, email: 'test@example.com', subscriptionType: 'pro' }));
+
+// The servers the app passed (its own tools), for the tests to call.
+if (arg.includes('--mcp-config')) fs.writeFileSync(path.join(DIR, 'mcp-config.json'), arg[arg.indexOf('--mcp-config') + 1]);
+const MCP = path.join(DIR, 'mcp.json');
+const mcpServers = () => (fs.existsSync(MCP) ? JSON.parse(fs.readFileSync(MCP, 'utf8')) : []);
+const STATUS = { connected: '✓ Connected', 'needs-auth': '! Needs authentication' };
+if (arg[0] === 'mcp' && arg[1] === 'list') {
+  const list = mcpServers();
+  if (!list.length) return console.log('No MCP servers configured.');
+  return console.log(['Checking MCP server health…', '', ...list.map((s) => `${s.name}: ${s.url} (HTTP) - ${STATUS[s.status]}`)].join('\n'));
+}
+if (arg[0] === 'mcp' && arg[1] === 'add') {
+  const rest = arg.slice(2).filter((a, i, all) => !a.startsWith('-') && !(all[i - 1] || '').startsWith('-'));
+  fs.writeFileSync(MCP, JSON.stringify([...mcpServers(), { name: rest[0], url: rest[1], status: 'needs-auth' }]));
+  return console.log(`Added HTTP MCP server ${rest[0]} with URL: ${rest[1]} to user config`);
+}
 
 const log = (x) => fs.appendFileSync(path.join(DIR, 'claude.jsonl'), JSON.stringify(x) + '\n');
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -97,6 +115,21 @@ async function demo(steps) {
   result(turns);
 }
 
+function control(id, req) {
+  const ok = (response = {}) => out({ type: 'control_response', response: { subtype: 'success', request_id: id, response } });
+  if (req.subtype === 'mcp_status') return ok({ mcpServers: mcpServers().map((s) => ({ name: s.name, status: s.status, tools: s.status === 'connected' ? [{ name: 'list_tickets' }] : undefined })) });
+  if (req.subtype !== 'mcp_authenticate') return ok();
+  if (!mcpServers().some((s) => s.name === req.serverName)) return out({ type: 'control_response', response: { subtype: 'error', request_id: id, error: `Server not found: ${req.serverName}` } });
+  // The "provider's" sign-in page, which signs in as soon as it's opened.
+  const page = require('http').createServer((q, res) => {
+    fs.writeFileSync(MCP, JSON.stringify(mcpServers().map((s) => (s.name === req.serverName ? { ...s, status: 'connected' } : s))));
+    log({ mcp: 'signed-in', server: req.serverName });
+    res.end('Signed in');
+    page.close();
+  });
+  page.listen(0, '127.0.0.1', () => ok({ authUrl: `http://127.0.0.1:${page.address().port}/authorize`, requiresUserAction: true, callbackExpected: true }));
+}
+
 let buf = '';
 process.stdin.on('data', (c) => {
   buf += c;
@@ -110,7 +143,7 @@ process.stdin.on('data', (c) => {
     } catch {
       continue;
     }
-    if (m.type === 'control_request') out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } });
+    if (m.type === 'control_request') control(m.request_id, m.request);
     else if (m.type === 'control_response' && pending.has(m.response.request_id)) {
       pending.get(m.response.request_id)(m.response.response);
       pending.delete(m.response.request_id);

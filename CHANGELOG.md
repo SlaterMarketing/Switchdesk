@@ -2,6 +2,12 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.29.0
+
+- **Connect services from the chat.** Ask Claude "connect me to Jira" (or Linear, Notion, a claude.ai connector…) and Switchdesk opens the sign-in page in your browser, then the server's tools are ready in the same chat. Claude adds the server first if it isn't set up yet.
+- Settings → MCP servers has a **Sign in** button for servers that need it, lists your claude.ai connectors too, and signs in to a server you've just added straight away.
+- Typing `/mcp` opens Settings → MCP servers, instead of saying to use the terminal.
+
 ## 0.28.2
 
 - Switching to another chat tab opens it at its latest messages, instead of wherever the last chat was scrolled to.

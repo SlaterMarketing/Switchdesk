@@ -23,6 +23,7 @@ const accounts = require('./accounts');
 const debuglog = require('./debuglog');
 const report = require('./report');
 const previewBridge = require('./preview-bridge');
+const mcpConnect = require('./mcp-connect');
 const tests = require('./tests');
 const usage = require('./usage');
 const codebase = require('./codebase');
@@ -87,6 +88,7 @@ const ctxOfWindow = (bw) => (bw && contexts.get(bw.webContents.id)) || null;
 // A Preview tool call from an agent, answered by the window's renderer (preview.js).
 const previewCalls = new Map(); // id -> resolve
 function previewTool(ctx, name, args) {
+  if (name === 'connect_mcp_server') return connectMcp(ctx, args);
   if (!ctx.win || ctx.win.isDestroyed()) return Promise.resolve({ error: 'The Switchdesk window was closed.' });
   const id = crypto.randomUUID();
   return new Promise((resolve) => {
@@ -94,6 +96,53 @@ function previewTool(ctx, name, args) {
     previewCalls.set(id, (r) => (clearTimeout(timer), resolve(r)));
     sendTo(ctx, 'preview-tool', { id, name, args });
   });
+}
+
+// Signs the user in to an MCP server (adding it first when there's a URL and it isn't set up yet),
+// for the agent's connect_mcp_server tool and Settings → MCP servers. The browser does the sign-in.
+// Open Claude chats then reconnect to it, or pick it up with their next message.
+async function connectMcp(ctx, { name, url } = {}) {
+  name = String(name || '').trim();
+  if (!name) return { error: 'Say which MCP server to connect, by name.' };
+  if (ctx.remote) return { error: "MCP servers can't be connected from an SSH folder yet." };
+  const bin = await cli.findClaude(settings.claudePath);
+  if (!bin) return { error: "Claude Code isn't installed." };
+  const acct = folderAcct(ctx);
+  const cwd = ctx.workspace || os.homedir();
+  if (url) {
+    const { servers } = await config.mcpList(bin, cwd, acct);
+    if (!mcpConnect.findServer(servers, name)) {
+      const r = await config.mcpAdd(bin, cwd, { name, target: url, transport: /\/sse\/?$/.test(url) ? 'sse' : 'http', scope: 'user' }, acct);
+      if (!r.ok) return { error: `Couldn't add ${name}: ${r.out.trim().split('\n').pop()}` };
+    }
+  }
+  let opened = false;
+  const openUrl = (u, server) => {
+    if (!/^https?:\/\//.test(u)) return;
+    opened = true;
+    sendTo(ctx, 'mcp-signing-in', { name: server });
+    shell.openExternal(u);
+  };
+  const r = await mcpConnect.connect({ bin, cwd, env: acct.env, name, openUrl });
+  if (opened) sendTo(ctx, 'mcp-signed-in', { name: r.name || name, ok: r.ok });
+  if (!r.ok) {
+    const list = (r.servers || []).map((s) => `${s.name} (${s.status})`).join(', ');
+    return { error: `${r.error}${list ? ` The servers set up are: ${list}.` : ' No MCP servers are set up.'}${url ? '' : " To add a new one, call this again with its URL."}` };
+  }
+  let later = false;
+  for (const chat of chats.values()) {
+    if (chat.ctx !== ctx || chat.agent !== 'claude' || !chat.session.alive) continue;
+    await chat.session.control({ subtype: 'mcp_reconnect', serverName: r.name });
+    const st = await chat.session.control({ subtype: 'mcp_status' });
+    const here = st.ok && ((st.response && st.response.mcpServers) || []).find((x) => x.name === r.name);
+    if (!here || here.status !== 'connected') (chat.mcpStale = true), (later = true);
+  }
+  const tools = r.tools.length ? ` Its tools: ${r.tools.join(', ')}.` : '';
+  return {
+    text: r.already
+      ? `${r.name} was already connected.${tools}`
+      : `Connected to ${r.name}.${tools}${later ? " Its tools will be available from the user's next message." : ''}`,
+  };
 }
 
 function sendTo(ctx, channel, payload) {
@@ -668,7 +717,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   if (sessionId && agent === 'claude' && !ctx.remote) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
   // The Preview tools (preview-mcp.js), so the agent can open and check the running app itself.
-  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)));
+  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args) => previewTool(ctx, name, args)), agent);
   const hostArgs = (args) => ctx.remote.spawnArgs(chat.cwd, [bin, ...args]);
   chat.session = new Session({
     mcp,
@@ -816,14 +865,15 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
     chat &&
     chat.session.alive &&
     (resumeAt ||
+      chat.mcpStale ||
       agent !== chat.agent ||
       chat.dirs.join('\n') !== ctx.extra.join('\n') ||
       (agent === 'claude' && ((effort || '') !== chat.effort || account !== chat.account)) ||
       (agent !== 'claude' && agentAccount !== (chat.agentAccount || agents.MAIN)) ||
       (agents.AGENTS[agent].kind === 'acp' && (model || '') !== chat.model));
   if (restart) {
-    // Effort, account, the workspace's folders and (for ACP agents) model are fixed per process:
-    // restart it on the same conversation.
+    // Effort, account, the workspace's folders, (for ACP agents) model and the MCP servers it
+    // loaded are fixed per process: restart it on the same conversation.
     if (!resumeAt) sessionId = chat.session.sessionId || sessionId;
     chat.closing = true;
     chat.session.dispose();
@@ -956,6 +1006,7 @@ function registerIpc() {
     'cfg:mcp-list': [],
     'cfg:mcp-add': notOverSsh('Adding MCP servers'),
     'cfg:mcp-remove': notOverSsh('Removing MCP servers'),
+    'cfg:mcp-login': notOverSsh('Signing in to MCP servers'),
   };
   const REMOTE = {
     'file:read': async (ctx, rel) => {
@@ -1837,6 +1888,7 @@ function registerIpc() {
   handle('cfg:rule', (ctx, scope, rule, add) => config.editRule(ctx.workspace, scope, rule, add, folderAcct(ctx)));
   handle('cfg:mcp-list', async (ctx) => config.mcpList(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), folderAcct(ctx)));
   handle('cfg:mcp-remove', async (ctx, name) => config.mcpRemove(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), name, folderAcct(ctx)));
+  handle('cfg:mcp-login', (ctx, name) => connectMcp(ctx, { name }));
   handle('cfg:mcp-add', async (ctx, spec) => config.mcpAdd(await cli.findClaude(settings.claudePath), ctx.workspace || os.homedir(), spec, folderAcct(ctx)));
 }
 

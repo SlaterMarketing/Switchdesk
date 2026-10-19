@@ -235,9 +235,20 @@ async function claudePermissionBoxes(body) {
   ];
 }
 
-async function settingsMcp(body) {
+// Signing in happens in the browser, whether it was started here or by the agent in a chat.
+desk.mcpSignIn.onStart(({ name }) => toast(`Finish signing in to ${name} in your browser.`));
+desk.mcpSignIn.onEnd(({ name, ok }) => ok && toast(`Connected to ${name}.`));
+
+// added: a server just added, which is signed in to straight away if it needs it.
+async function settingsMcp(body, added) {
   body.replaceChildren(h('h3', {}, 'MCP servers'), h('div', { class: 'muted small' }, 'Checking your servers…'));
   const { servers, raw } = await desk.cfg.mcpList();
+  const signIn = async (s, btn) => {
+    if (btn) (btn.disabled = true), (btn.textContent = 'Signing in…');
+    const r = await desk.cfg.mcpLogin(s.name);
+    if (r.error) toast(r.error.split(' The servers set up')[0]);
+    if (body.isConnected) settingsMcp(body);
+  };
   const name = h('input', { type: 'text', placeholder: 'Name, e.g. github', spellcheck: 'false' });
   const transport = h('select', {}, h('option', { value: 'http' }, 'URL (HTTP)'), h('option', { value: 'sse' }, 'URL (SSE)'), h('option', { value: 'stdio' }, 'Command'));
   const target = h('input', { type: 'text', placeholder: 'https://example.com/mcp', spellcheck: 'false' });
@@ -252,11 +263,11 @@ async function settingsMcp(body) {
     if (!r.ok) {
       out.textContent = r.out;
       out.classList.remove('hidden');
-    } else settingsMcp(body);
+    } else settingsMcp(body, name.value.trim());
   });
   body.replaceChildren(
     h('h3', {}, 'MCP servers'),
-    h('p', { class: 'muted small' }, 'Tools Claude can use, like GitHub, Linear or a database. New chats pick up changes.'),
+    h('p', { class: 'muted small' }, 'Tools Claude can use, like GitHub, Linear or a database. New chats pick up changes. You can also ask Claude in a chat to connect you to one.'),
     h(
       'div',
       { class: 'set-box' },
@@ -271,6 +282,7 @@ async function settingsMcp(body) {
                 h('b', {}, s.name),
                 h('span', { class: 'muted small mcp-detail', title: s.detail }, s.detail),
                 h('span', { class: 'spacer' }),
+                s.needsAuth ? h('button', { class: 'btn small primary', onclick: (e) => signIn(s, e.currentTarget) }, 'Sign in') : null,
                 h(
                   'button',
                   {
@@ -292,6 +304,8 @@ async function settingsMcp(body) {
     ),
     h('div', { class: 'set-box' }, h('b', {}, 'Add a server'), h('div', { class: 'row' }, name, transport), target, h('div', { class: 'row' }, h('span', { class: 'spacer' }), addBtn), out)
   );
+  const fresh = added && servers.find((s) => s.name === added && s.needsAuth);
+  if (fresh) signIn(fresh, [...body.querySelectorAll('.rule')].find((r) => r.querySelector('b').textContent === added)?.querySelector('.btn'));
 }
 
 // ------------------------------------------------------------------ usage

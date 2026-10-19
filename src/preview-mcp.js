@@ -46,6 +46,22 @@ const TOOLS = [
   },
 ];
 
+// Claude Code's own MCP servers: signing in to one (or adding it) from the chat.
+if (process.env.SWITCHDESK_AGENT === 'claude')
+  TOOLS.push({
+    name: 'connect_mcp_server',
+    description:
+      "Connect the user to an MCP server, such as Jira, Linear, Notion or a claude.ai connector, or sign them in to one that needs authentication. Switchdesk opens the sign-in page in the user's browser and waits (up to 4 minutes) for them to finish, then its tools are ready. Use this whenever the user asks to connect to a service or a server needs authentication, instead of telling them to run /mcp. Pass the server's name as it's listed (\"claude.ai Atlassian Rovo\", say). To add a server that isn't set up yet, also pass url: the provider's official remote MCP address. If you're not sure of the name, give your best guess: when nothing matches, the answer lists the servers that are set up.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The server\'s name, as listed, or a name for a new one.' },
+        url: { type: 'string', description: "Only to add a new server: its MCP address (https://…)." },
+      },
+      required: ['name'],
+    },
+  });
+
 const write = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
 
 async function call(name, args) {
