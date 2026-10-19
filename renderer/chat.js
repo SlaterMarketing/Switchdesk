@@ -89,6 +89,10 @@ function switchChat(id) {
   renderAgentPicker();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.chat ? el.dataset.chat === activeChat()?.id : el.dataset.session === activeChat()?.sessionId);
   renderDeskOutputs();
+  // Every chat shares one scroller, so a switched-to chat opens at its latest messages, not wherever
+  // the last one was. Again on the next frame, after the bars above it have settled.
+  scrollChat(activeChat(), true);
+  requestAnimationFrame(() => scrollChat(activeChat(), true));
 }
 
 async function closeChatTab(id) {

@@ -311,6 +311,24 @@ appTest('a notebook opens as cells and runs them in a Jupyter kernel', async ({ 
   });
 });
 
+appTest('switching chat tabs opens each chat at its latest messages', async ({ w }) => {
+  const fill = (n) => w.evaluate((n) => { for (let i = 0; i < n; i++) appendChat(h('div', { class: 'msg' }, `line ${i}`.repeat(40))); }, n);
+  await chatWith(w, 'cursor');
+  await fill(60);
+  const first = await w.evaluate(() => activeChat().id);
+  await w.evaluate(() => createChat());
+  await fill(60);
+  const second = await w.evaluate(() => activeChat().id);
+  const atBottom = () => w.evaluate(() => { const el = $('#messages-host'); return el.scrollHeight - el.scrollTop - el.clientHeight < 4; });
+  await w.evaluate(() => ($('#messages-host').scrollTop = 0));
+  await w.evaluate((id) => switchChat(id), first);
+  await until(w, () => { const el = $('#messages-host'); return el.scrollHeight - el.scrollTop - el.clientHeight < 4; });
+  await w.evaluate(() => ($('#messages-host').scrollTop = 200));
+  await w.evaluate((id) => switchChat(id), second);
+  await w.waitForTimeout(100);
+  assert.ok(await atBottom(), 'the second chat opens at its latest messages');
+});
+
 test('with no folder open, a chat still works, in a folder of its own', { timeout: 60000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, null);

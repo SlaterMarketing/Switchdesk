@@ -2,13 +2,9 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
-## 0.26.3
+## 0.28.2
 
-- Mac installers are signed with a Developer ID and notarised.
-
-## 0.26.2
-
-- (Build only.)
+- Switching to another chat tab opens it at its latest messages, instead of wherever the last chat was scrolled to.
 
 ## 0.28.1
 
@@ -30,6 +26,14 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 - **Desk view.** A Code | Desk switch in the top right. Desk hides the editor and puts the chat in the middle, with your chats down the left, closer to Claude's desktop app. Working in a folder is optional, and anything the agent opens shows beside the chat. Both views share the same chats, so you can switch mid-conversation.
 - Connecting GitHub while Switchdesk was still checking the folder could leave the pull requests and issues empty until the next refresh. They now load straight away.
 - The buttons under the chat box no longer wrap onto a second line when the chat panel is narrow.
+
+## 0.26.3
+
+- Mac installers are signed with a Developer ID and notarised.
+
+## 0.26.2
+
+- (Build only.)
 
 ## 0.26.1
 
