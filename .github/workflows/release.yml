@@ -71,6 +71,7 @@ jobs:
     runs-on: macos-latest
     env:
       SIGN: ${{ secrets.MAC_CSC_LINK != '' }}
+      NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -82,6 +83,11 @@ jobs:
       - run: npm i --no-save --force @lydell/node-pty-darwin-arm64@1.2.0-beta.15 @lydell/node-pty-darwin-x64@1.2.0-beta.15
       - if: env.SIGN == 'true'
         run: node scripts/signing-config.js mac
+      # Notarising with an App Store Connect API key, when one is set, instead of the Apple ID.
+      - if: env.SIGN == 'true' && env.NOTARY_KEY == 'true'
+        run: printf '%s' "$API_KEY" > "$RUNNER_TEMP/notary.p8"
+        env:
+          API_KEY: ${{ secrets.APPLE_API_KEY_P8 }}
       # If Apple refuses (an expired agreement, say), the release still gets an unsigned Mac build.
       - if: env.SIGN == 'true'
         id: signed
@@ -91,9 +97,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # electron-builder prefers the Apple ID, so it is left out when there is a key.
+          APPLE_ID: ${{ secrets.APPLE_API_KEY_P8 == '' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_API_KEY_P8 == '' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && format('{0}/notary.p8', runner.temp) || '' }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       - if: steps.signed.outcome == 'failure'
         run: |
           echo "::warning::Signing or notarising the Mac build failed, so this release's Mac build is unsigned. See the step above."

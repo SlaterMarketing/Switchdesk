@@ -23,6 +23,16 @@ The release workflow signs both as soon as the secrets below are set in the repo
 
 The Mac builds are then signed with the hardened runtime (`build/entitlements.mac.plist`) and notarised.
 
+To notarise with an App Store Connect API key instead of the Apple ID, make a **Team** key in
+App Store Connect (Users and Access → Integrations → App Store Connect API, Developer access is enough)
+and add three more secrets. When `APPLE_API_KEY_P8` is set, the Apple ID secrets are ignored.
+
+| Secret | What goes in it |
+| --- | --- |
+| `APPLE_API_KEY_P8` | The whole contents of the downloaded `AuthKey_XXXXXXXXXX.p8` |
+| `APPLE_API_KEY_ID` | The key's ID, shown next to it |
+| `APPLE_API_ISSUER` | The Issuer ID, shown above the list of keys |
+
 ## Windows: Azure Trusted Signing
 
 1. In the Azure portal, create a **Trusted Signing account** and a **Public Trust** certificate profile
