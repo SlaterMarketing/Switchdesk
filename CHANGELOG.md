@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.31.0
+
+- **Carry on when an agent hits its limit.** When Claude, Codex or another agent runs out of usage, the error now offers buttons to carry on in another agent you're signed in to, or another Claude account, with the conversation so far. One click switches the chat and picks up where it stopped.
+
 ## 0.30.0
 
 - **Every agent can connect services now.** Ask Codex, Cursor, Copilot, Kimi, Gemini, Qwen or DeepSeek to "connect me to Linear" (or Jira, Notion, Sentry, Asana, Stripe…), and Switchdesk opens the sign-in in your browser, keeps the sign-in safe, and gives that agent the service's tools from your next message. Switchdesk knows the address of well-known services; for others the agent can give it one. Switching agents mid-chat keeps the same connections.

@@ -256,6 +256,7 @@ body.mac #titlebar { padding-left: 78px; }
 .turn-error { color: var(--err); font-size: 12px; white-space: pre-wrap; border: 1px solid var(--err); border-radius: 6px; padding: 6px 8px; }
 .turn-error .err-report { display: block; margin-top: 6px; background: none; border: none; padding: 0; color: var(--text-dim); font-size: 11px; cursor: pointer; text-decoration: underline; }
 .turn-error .err-report:hover { color: var(--text); }
+.turn-error .limit-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--text); white-space: normal; }
 .notice { font-size: 11px; color: var(--text-dim); text-align: center; }
 .empty-chat { margin: auto; text-align: center; color: var(--text-dim); max-width: 280px; }
 .empty-chat b { color: var(--text-strong); }

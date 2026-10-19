@@ -825,3 +825,16 @@ appTest('the other agents connect services through Switchdesk, and get their too
     fake.kill();
   }
 });
+
+appTest('when an agent hits its limit, the chat carries on in another one', async ({ w, p }) => {
+  await chatWith(w, 'cursor');
+  await sendMessage(w, 'remember the word pineapple');
+  await idle(w);
+  await w.evaluate(() => appendChat(turnError("You've hit your usage limit. It resets at 3pm.", activeChat())));
+  await w.click('.limit-options button:has-text("Copilot")');
+  await until(w, () => agentOf(activeChat()) === 'copilot');
+  await idle(w);
+  const sent = prompts(p, 'copilot').pop();
+  assert.match(sent, /pineapple/, 'Copilot gets the conversation so far');
+  assert.match(sent, /hit its usage limit/);
+});

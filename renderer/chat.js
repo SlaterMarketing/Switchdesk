@@ -19,7 +19,36 @@ const chatById = (id) => chats.find((c) => c.id === id) || null;
 // An error that ended a turn, with a way to report it (a GitHub issue you read before sending).
 function turnError(text, chat) {
   const report = h('button', { class: 'err-report', title: 'Open a GitHub issue with this error, your version and system filled in. You can edit it before sending.', onclick: () => desk.reportProblem({ agent: agentOf(chat), error: text }) }, 'Report this');
-  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), report);
+  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), LIMIT_RE.test(text) ? null : report, LIMIT_RE.test(text) ? limitOptions(chat) : null);
+}
+
+// What agents say when a plan or API key has run out for now.
+const LIMIT_RE = /usage limit|rate.?limit|limit (reached|exceeded)|hit your (usage |weekly |daily )?limit|reached your .{0,30}limit|out of (credits|usage)|quota|too many requests|\b429\b|resource.?exhausted|insufficient (balance|credit|quota)|credit balance/i;
+// Claude Code's "Claude AI usage limit reached|1760000000" (when it resets), in words.
+const limitText = (t) => String(t || '').replace(/^(.*limit reached)\|(\d{9,})$/i, (m, what, at) => `${what}. It resets at ${new Date(+at * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`);
+const CARRY_ON = 'Carry on with the task from where it stopped. The previous agent hit its usage limit partway through.';
+
+// An agent ran out: carry on with another Claude account, or another agent that's ready, with the
+// conversation so far.
+function limitOptions(chat) {
+  const row = h('div', { class: 'limit-options' }, h('span', { class: 'small' }, 'Carry on in'));
+  const go = async (fn) => {
+    if (chat !== activeChat()) switchChat(chat.id);
+    await fn();
+    send(CARRY_ON, null, null, chat);
+  };
+  (async () => {
+    const from = agentOf(chat);
+    if (from === 'claude') for (const a of acct.accounts) if (a.id !== chatAccount(chat)) row.append(h('button', { class: 'btn small', onclick: () => go(() => switchChatAccount(chat, a.id)) }, `Claude (${a.name})`));
+    if (!agentState.list.length) await loadAgents();
+    for (const a of agentState.list) {
+      if (a.id === from) continue;
+      const s = await agentStatus(a.id);
+      if (s.installed && s.loggedIn) row.append(h('button', { class: 'btn small', onclick: () => go(() => pickAgent(a.id)) }, a.label));
+    }
+    if (row.children.length === 1) row.replaceChildren(h('span', { class: 'small' }, 'Set up another agent in Settings → Agents to carry on while this one is out.'));
+  })();
+  return row;
 }
 
 function emptyState() {
@@ -646,7 +675,7 @@ function handleEvent(chat, ev) {
       if (chat.id === activeChatId) renderChatMeta();
       if (turn) {
         if (turn.interrupted) appendChat(h('div', { class: 'notice' }, turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
-        else if (ev.is_error) appendChat(turnError(ev.result || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`, chat), chat);
+        else if (ev.is_error) appendChat(turnError(limitText(ev.result) || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`, chat), chat);
         else {
           const secs = Math.round((ev.duration_ms || Date.now() - turn.started) / 1000);
           const denied = (ev.permission_denials || []).length;
