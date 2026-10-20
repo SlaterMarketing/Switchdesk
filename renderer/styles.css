@@ -999,3 +999,7 @@ body.desk .desk-starters { display: flex; flex-wrap: wrap; justify-content: cent
 .desk-intro { display: none; }
 body.desk .desk-intro { display: block; font-size: 20px; font-weight: 600; color: var(--text-strong); margin: 0 0 6px; }
 body.desk .code-intro { display: none; }
+.phone-link { display: flex; gap: 16px; align-items: flex-start; margin-top: 12px; flex-wrap: wrap; }
+.phone-link img { border-radius: 8px; background: #fff; padding: 6px; }
+.phone-link > div { flex: 1; min-width: 220px; }
+.phone-url { user-select: all; }

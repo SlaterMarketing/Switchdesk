@@ -25,6 +25,7 @@ const report = require('./report');
 const previewBridge = require('./preview-bridge');
 const mcpConnect = require('./mcp-connect');
 const { createGateway, known: knownMcp } = require('./mcp-gateway');
+const phone = require('./phone');
 const tests = require('./tests');
 const usage = require('./usage');
 const codebase = require('./codebase');
@@ -102,6 +103,68 @@ function previewTool(ctx, name, args, agent) {
     previewCalls.set(id, (r) => (clearTimeout(timer), resolve(r)));
     sendTo(ctx, 'preview-tool', { id, name, args });
   });
+}
+
+// ---------- checking in from your phone (phone.js)
+// The page on your phone asks the windows: each answers for its own chats (phone-request in
+// phone-link.js). A chat's id on the phone is "<window>:<chat>".
+let phoneServer = null;
+let phoneError = '';
+const phoneCalls = new Map(); // id -> resolve
+function askWindow(ctx, what, args) {
+  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => phoneCalls.delete(id) && reject(new Error('Switchdesk took too long to answer.')), 15000);
+    phoneCalls.set(id, (r) => (clearTimeout(timer), resolve(r || {})));
+    sendTo(ctx, 'phone-request', { id, what, args });
+  });
+}
+const liveWindows = () => [...contexts.values()].filter((c) => c.win && !c.win.isDestroyed());
+async function phoneAsk(what, args = {}) {
+  const wins = liveWindows();
+  if (!wins.length) return { error: 'No Switchdesk window is open on your computer.' };
+  if (what === 'state') {
+    const parts = await Promise.all(wins.map((c) => askWindow(c, 'state').then((r) => ({ c, r }), () => null)));
+    const chats = parts.flatMap((x) => (x && x.r && x.r.chats ? x.r.chats.map((ch) => ({ ...ch, id: `${x.c.id}:${ch.id}` })) : []));
+    const rank = (ch) => (ch.waiting ? 0 : ch.busy ? 1 : 2);
+    chats.sort((a, b) => rank(a) - rank(b));
+    return { computer: os.hostname().replace(/\.local$/, ''), chats };
+  }
+  if (what === 'new') {
+    const focused = ctxOfWindow(BrowserWindow.getFocusedWindow()) || wins[0];
+    const r = await askWindow(focused, 'new', args);
+    return r.chat ? { chat: `${focused.id}:${r.chat}` } : r;
+  }
+  const at = String(args.chat).indexOf(':');
+  const ctx = wins.find((c) => String(c.id) === String(args.chat).slice(0, at));
+  if (!ctx) return { error: 'That chat was closed.' };
+  return askWindow(ctx, what, { ...args, chat: String(args.chat).slice(at + 1) });
+}
+async function startPhone() {
+  if (phoneServer) return;
+  const p = (settings.phone = { ...(settings.phone || {}) });
+  if (!p.token) p.token = crypto.randomBytes(24).toString('base64url');
+  // Tailscale only: listen on this computer's Tailscale address alone, so no other network sees it.
+  const tailscale = phone.addresses().find((a) => a.tailscale);
+  if (p.tailscaleOnly && !tailscale && !process.env.SWITCHDESK_PHONE_HOST) throw new Error("Tailscale isn't running on this computer. Start it, or turn off Tailscale only.");
+  const host = process.env.SWITCHDESK_PHONE_HOST || (p.tailscaleOnly ? tailscale.address : '0.0.0.0');
+  const tryPort = (port) => phone.createPhoneServer({ ask: phoneAsk, token: p.token, port, host });
+  phoneServer = await tryPort(p.port || 47821).catch(() => tryPort(0));
+  p.port = phoneServer.port;
+  saveSettings();
+}
+async function stopPhone() {
+  const s = phoneServer;
+  phoneServer = null;
+  if (s) await s.close();
+}
+async function phoneStatus() {
+  const p = settings.phone || {};
+  if (!phoneServer) return { on: false, error: phoneError, tailscaleOnly: !!p.tailscaleOnly, tailscale: phone.addresses().some((a) => a.tailscale) };
+  const host = process.env.SWITCHDESK_PHONE_HOST;
+  const urls = (host ? [{ address: host, tailscale: false }] : phone.addresses().filter((a) => a.tailscale || !p.tailscaleOnly)).map((a) => ({ url: `http://${a.address}:${phoneServer.port}/?t=${p.token}`, tailscale: a.tailscale }));
+  const qr = urls.length ? await require('qrcode').toDataURL(urls[0].url, { margin: 1, width: 240 }) : null;
+  return { on: true, port: phoneServer.port, urls, qr, tailscaleOnly: !!p.tailscaleOnly, tailscale: phone.addresses().some((a) => a.tailscale) };
 }
 
 // Signs the user in to an MCP server (adding it first when there's a URL and it isn't set up yet),
@@ -1597,6 +1660,37 @@ function registerIpc() {
     chat.mode = mode; // a plan approved mid-turn: the rest of the turn follows the new mode's rules
     return chat.session.setMode(mode);
   });
+  handle('phone:answer', (ctx, id, result) => {
+    const done = phoneCalls.get(id);
+    phoneCalls.delete(id);
+    if (done) done(result);
+  });
+  handle('phone:status', () => phoneStatus());
+  handle('phone:set', async (ctx, on) => {
+    phoneError = '';
+    settings.phone = { ...(settings.phone || {}), on: !!on };
+    saveSettings();
+    try {
+      await (on ? startPhone() : stopPhone());
+    } catch (e) {
+      phoneError = `Couldn't start it: ${e.message}`;
+    }
+    return phoneStatus();
+  });
+  handle('phone:tailscale-only', async (ctx, on) => {
+    phoneError = '';
+    settings.phone = { ...(settings.phone || {}), tailscaleOnly: !!on };
+    saveSettings();
+    if (phoneServer) await stopPhone().then(startPhone).catch((e) => (phoneError = `Couldn't start it: ${e.message}`));
+    return phoneStatus();
+  });
+  // A new code: phones signed in with the old one have to scan again.
+  handle('phone:new-code', async () => {
+    settings.phone = { ...(settings.phone || {}), token: crypto.randomBytes(24).toString('base64url') };
+    saveSettings();
+    if (phoneServer) await stopPhone().then(startPhone);
+    return phoneStatus();
+  });
   handle('preview:tool-result', (ctx, id, result) => {
     const done = previewCalls.get(id);
     previewCalls.delete(id);
@@ -2269,6 +2363,7 @@ app.whenReady().then(() => {
   });
   registerIpc();
   buildMenu();
+  if (settings.phone && settings.phone.on) startPhone().catch((e) => (phoneError = `Couldn't start it: ${e.message}`));
   updater.start((status) => {
     lastUpdate = status;
     broadcast('update-status', status);

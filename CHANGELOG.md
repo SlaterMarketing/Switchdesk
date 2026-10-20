@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.33.0
+
+- **Check in from your phone.** Turn it on in Settings → Phone and scan the QR code. Your phone's browser then shows every chat and what it's doing. You can allow or deny what an agent is waiting on, read its latest messages, send it a message or start a new chat. It's off until you turn it on, and a phone has to scan the code once before it can see anything. Sign out every phone from the same page.
+- **From anywhere, with Tailscale.** With Tailscale (free) on your computer and phone, check-in works on mobile data and public Wi-Fi too, encrypted and without opening anything to the internet. Tick Tailscale only so no Wi-Fi network can reach it at all.
+
 ## 0.32.0
 
 - **Babysit a pull request.** Click Babysit it on a pull request and Switchdesk watches it until it's merged. Failing checks, new review comments and merge conflicts go to an agent in the PR's own copy, its fix is pushed for you, and the comments it fixed get a "Fixed in …" reply. It tells you when checks pass, stops after three tries on the same failing check, and stops when the PR is merged or closed.

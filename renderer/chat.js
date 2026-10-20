@@ -903,6 +903,16 @@ function handleApproval(req) {
       )
     )
   );
+  // What your phone shows and answers (phone-link.js).
+  card.phone = {
+    title,
+    detail: isShell(toolName) ? input.command || '' : EDIT_TOOLS.has(toolName) ? input.file_path || input.notebook_path || '' : toolName === 'WebFetch' ? input.url || '' : JSON.stringify(input, null, 2).slice(0, 1500),
+    choices: [
+      { id: 'allow', label: 'Allow' },
+      { id: 'deny', label: 'Deny' },
+    ],
+    pick: (choice) => (choice === 'allow' ? (allow(), resolve('Allowed from your phone')) : (deny(), resolve('Denied from your phone'))),
+  };
   reason.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       deny(`The user denied this and said: ${reason.value}`);

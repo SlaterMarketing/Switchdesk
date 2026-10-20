@@ -932,3 +932,61 @@ appTest('Auto picks the agent with the most room, and moves on when one runs out
   await w.click('#agent-menu button:has-text("Copilot")');
   assert.doesNotMatch(await w.$eval('#agent-btn', (e) => e.textContent), /Auto/);
 });
+
+test('your phone signs in with the QR code, answers what an agent waits on, and sends messages', { timeout: 120000 }, async () => {
+  const p = profile();
+  const { app, w, errors } = await launch(p, project(), { SWITCHDESK_PHONE_HOST: '127.0.0.1' });
+  try {
+    await w.evaluate(() => openSettings('phone'));
+    await w.click('.settings-body label:has-text("Let my phone check in") input');
+    await w.waitForSelector('.phone-link img', { timeout: 15000 });
+    const { urls } = await w.evaluate(() => desk.phone.status());
+    const base = new URL(urls[0].url).origin;
+    // Without the code, nothing.
+    assert.equal((await fetch(base + '/')).status, 403);
+    assert.equal((await fetch(base + '/api/state')).status, 403);
+    assert.equal((await fetch(base + '/?t=wrong', { redirect: 'manual' })).status, 403);
+    // The QR code's link signs the phone in with a cookie.
+    const signIn = await fetch(urls[0].url, { redirect: 'manual' });
+    assert.equal(signIn.status, 302);
+    const cookie = signIn.headers.get('set-cookie').split(';')[0];
+    assert.match(await (await fetch(base + '/', { headers: { cookie } })).text(), /Switchdesk/);
+    const get = () => fetch(base + '/api/state', { headers: { cookie } }).then((r) => r.json());
+    const post = (path, body, extra = { 'x-switchdesk': '1' }) => fetch(base + path, { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) }).then((r) => r.json());
+    await w.click('.settings-top button[title="Close"]');
+    // An agent asks to run a command: the phone sees it and allows it.
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ permissions: { ask: ['ls'] } })));
+    await chatWith(w, 'cursor', 'plan');
+    await sendMessage(w, 'plan it');
+    await w.waitForSelector('.card.approval:not(.resolved)', { timeout: 30000 });
+    const s = await get();
+    const chat = s.chats.find((c) => c.waiting);
+    assert.ok(chat, 'the chat shows as waiting on you');
+    assert.equal(chat.agent, 'Cursor');
+    assert.match(chat.asks[0].detail, /ls plans/);
+    assert.deepEqual(chat.asks[0].choices.map((c) => c.id), ['allow', 'deny']);
+    assert.ok((await post('/api/answer', { chat: chat.id, card: chat.asks[0].id, choice: 'allow' }, {})).error, "another site can't answer for you");
+    assert.ok((await post('/api/answer', { chat: chat.id, card: chat.asks[0].id, choice: 'allow' })).ok);
+    await w.waitForSelector('.card.approval.resolved:has-text("Allowed from your phone")', { timeout: 10000 });
+    await w.waitForSelector('.card.plan', { timeout: 30000 });
+    await idle(w);
+    await w.evaluate(async () => (state.settings = await desk.setSettings({ permissions: { ask: [] } })));
+    // A message from the phone goes to the chat.
+    assert.ok((await post('/api/send', { chat: chat.id, text: 'hello from my phone' })).ok);
+    await until(w, () => /hello from my phone/.test(activeChat().el.innerText));
+    await idle(w);
+    assert.match(prompts(p, 'cursor').pop(), /hello from my phone/);
+    const after = (await get()).chats.find((c) => c.id === chat.id);
+    assert.ok(after.messages.some((m) => m.role === 'user' && /hello from my phone/.test(m.text)));
+    // And a new chat can start from the phone.
+    const n = await post('/api/new', { text: 'a new one from the bus' });
+    assert.ok(n.chat);
+    await until(w, () => chats.length === 2 && /a new one from the bus/.test(activeChat().el.innerText));
+    // Turning it off closes the page.
+    await w.evaluate(() => desk.phone.set(false));
+    await assert.rejects(fetch(base + '/api/state', { headers: { cookie } }));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});

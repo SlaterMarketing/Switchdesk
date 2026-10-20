@@ -17,6 +17,7 @@ const SETTINGS_SECTIONS = [
   ['codebase', 'Codebase search'],
   ['keyboard', 'Keyboard'],
   ['usage', 'Usage'],
+  ['phone', 'Phone'],
   ['about', 'About'],
 ];
 
@@ -39,7 +40,7 @@ function openSettings(section = 'general') {
     if (focus) id = 'agents';
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage, about: settingsAbout }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage, phone: settingsPhone, about: settingsAbout }[id];
     render(body, close)
       .then(() => focus && $(`.agent-card[data-agent="${focus}"]`, body)?.scrollIntoView({ block: 'start' }))
       .catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
@@ -385,6 +386,46 @@ function resetText(at) {
 
 // Who makes Switchdesk. Links open in the browser.
 const MAKER = 'https://slatermarketing.co.uk';
+
+async function settingsPhone(body) {
+  const render = (st) => {
+    const toggle = h('input', { type: 'checkbox', checked: !!st.on });
+    toggle.addEventListener('change', async () => {
+      toggle.disabled = true;
+      render(await desk.phone.set(toggle.checked));
+    });
+    const tsOnly = h('input', { type: 'checkbox', checked: !!st.tailscaleOnly });
+    tsOnly.addEventListener('change', async () => {
+      tsOnly.disabled = true;
+      render(await desk.phone.tailscaleOnly(tsOnly.checked));
+    });
+    body.replaceChildren(
+      h('h3', {}, 'Check in from your phone'),
+      h('p', { class: 'muted small' }, "See what each chat is doing, approve or deny what an agent is waiting on, and send it a message, from your phone's browser. Switchdesk needs to be open on this computer."),
+      h('p', { class: 'small' }, 'Out and about (mobile data, public Wi-Fi): install ', h('a', { href: 'https://tailscale.com/download', target: '_blank', rel: 'noopener' }, 'Tailscale'), " (free) on this computer and your phone, signed in to the same account. It connects your phone to this computer from anywhere, encrypted, without opening anything to the internet.", st.tailscale ? h('b', {}, ' Tailscale is running here.') : null),
+      h('label', { class: 'check' }, toggle, ' Let my phone check in'),
+      h('label', { class: 'check', title: "Only devices on your Tailscale network can reach it, not whatever Wi-Fi this computer is on" }, tsOnly, ' Tailscale only (the safest: no Wi-Fi network can see it)'),
+      st.error ? h('div', { class: 'turn-error' }, st.error) : null,
+      st.on && !st.urls.length ? h('p', { class: 'small' }, "This computer isn't on a network your phone can reach right now. Connect to Wi-Fi and open this page again.") : null,
+      st.on && st.urls.length
+        ? h(
+            'div',
+            { class: 'phone-link' },
+            st.qr ? h('img', { src: st.qr, alt: 'QR code to open Switchdesk on your phone', width: 200, height: 200 }) : null,
+            h(
+              'div',
+              {},
+              h('p', { class: 'small' }, "Scan this with your phone's camera. It signs your phone in, so you can add the page to your home screen and open it any time."),
+              ...st.urls.map((u) => h('div', { class: 'small' }, h('code', { class: 'phone-url' }, u.url.replace(/\?t=.*/, '')), u.tailscale ? h('span', { class: 'muted' }, ' (Tailscale)') : null)),
+              h('p', { class: 'muted small' }, st.tailscaleOnly ? 'Only your Tailscale devices can reach it, and Tailscale encrypts everything on the way.' : "On Wi-Fi the page isn't encrypted, so without Tailscale only use networks you trust, like home or the office. Windows may ask whether to let Switchdesk on private networks; say yes."),
+              h('button', { class: 'btn small', onclick: async () => (render(await desk.phone.newCode()), toast('New code made. Phones signed in before need to scan it again.')) }, 'Sign out every phone')
+            )
+          )
+        : null
+    );
+  };
+  render(await desk.phone.status());
+}
 
 async function settingsAbout(body) {
   const version = await desk.appVersion();

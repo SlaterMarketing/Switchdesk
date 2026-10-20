@@ -29,6 +29,7 @@ async function init() {
   wireBoard();
   wireSearch();
   wireAgents();
+  wirePhone();
   wireDeskView();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));
   $('#status-perms').addEventListener('click', () => openSettings('permissions'));
