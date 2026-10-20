@@ -1,7 +1,8 @@
 // Checking in from your phone: a small web page Switchdesk serves on your network, so a phone on
 // the same Wi-Fi (or Tailscale) can see each chat, answer what an agent is waiting on, and send it a
-// message. It's off until you turn it on in Settings → Phone. The phone signs in once with the
-// code in the QR code, which it keeps as a cookie.
+// message. It's off until you turn it on in Settings → Phone. The phone signs in once, with the
+// QR code's link or by typing a short code from Settings (10 minutes, 5 tries), and then keeps a
+// cookie.
 'use strict';
 
 const http = require('http');
@@ -32,17 +33,35 @@ const cookieOf = (req) => (/(?:^|;\s*)sd=([^;]+)/.exec(req.headers.cookie || '')
 
 // ask(what, args) answers from the windows: 'state', 'send' { chat, text }, 'answer' { chat, card, choice }, 'new' { text }.
 function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
+  let pair = null; // { code, until, tries }
+  const signInCookie = `sd=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://phone');
+    // Typing the short code instead of scanning.
+    if (url.pathname === '/pair' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body.length < 1000 ? (body += c) : req.destroy()));
+      req.on('end', () => {
+        const typed = String(new URLSearchParams(body).get('code') || '').replace(/\D/g, '');
+        const live = pair && pair.until > Date.now() && pair.tries < 5;
+        if (live && same(typed, pair.code)) {
+          pair = null; // one phone per code
+          return res.writeHead(302, { location: '/', 'set-cookie': signInCookie }).end();
+        }
+        if (pair) pair.tries++;
+        res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }).end(pairPage(live && pair.tries < 5 ? "That code isn't right. Check it in Switchdesk and try again." : 'That code has run out. Make a new one in Switchdesk → Settings → Phone.'));
+      });
+      return;
+    }
     const json = (code, body) => res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body));
     // Signing in: the QR code's link carries the code once, then it's a cookie.
     if (url.pathname === '/' && url.searchParams.has('t')) {
       if (!same(url.searchParams.get('t'), token)) return res.writeHead(403, { 'content-type': 'text/plain' }).end('That code is out of date. Scan the QR code in Switchdesk → Settings → Phone again.');
-      return res.writeHead(302, { location: '/', 'set-cookie': `sd=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` }).end();
+      return res.writeHead(302, { location: '/', 'set-cookie': signInCookie }).end();
     }
     const signedIn = same(cookieOf(req), token);
     if (url.pathname === '/') {
-      if (!signedIn) return res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }).end('<meta name="viewport" content="width=device-width"><body style="font:16px system-ui;padding:24px">Scan the QR code in Switchdesk → Settings → Phone to check in from this phone.');
+      if (!signedIn) return res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }).end(pairPage(''));
       return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:" }).end(PAGE);
     }
     if (!url.pathname.startsWith('/api/')) return res.writeHead(404).end();
@@ -69,9 +88,25 @@ function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, host, () => resolve({ port: server.address().port, close: () => new Promise((r) => (server.closeAllConnections && server.closeAllConnections(), server.close(() => r()))) }));
+    server.listen(port, host, () =>
+      resolve({
+        port: server.address().port,
+        // A new six-digit code to type on the phone, good for 10 minutes.
+        pairCode() {
+          pair = { code: String(crypto.randomInt(0, 1e6)).padStart(6, '0'), until: Date.now() + 10 * 60e3, tries: 0 };
+          return { code: pair.code, until: pair.until };
+        },
+        close: () => new Promise((r) => (server.closeAllConnections && server.closeAllConnections(), server.close(() => r()))),
+      })
+    );
   });
 }
+
+const pairPage = (error) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Switchdesk</title>
+<style>body{font:16px system-ui;padding:24px;max-width:420px;margin:auto;background:#f6f6f4;color:#1d1d1f}@media (prefers-color-scheme:dark){body{background:#16161a;color:#ececef}}
+input{font:28px ui-monospace,monospace;letter-spacing:6px;width:100%;padding:12px;border-radius:10px;border:1px solid #bbb;box-sizing:border-box;text-align:center}button{font:inherit;width:100%;margin-top:12px;padding:14px;border-radius:10px;border:none;background:#d97757;color:#fff}.err{color:#c0392b}</style>
+<h2>Switchdesk</h2><p>Type the code from Switchdesk → Settings → Phone on your computer, or scan its QR code.</p>${error ? `<p class="err">${error}</p>` : ''}
+<form method="post" action="/pair"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" autofocus><button>Sign in</button></form>`;
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">

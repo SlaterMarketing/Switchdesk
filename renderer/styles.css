@@ -1003,3 +1003,5 @@ body.desk .code-intro { display: none; }
 .phone-link img { border-radius: 8px; background: #fff; padding: 6px; }
 .phone-link > div { flex: 1; min-width: 220px; }
 .phone-url { user-select: all; }
+.phone-pair { margin: 8px 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.phone-code { font: 600 20px ui-monospace, monospace; letter-spacing: 2px; }

@@ -946,6 +946,16 @@ test('your phone signs in with the QR code, answers what an agent waits on, and 
     assert.equal((await fetch(base + '/')).status, 403);
     assert.equal((await fetch(base + '/api/state')).status, 403);
     assert.equal((await fetch(base + '/?t=wrong', { redirect: 'manual' })).status, 403);
+    // Or type the code Settings shows: a wrong one fails, the right one signs in once.
+    await w.waitForSelector('.phone-code', { timeout: 10000 });
+    const code = (await w.$eval('.phone-code', (e) => e.textContent)).replace(/\D/g, '');
+    const pair = (c) => fetch(base + '/pair', { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `code=${c}` });
+    assert.match(await (await fetch(base + '/')).text(), /Type the code/);
+    assert.equal((await pair(code === '000000' ? '111111' : '000000')).status, 403);
+    const typed = await pair(code.slice(0, 3) + '+' + code.slice(3));
+    assert.equal(typed.status, 302);
+    assert.equal((await fetch(base + '/api/state', { headers: { cookie: typed.headers.get('set-cookie').split(';')[0] } })).status, 200);
+    assert.equal((await pair(code)).status, 403, 'a code works once');
     // The QR code's link signs the phone in with a cookie.
     const signIn = await fetch(urls[0].url, { redirect: 'manual' });
     assert.equal(signIn.status, 302);

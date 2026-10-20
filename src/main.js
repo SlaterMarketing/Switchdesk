@@ -1677,6 +1677,7 @@ function registerIpc() {
     }
     return phoneStatus();
   });
+  handle('phone:pair-code', () => (phoneServer ? phoneServer.pairCode() : null));
   handle('phone:tailscale-only', async (ctx, on) => {
     phoneError = '';
     settings.phone = { ...(settings.phone || {}), tailscaleOnly: !!on };

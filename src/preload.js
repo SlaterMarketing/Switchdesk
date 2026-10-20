@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('desk', {
   cancelLogin: call('setup:login-cancel'),
   openExternal: call('open-external'),
   dictate: call('dictate'),
-  phone: { status: call('phone:status'), set: call('phone:set'), newCode: call('phone:new-code'), tailscaleOnly: call('phone:tailscale-only'), onRequest: on('phone-request'), answer: call('phone:answer') },
+  phone: { status: call('phone:status'), set: call('phone:set'), newCode: call('phone:new-code'), tailscaleOnly: call('phone:tailscale-only'), pairCode: call('phone:pair-code'), onRequest: on('phone-request'), answer: call('phone:answer') },
   reportProblem: call('report:problem'),
   onSetupLog: on('setup-log'),
   onLoginUrl: on('setup-login-url'),

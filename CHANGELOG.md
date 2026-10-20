@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.33.1
+
+- **Sign your phone in without the camera.** Settings → Phone now shows the address to open and a six-digit code to type on your phone, as well as the QR code. A code works once, for 10 minutes, and stops working after five wrong tries.
+
 ## 0.33.0
 
 - **Check in from your phone.** Turn it on in Settings → Phone and scan the QR code. Your phone's browser then shows every chat and what it's doing. You can allow or deny what an agent is waiting on, read its latest messages, send it a message or start a new chat. It's off until you turn it on, and a phone has to scan the code once before it can see anything. Sign out every phone from the same page.

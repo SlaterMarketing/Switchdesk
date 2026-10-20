@@ -388,6 +388,13 @@ function resetText(at) {
 const MAKER = 'https://slatermarketing.co.uk';
 
 async function settingsPhone(body) {
+  // A code to type on the phone instead of scanning: one phone, 10 minutes.
+  const pairBox = h('div', { class: 'phone-pair' });
+  const showCode = async () => {
+    const c = await desk.phone.pairCode();
+    if (!c) return pairBox.replaceChildren();
+    pairBox.replaceChildren(h('span', { class: 'small' }, 'then type this code: '), h('b', { class: 'phone-code' }, `${c.code.slice(0, 3)} ${c.code.slice(3)}`), h('span', { class: 'muted small' }, ' (works once, for 10 minutes) '), h('button', { class: 'btn small', onclick: showCode }, 'New code'));
+  };
   const render = (st) => {
     const toggle = h('input', { type: 'checkbox', checked: !!st.on });
     toggle.addEventListener('change', async () => {
@@ -416,13 +423,16 @@ async function settingsPhone(body) {
               'div',
               {},
               h('p', { class: 'small' }, "Scan this with your phone's camera. It signs your phone in, so you can add the page to your home screen and open it any time."),
-              ...st.urls.map((u) => h('div', { class: 'small' }, h('code', { class: 'phone-url' }, u.url.replace(/\?t=.*/, '')), u.tailscale ? h('span', { class: 'muted' }, ' (Tailscale)') : null)),
+              h('p', { class: 'small' }, "Can't scan it? Open this address in your phone's browser:"),
+              ...st.urls.map((u) => h('div', { class: 'small' }, h('code', { class: 'phone-url' }, u.url.replace(/\/\?t=.*/, '')), u.tailscale ? h('span', { class: 'muted' }, ' (Tailscale)') : null)),
+              pairBox,
               h('p', { class: 'muted small' }, st.tailscaleOnly ? 'Only your Tailscale devices can reach it, and Tailscale encrypts everything on the way.' : "On Wi-Fi the page isn't encrypted, so without Tailscale only use networks you trust, like home or the office. Windows may ask whether to let Switchdesk on private networks; say yes."),
               h('button', { class: 'btn small', onclick: async () => (render(await desk.phone.newCode()), toast('New code made. Phones signed in before need to scan it again.')) }, 'Sign out every phone')
             )
           )
         : null
     );
+    if (st.on) showCode();
   };
   render(await desk.phone.status());
 }
