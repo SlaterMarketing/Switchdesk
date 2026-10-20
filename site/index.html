@@ -553,7 +553,7 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Start from an issue</h4><p><b>Start working on it</b> on a GitHub or Linear issue opens a chat on a new branch. <b>Start several</b> does a batch at once.</p></div>
             <div class="feat"><h4>Review in the editor</h4><p>Pull request comments sit under the lines they're on. Reply, add your own, or hand one to an agent.</p></div>
-            <div class="feat"><h4>Keep it green</h4><p>After a push, Switchdesk watches the checks. If one fails, the agent gets its log and pushes a fix, up to three times.</p></div>
+            <div class="feat"><h4>Babysit it</h4><p>Click <b>Babysit it</b> on a pull request and Switchdesk watches it until it's merged. Failing checks, review comments and merge conflicts go to an agent, its fix is pushed, and fixed comments get a reply.</p></div>
             <div class="feat"><h4>Review, approve and merge</h4><p>Have an agent review a pull request and post it to GitHub, then approve and merge from the pull request's tab.</p></div>
           </div>
         </div>
@@ -562,19 +562,20 @@ footer .legal { max-width: 46em; }
           <div class="feats">
             <div class="feat"><h4>Hand a chat to another agent</h4><p>Switch agents mid-chat and the new one picks up the conversation in the same tab, where the last one left off.</p></div>
             <div class="feat"><h4>One set of rules</h4><p>Keep your project rules in one <code>AGENTS.md</code>. Switchdesk points <code>CLAUDE.md</code> at it and hands it to agents that don't read it themselves.</p></div>
-            <div class="feat"><h4>One set of permissions</h4><p>Allowed and blocked commands, and Always allow, apply to all eight agents, so you never approve the same thing twice.</p></div>
+            <div class="feat"><h4>Auto picks the agent</h4><p>Choose <b>Auto</b> and each chat runs on the agent or account with the most room left on its plan. If one runs out mid-task, the chat carries on in the next.</p></div>
             <div class="feat"><h4>Several accounts per agent</h4><p>A work and a personal sign-in for Claude, Codex, Copilot, Cursor or Kimi, or a second API key for the rest. Switch any chat between them.</p></div>
           </div>
-          <p class="also"><span>Also</span> Commands that travel · History from every agent</p>
+          <p class="also"><span>Also</span> One set of permissions · Commands that travel · History from every agent</p>
         </div>
         <div class="group">
           <div><h3>Direct the work</h3><p>Point the agent at exactly what matters, and steer it as it goes.</p></div>
           <div class="feats">
             <div class="feat"><h4>@codebase</h4><p>Finds the parts of the project your message is about and attaches them. The search model runs on your computer.</p></div>
             <div class="feat"><h4>@ anything else</h4><p>A file, folder, web page, your uncommitted changes or terminal output. <kbd>Ctrl</kbd> <kbd>L</kbd> adds the selection.</p></div>
-            <div class="feat"><h4>Attach documents</h4><p>Word, PDF, Excel and PowerPoint files go to the agent as text, with headings, tables, sheets and slides kept.</p></div>
+            <div class="feat"><h4>Connect any service</h4><p>Ask any agent to "connect me to Linear", or Jira, Notion or Sentry. Switchdesk opens the sign-in, keeps it safe, and the tools are ready from your next message.</p></div>
             <div class="feat"><h4>Queue and steer</h4><p>Type while it works and the message waits its turn. Press Enter again to interrupt and steer mid-task.</p></div>
           </div>
+          <p class="also"><span>Also</span> Attach Word, PDF, Excel and PowerPoint files · Dictation</p>
         </div>
         <div class="group">
           <div><h3>A real code editor</h3><p>For the moments you'd rather write the code yourself.</p></div>
@@ -587,13 +588,14 @@ footer .legal { max-width: 46em; }
           <p class="also"><span>Also</span> Run tests in the editor · Jupyter notebooks · Search and replace · Split and compare</p>
         </div>
         <div class="group">
-          <div><h3>Any folder, any machine</h3><p>Work wherever your code lives.</p></div>
+          <div><h3>Any folder, any machine</h3><p>Work wherever your code lives, and check in from wherever you are.</p></div>
           <div class="feats">
             <div class="feat"><h4>SSH folders</h4><p>Open a folder on another machine. Files, git, the terminal, agents, tests and the debugger all run there, with your own SSH keys.</p></div>
             <div class="feat"><h4>Multi-folder workspaces</h4><p>Add a shared library or the backend to the window. Every agent can read and change all of them.</p></div>
-            <div class="feat"><h4>Several windows</h4><p>Each window has its own project, chats, agents and terminals. After a restart or update they all reopen where they were.</p></div>
+            <div class="feat"><h4>Check in from your phone</h4><p>Scan a QR code and your phone shows every chat. Allow or deny what an agent is waiting on, read its replies or send a new message. With Tailscale it works away from home too.</p></div>
             <div class="feat"><h4>Picks up where you left off</h4><p>Reopen a folder and your files, chats, plans, place in each file and half-written message come back.</p></div>
           </div>
+          <p class="also"><span>Also</span> Several windows</p>
         </div>
         <div class="group">
           <div><h3>The rest of the desk</h3><p>The tools you'd otherwise keep in other windows.</p></div>
@@ -672,13 +674,14 @@ footer .legal { max-width: 46em; }
           <details><summary>Which systems does it run on?</summary><p>Windows 10 and 11, macOS on Apple Silicon or Intel, and Linux as an AppImage. Every release has all of them, or you can run it from source anywhere Node runs.</p></details>
           <details><summary>My computer warns me about the installer. Is that normal?</summary><p>On Windows, yes. The Windows installer isn't code-signed yet, because that needs a paid certificate, so click <b>More info</b>, then <b>Run anyway</b>. The Mac app is signed and notarised by Apple, so it opens without a warning.</p></details>
           <details><summary>Can it work on code on another machine?</summary><p>Yes. File → Open Folder over SSH opens a folder on a server or another computer, using your own SSH keys. The agents, git, terminal, tests and debugger all run there.</p></details>
+          <details><summary>Can I check on it from my phone?</summary><p>Yes. Turn it on in Settings → Phone and scan the QR code. Your phone's browser then shows every chat, and you can answer what an agent is waiting on or send it a message. It's off until you turn it on, and works on your Wi-Fi, or anywhere with Tailscale.</p></details>
           <details><summary>Can I switch agents in the middle of a chat?</summary><p>Yes. Pick another agent or Claude account from the menu in the chat box. The new agent gets the conversation so far and carries on where the last one left off, and your files stay as they were.</p></details>
         </div>
         <div>
           <details><summary>I don't write code. Is it for me?</summary><p>Yes. Switch to <b>Desk</b> in the top right and it's a plain chat: summarise documents, draft emails, turn notes into reports, plan projects. Point it at a folder and it can read and write the files there, and everything it makes shows with a preview.</p></details>
           <details><summary>Is it affiliated with Anthropic, OpenAI, GitHub or Cursor?</summary><p>No. Switchdesk is an independent project. It isn't made by or affiliated with Anthropic, OpenAI, GitHub, Anysphere, Moonshot, Google, Alibaba or DeepSeek. It runs their official CLIs, which you install and sign in to yourself.</p></details>
           <details><summary>Does it have Tab autocomplete?</summary><p>Yes. It runs GitHub's own Copilot language server signed in with your GitHub account, and Copilot Free works. You can use your DeepSeek or Qwen API key instead. Pick the engine in Settings → Autocomplete.</p></details>
-          <details><summary>Does it work with GitHub pull requests?</summary><p>Yes. The Git panel lists pull requests and issues. You can start work from an issue, review comments in the editor, let an agent fix failing checks, and approve and merge without leaving the app.</p></details>
+          <details><summary>Does it work with GitHub pull requests?</summary><p>Yes. The Git panel lists pull requests and issues. You can start work from an issue, review comments in the editor, have Switchdesk babysit a pull request until it's merged, and approve and merge without leaving the app.</p></details>
           <details><summary>Can I share it with my team on my plan?</summary><p>Each person should sign in with their own plan or API key. That's how the agents' terms expect them to be used, and it's how Switchdesk is designed.</p></details>
         </div>
       </div>
