@@ -203,17 +203,20 @@ npm run dist:linux   # AppImage
 ## Limits
 
 - In a folder that isn't a git repository, Undo only covers files changed by Edit and Write. The git panel can turn the folder into a repository in one click.
-- The app isn't code-signed (that needs a paid certificate).
+- The Windows installer isn't code-signed yet (that needs a paid certificate), so SmartScreen warns the first time. The Mac app is signed and notarised.
 - In Plan mode, Claude's question cards send your answer back as text.
 
 ## Privacy
 
-Switchdesk has no account, no analytics and no telemetry. It doesn't send your code or your chats anywhere itself.
+Switchdesk has no account, no analytics and no telemetry. It doesn't send your code or your chats anywhere itself. The full policy, including the website, is at [switchdesk.dev/privacy](https://switchdesk.dev/privacy/).
 
 - **Your agents** talk to their own makers with your own sign-in or API key, the same as they do in a terminal. Switchdesk never sees your logins, and keys you paste in are stored encrypted on your computer.
 - **GitHub and Linear** are only contacted when you connect them, with your own token.
+- **Connected services** (Jira, Notion, Sentry and so on) are signed in to in your browser, and their tokens are stored encrypted on your computer.
+- **Tab autocomplete** sends code near your cursor to GitHub's Copilot language server when you're signed in to Copilot, or to DeepSeek or Qwen with your key. Settings → Autocomplete turns it off.
 - **Updates** are checked against this repository's releases on GitHub.
-- **Search by meaning** (off unless you turn it on) downloads a small model from Hugging Face once, then runs on your computer. Nothing is sent anywhere.
+- **Search by meaning** (off unless you turn it on) downloads a small model from Hugging Face and its runtime from jsDelivr once, then runs on your computer. Nothing is sent anywhere.
+- **Phone check-in** (off unless you turn it on) is served on your own network or Tailscale only. A phone has to scan the QR code before it can see anything.
 - **Report a problem** opens a GitHub issue in your browser with your version and system filled in. Nothing is sent until you submit it there.
 
 ## Terms
