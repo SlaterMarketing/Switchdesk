@@ -33,7 +33,7 @@ function phoneChat(chat) {
 }
 
 async function phoneRequest({ what, args }) {
-  if (what === 'state') return { chats: chats.filter((c) => !isPristine(c) || c.busy).map(phoneChat) };
+  if (what === 'state') return { folder: state.folder ? state.folder.name : '', chats: chats.filter((c) => !isPristine(c) || c.busy).map(phoneChat) };
   if (what === 'new') {
     const chat = createChat();
     send(args.text, null, null, chat);

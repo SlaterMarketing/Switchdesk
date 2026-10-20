@@ -57,6 +57,11 @@ const legacyData = path.join(app.getPath('appData'), 'Claude Desk');
 if (fs.existsSync(legacyData)) app.setPath('userData', legacyData);
 // The app's own tests run with a fresh data folder.
 if (process.env.SWITCHDESK_USER_DATA) app.setPath('userData', process.env.SWITCHDESK_USER_DATA);
+// One Switchdesk at a time: opening it again opens a new window in the one that's running, so every
+// window shares settings, usage and your phone's view.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.exit(0);
+app.on('second-instance', () => app.isReady() && newWindow(null));
 
 // ---------- settings ----------
 
@@ -125,13 +130,15 @@ async function phoneAsk(what, args = {}) {
   if (!wins.length) return { error: 'No Switchdesk window is open on your computer.' };
   if (what === 'state') {
     const parts = await Promise.all(wins.map((c) => askWindow(c, 'state').then((r) => ({ c, r }), () => null)));
-    const chats = parts.flatMap((x) => (x && x.r && x.r.chats ? x.r.chats.map((ch) => ({ ...ch, id: `${x.c.id}:${ch.id}` })) : []));
+    const chats = parts.flatMap((x) => (x && x.r && x.r.chats ? x.r.chats.map((ch) => ({ ...ch, id: `${x.c.id}:${ch.id}`, workspace: String(x.c.id) })) : []));
     const rank = (ch) => (ch.waiting ? 0 : ch.busy ? 1 : 2);
     chats.sort((a, b) => rank(a) - rank(b));
-    return { computer: os.hostname().replace(/\.local$/, ''), chats };
+    // Every window, chats or not, so the phone can start a chat in any of them.
+    const workspaces = parts.filter((x) => x && x.r && !x.r.error).map((x) => ({ id: String(x.c.id), name: x.r.folder || 'No folder', waiting: chats.some((ch) => ch.workspace === String(x.c.id) && ch.waiting) }));
+    return { computer: os.hostname().replace(/\.local$/, ''), workspaces, chats };
   }
   if (what === 'new') {
-    const focused = ctxOfWindow(BrowserWindow.getFocusedWindow()) || wins[0];
+    const focused = wins.find((c) => String(c.id) === String(args.workspace)) || ctxOfWindow(BrowserWindow.getFocusedWindow()) || wins[0];
     const r = await askWindow(focused, 'new', args);
     return r.chat ? { chat: `${focused.id}:${r.chat}` } : r;
   }
@@ -2343,6 +2350,7 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 app.whenReady().then(() => {
+  if (!firstInstance) return;
   worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'));
   accounts.setBaseDir(path.join(app.getPath('userData'), 'accounts'));
   agents.setAccountsBase(path.join(app.getPath('userData'), 'agent-accounts'));

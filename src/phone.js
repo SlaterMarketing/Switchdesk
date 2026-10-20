@@ -6,6 +6,8 @@
 'use strict';
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
@@ -37,6 +39,10 @@ function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
   const signInCookie = `sd=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://phone');
+    // What a phone needs to put Switchdesk on its home screen, with its own icon and name.
+    const icon = /^\/icon-(180|192|512)\.png$/.exec(url.pathname);
+    if (icon) return res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' }).end(fs.readFileSync(path.join(__dirname, 'phone-icons', `icon-${icon[1]}.png`)));
+    if (url.pathname === '/manifest.webmanifest') return res.writeHead(200, { 'content-type': 'application/manifest+json' }).end(MANIFEST);
     // Typing the short code instead of scanning.
     if (url.pathname === '/pair' && req.method === 'POST') {
       let body = '';
@@ -62,7 +68,7 @@ function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
     const signedIn = same(cookieOf(req), token);
     if (url.pathname === '/') {
       if (!signedIn) return res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }).end(pairPage(''));
-      return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:" }).end(PAGE);
+      return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'" }).end(PAGE);
     }
     if (!url.pathname.startsWith('/api/')) return res.writeHead(404).end();
     if (!signedIn) return json(403, { error: 'Scan the QR code in Switchdesk again.' });
@@ -78,7 +84,7 @@ function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
         const args = body ? JSON.parse(body) : {};
         if (req.method === 'GET' && url.pathname === '/api/state') return json(200, await ask('state'));
         if (req.method === 'POST' && url.pathname === '/api/send') return json(200, await ask('send', { chat: String(args.chat || ''), text: String(args.text || '').slice(0, 20000) }));
-        if (req.method === 'POST' && url.pathname === '/api/new') return json(200, await ask('new', { text: String(args.text || '').slice(0, 20000) }));
+        if (req.method === 'POST' && url.pathname === '/api/new') return json(200, await ask('new', { text: String(args.text || '').slice(0, 20000), workspace: String(args.workspace || '') }));
         if (req.method === 'POST' && url.pathname === '/api/answer') return json(200, await ask('answer', { chat: String(args.chat || ''), card: String(args.card || ''), choice: String(args.choice || ''), text: String(args.text || '').slice(0, 4000) }));
         json(404, { error: 'Not found.' });
       } catch (e) {
@@ -102,15 +108,32 @@ function createPhoneServer({ ask, token, port = 0, host = '0.0.0.0' }) {
   });
 }
 
-const pairPage = (error) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Switchdesk</title>
+const pairPage = (error) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${HEAD}<title>Switchdesk</title>
 <style>body{font:16px system-ui;padding:24px;max-width:420px;margin:auto;background:#f6f6f4;color:#1d1d1f}@media (prefers-color-scheme:dark){body{background:#16161a;color:#ececef}}
 input{font:28px ui-monospace,monospace;letter-spacing:6px;width:100%;padding:12px;border-radius:10px;border:1px solid #bbb;box-sizing:border-box;text-align:center}button{font:inherit;width:100%;margin-top:12px;padding:14px;border-radius:10px;border:none;background:#d97757;color:#fff}.err{color:#c0392b}</style>
-<h2>Switchdesk</h2><p>Type the code from Switchdesk → Settings → Phone on your computer, or scan its QR code.</p>${error ? `<p class="err">${error}</p>` : ''}
+<h2><img src="/icon-192.png" alt="" width="32" height="32" style="vertical-align:-7px;border-radius:8px;margin-right:8px">Switchdesk</h2><p>Type the code from Switchdesk → Settings → Phone on your computer, or scan its QR code.</p>${error ? `<p class="err">${error}</p>` : ''}
 <form method="post" action="/pair"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" autofocus><button>Sign in</button></form>`;
+
+const HEAD = `<meta name="theme-color" content="#17181c"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png"><link rel="icon" href="/icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Switchdesk"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
+
+const MANIFEST = JSON.stringify({
+  name: 'Switchdesk',
+  short_name: 'Switchdesk',
+  description: 'Check in on your coding agents.',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#17181c',
+  theme_color: '#17181c',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+  ],
+});
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#16161a"><title>Switchdesk</title>
+${HEAD}<title>Switchdesk</title>
 <style>
 :root{--bg:#f6f6f4;--card:#fff;--text:#1d1d1f;--dim:#6b6b70;--line:#e3e3df;--accent:#d97757;--good:#2f8f5b;--warn:#b7791f;--bad:#c0392b}
 @media (prefers-color-scheme:dark){:root{--bg:#16161a;--card:#202026;--text:#ececef;--dim:#9a9aa3;--line:#2e2e36;--good:#4cc28a;--warn:#e0a84a;--bad:#e5675a}}
@@ -128,11 +151,16 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 .msg{margin:8px 0;white-space:pre-wrap;word-break:break-word}.msg.user{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-left:15%}
 .msg .who{font-size:12px;color:var(--dim)}
 form{display:flex;gap:8px;position:sticky;bottom:0;background:var(--bg);padding:8px 0}textarea{flex:1;font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:10px;min-height:44px;resize:none}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:0 -16px 12px;padding:0 16px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab{white-space:nowrap;min-height:36px;padding:6px 12px;border-radius:99px;font-size:14px}.tab.on{background:var(--text);color:var(--bg);border-color:var(--text)}.tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle}
+form{flex-wrap:wrap}select{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:10px;width:100%}
+.logo{width:28px;height:28px;border-radius:7px}.tip{font-size:14px;display:flex;gap:10px;align-items:flex-start}.tip b{display:block}.tip button{min-height:0;padding:4px 10px;margin-left:auto}
 .back{border:none;background:none;padding:0 4px;color:var(--accent);min-height:0}.empty{color:var(--dim);text-align:center;padding:24px}.err{color:var(--bad);font-size:14px}
 </style></head><body>
 <div id="app"><div class="empty">Loading…</div></div>
 <script>
-let open = null, data = null, typing = false;
+let open = null, data = null, typing = false, ws = '';
+try { ws = localStorage.getItem('ws') || ''; } catch (e) {}
 const $app = document.getElementById('app');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const api = (path, body) => fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json', 'x-switchdesk': '1' }, body: JSON.stringify(body) } : {}).then((r) => r.json());
@@ -148,13 +176,27 @@ function render() {
   const c = open && data.chats.find((x) => x.id === open);
   if (!c) {
     open = null;
-    const list = data.chats.map((c) => '<div class="card" data-open="' + esc(c.id) + '"><div class="row"><span class="title">' + esc(c.title) + '</span>' + pill(c) + '</div><div class="meta">' + esc(c.agent) + (c.folder ? ' · ' + esc(c.folder) : '') + '</div>' + (c.last ? '<div class="last">' + esc(c.last) + '</div>' : '') + '</div>' + c.asks.map((a) => askCard(c, a)).join('')).join('');
-    $app.innerHTML = '<h1>Switchdesk<small>' + esc(data.computer) + '</small></h1>' + (list || '<div class="empty">No chats open.</div>') + '<form data-new="1"><textarea rows="1" placeholder="Start a new chat…"></textarea><button class="primary">Send</button></form>';
+    const spaces = data.workspaces || [];
+    if (ws && !spaces.some((x) => x.id === ws)) ws = '';
+    const tabs = spaces.length > 1 ? '<div class="tabs"><button class="tab' + (ws ? '' : ' on') + '" data-ws="">All</button>' + spaces.map((x) => '<button class="tab' + (ws === x.id ? ' on' : '') + '" data-ws="' + esc(x.id) + '">' + esc(x.name) + (x.waiting ? '<span class="dot"></span>' : '') + '</button>').join('') + '</div>' : '';
+    const pick = !ws && spaces.length > 1 ? '<select name="ws">' + spaces.map((x) => '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>').join('') + '</select>' : '';
+    const list = data.chats.filter((c) => !ws || c.workspace === ws).map((c) => '<div class="card" data-open="' + esc(c.id) + '"><div class="row"><span class="title">' + esc(c.title) + '</span>' + pill(c) + '</div><div class="meta">' + esc(c.agent) + (c.folder ? ' · ' + esc(c.folder) : '') + '</div>' + (c.last ? '<div class="last">' + esc(c.last) + '</div>' : '') + '</div>' + c.asks.map((a) => askCard(c, a)).join('')).join('');
+    $app.innerHTML = '<h1><img class="logo" src="/icon-192.png" alt="">Switchdesk<small>' + esc(data.computer) + '</small></h1>' + homeTip() + tabs + (list || '<div class="empty">No chats here yet.</div>') + '<form data-new="1">' + pick + '<textarea rows="1" placeholder="Start a new chat' + (ws ? ' in ' + esc((spaces.find((x) => x.id === ws) || {}).name) : '') + '…"></textarea><button class="primary">Send</button></form>';
     return;
   }
   const msgs = c.messages.map((m) => '<div class="msg ' + m.role + '">' + (m.role === 'agent' ? '<div class="who">' + esc(c.agent) + '</div>' : '') + esc(m.text) + '</div>').join('');
   $app.innerHTML = '<h1><button class="back" data-back="1">‹ Chats</button><span class="title">' + esc(c.title) + '</span>' + pill(c) + '</h1><div class="meta">' + esc(c.agent) + (c.folder ? ' · ' + esc(c.folder) : '') + '</div>' + msgs + c.asks.map((a) => askCard(c, a)).join('') + '<form data-chat="' + esc(c.id) + '"><textarea rows="1" placeholder="' + (c.busy ? 'Queue a message…' : 'Message ' + esc(c.agent) + '…') + '"></textarea><button class="primary">Send</button></form>';
   if (c.messages.length && !render.scrolled) (render.scrolled = true), window.scrollTo(0, document.body.scrollHeight);
+}
+// Until it's on the home screen: how to put it there.
+function homeTip() {
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let hidden = false;
+  try { hidden = localStorage.getItem('tip') === 'no'; } catch (e) {}
+  if (installed || hidden) return '';
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const how = ios ? 'Tap the Share button, then <b style="display:inline">Add to Home Screen</b>.' : 'Tap the <span aria-hidden="true">⋮</span> menu, then <b style="display:inline">Add to Home screen</b>.';
+  return '<div class="card tip"><img class="logo" src="/icon-192.png" alt=""><div><b>Put Switchdesk on your home screen</b>' + how + (ios ? ' If it asks you to sign in when you open it, type a new code from Settings → Phone.' : '') + '</div><button data-tip="1" aria-label="Hide">✕</button></div>';
 }
 async function refresh() {
   try { data = await api('/api/state'); } catch (e) { data = { error: "Can't reach Switchdesk. Is your computer awake and on the same network?" }; }
@@ -163,8 +205,10 @@ async function refresh() {
 document.addEventListener('focusin', (e) => { if (e.target.tagName === 'TEXTAREA') typing = true; });
 document.addEventListener('focusout', (e) => { if (e.target.tagName === 'TEXTAREA' && !e.target.value) typing = false; });
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-open],[data-back],[data-choice]');
+  const t = e.target.closest('[data-open],[data-back],[data-choice],[data-ws],[data-tip]');
   if (!t) return;
+  if (t.dataset.tip) { try { localStorage.setItem('tip', 'no'); } catch (e) {} return render(); }
+  if ('ws' in t.dataset) { ws = t.dataset.ws; try { localStorage.setItem('ws', ws); } catch (e) {} return render(); }
   if (t.dataset.open) { open = t.dataset.open; render.scrolled = false; return render(); }
   if (t.dataset.back) { open = null; return render(); }
   if (t.dataset.choice) { t.disabled = true; const r = await api('/api/answer', { chat: t.dataset.chat, card: t.dataset.card, choice: t.dataset.choice }); if (r.error) alert(r.error); refresh(); }
@@ -174,7 +218,8 @@ document.addEventListener('submit', async (e) => {
   const f = e.target, box = f.querySelector('textarea'), text = box.value.trim();
   if (!text) return;
   f.querySelector('button').disabled = true;
-  const r = f.dataset.new ? await api('/api/new', { text }) : await api('/api/send', { chat: f.dataset.chat, text });
+  const sel = f.querySelector('select');
+  const r = f.dataset.new ? await api('/api/new', { text, workspace: sel ? sel.value : ws }) : await api('/api/send', { chat: f.dataset.chat, text });
   typing = false;
   if (r.error) alert(r.error);
   if (r.chat) open = r.chat;

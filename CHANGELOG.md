@@ -2,6 +2,12 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.0
+
+- **Every window on your phone.** Your phone now shows the chats from every Switchdesk window, with a tab for each folder (a dot marks one that needs you). Start a new chat in any of them from the phone.
+- **Opening Switchdesk again opens a new window** in the one that's already running, instead of a second copy of the app. All your windows share one phone view, one set of settings and one usage count.
+- **Switchdesk on your home screen.** The phone page has Switchdesk's icon and name, opens full screen from the home screen, and shows how to add it until you have.
+
 ## 0.33.1
 
 - **Sign your phone in without the camera.** Settings → Phone now shows the address to open and a six-digit code to type on your phone, as well as the QR code. A code works once, for 10 minutes, and stops working after five wrong tries.

@@ -935,7 +935,8 @@ appTest('Auto picks the agent with the most room, and moves on when one runs out
 
 test('your phone signs in with the QR code, answers what an agent waits on, and sends messages', { timeout: 120000 }, async () => {
   const p = profile();
-  const { app, w, errors } = await launch(p, project(), { SWITCHDESK_PHONE_HOST: '127.0.0.1' });
+  const dir = project();
+  const { app, w, errors } = await launch(p, dir, { SWITCHDESK_PHONE_HOST: '127.0.0.1' });
   try {
     await w.evaluate(() => openSettings('phone'));
     await w.click('.settings-body label:has-text("Let my phone check in") input');
@@ -946,6 +947,12 @@ test('your phone signs in with the QR code, answers what an agent waits on, and 
     assert.equal((await fetch(base + '/')).status, 403);
     assert.equal((await fetch(base + '/api/state')).status, 403);
     assert.equal((await fetch(base + '/?t=wrong', { redirect: 'manual' })).status, 403);
+    // It goes on the home screen with Switchdesk's name and icon.
+    const manifest = await (await fetch(base + '/manifest.webmanifest')).json();
+    assert.equal(manifest.name, 'Switchdesk');
+    assert.equal(manifest.display, 'standalone');
+    for (const icon of [...manifest.icons.map((i) => i.src), '/icon-180.png']) assert.equal((await fetch(base + icon)).headers.get('content-type'), 'image/png');
+    assert.match(await (await fetch(base + '/')).text(), /apple-touch-icon/);
     // Or type the code Settings shows: a wrong one fails, the right one signs in once.
     await w.waitForSelector('.phone-code', { timeout: 10000 });
     const code = (await w.$eval('.phone-code', (e) => e.textContent)).replace(/\D/g, '');
@@ -992,9 +999,37 @@ test('your phone signs in with the QR code, answers what an agent waits on, and 
     const n = await post('/api/new', { text: 'a new one from the bus' });
     assert.ok(n.chat);
     await until(w, () => chats.length === 2 && /a new one from the bus/.test(activeChat().el.innerText));
+    // Every window is there, chats or not, and a chat can start in any of them.
+    const other = project();
+    const [w2] = await Promise.all([app.waitForEvent('window'), w.evaluate((d) => desk.newWindow(d), other)]);
+    await w2.waitForFunction(() => typeof chats !== 'undefined' && chats.length && state.folder, null, { timeout: 30000 });
+    const spaces = (await get()).workspaces;
+    assert.deepEqual(spaces.map((x) => x.name).sort(), [path.basename(dir), path.basename(other)].sort());
+    const there = spaces.find((x) => x.name === path.basename(other));
+    const started = await post('/api/new', { text: 'over in the other folder', workspace: there.id });
+    assert.ok(started.chat.startsWith(there.id + ':'));
+    await until(w2, () => /over in the other folder/.test(activeChat().el.innerText));
+    assert.ok((await get()).chats.some((c) => c.workspace === there.id && /over in the other folder/.test(c.title)));
     // Turning it off closes the page.
     await w.evaluate(() => desk.phone.set(false));
     await assert.rejects(fetch(base + '/api/state', { headers: { cookie } }));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test('opening Switchdesk again opens a window in the one that is running', { timeout: 120000 }, async () => {
+  const p = profile();
+  const { app, w, errors } = await launch(p, project());
+  try {
+    const exe = require('electron');
+    const root = path.join(__dirname, '..');
+    const again = require('child_process').spawn(exe, [root, '--no-sandbox'], { env: { ...process.env, HOME: p.home, SWITCHDESK_USER_DATA: p.userData } });
+    const [win, code] = await Promise.all([app.waitForEvent('window', { timeout: 30000 }), new Promise((r) => again.on('exit', r))]);
+    assert.equal(code, 0, 'the second copy hands over and closes');
+    await win.waitForFunction(() => typeof chats !== 'undefined' && chats.length, null, { timeout: 30000 });
+    assert.equal(app.windows().length, 2);
     assert.deepEqual(errors, []);
   } finally {
     await app.close().catch(() => {});
