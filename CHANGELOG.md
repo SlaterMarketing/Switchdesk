@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.1
+
+- **A chat started with no folder open now carries on when you open one.** Before, opening a folder cleared it. Now the conversation stays in its tab, and the agent gets everything so far with your next message, so it can pick up the work in that folder.
+
 ## 0.34.0
 
 - **Every window on your phone.** Your phone now shows the chats from every Switchdesk window, with a tab for each folder (a dot marks one that needs you). Start a new chat in any of them from the phone.

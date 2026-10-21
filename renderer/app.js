@@ -465,6 +465,9 @@ async function setFolder(info) {
   if (!info) return;
   // The folder is already open in another window, which has come to the front.
   if (info.elsewhere) return toast(`${info.name} is open in another window.`);
+  // Chats started with no folder open carry on in the folder: the agent gets the conversation so
+  // far with the next message, since its old conversation belongs to the folder-less one.
+  const carry = !state.folder ? chats.filter((c) => !isPristine(c) && handOverInPlace(c, `This conversation started before a folder was open. The user has now opened ${info.name} (${info.root}), and you're carrying on there. Here's the conversation so far.`, `Carrying on in ${info.name}. ${agentLabel(c)} gets the conversation so far with your next message.`)) : [];
   restoringWorkspace = true;
   try {
     state.folder = info;
@@ -478,6 +481,15 @@ async function setFolder(info) {
     closeAllChats();
     await loadAccounts(); // the folder may use a different account
     await restoreWorkspace(info.key || info.root);
+    if (carry.length) {
+      for (const c of [...chats]) if (isPristine(c)) (c.el.remove(), chats.splice(chats.indexOf(c), 1));
+      for (const c of carry) {
+        chats.push(c);
+        $('#messages-host').append(c.el);
+      }
+      switchChat(carry[carry.length - 1].id);
+      renderChatTabs();
+    }
     schedulesFolderOpened();
     githubFolderOpened();
   } finally {

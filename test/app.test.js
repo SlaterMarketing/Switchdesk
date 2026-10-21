@@ -1035,3 +1035,28 @@ test('opening Switchdesk again opens a window in the one that is running', { tim
     await app.close().catch(() => {});
   }
 });
+
+test('a chat started with no folder carries on when you open one', { timeout: 120000 }, async () => {
+  const p = profile();
+  const { app, w, errors } = await launch(p, null);
+  try {
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'remember the word pineapple');
+    await idle(w);
+    const dir = project();
+    await w.evaluate((f) => desk.openFolder(f).then(setFolder), dir);
+    await w.waitForSelector('.tree-row', { timeout: 30000, state: 'attached' });
+    assert.equal(await w.evaluate(() => chats.length), 1);
+    const text = await w.evaluate(() => activeChat().el.innerText);
+    assert.match(text, /remember the word pineapple/, 'the conversation is still there');
+    assert.match(text, /Carrying on in /);
+    await sendMessage(w, 'what was the word?');
+    await idle(w);
+    const sent = prompts(p, 'cursor').pop();
+    assert.match(sent, /pineapple/, 'the agent gets the conversation so far');
+    assert.match(sent, new RegExp(path.basename(dir)));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
