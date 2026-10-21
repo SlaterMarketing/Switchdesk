@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.3
+
+- **Scroll up to read while the agent works.** New messages no longer pull you back to the bottom while you're reading further up. A **↓ Latest** button appears instead, and the chat follows along again once you're back at the end. Sending a message still takes you to the end.
+
 ## 0.34.2
 
 - **Skip all permission prompts can now skip everything.** With prompts skipped, commands in "Always ask first" (rm -rf, git push --force and so on) still asked. That's still the default, but a new switch under Skip all turns those off too, and a prompt from one of those rules now offers "Allow, and stop asking about …".

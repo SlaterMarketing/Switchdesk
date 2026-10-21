@@ -29,6 +29,7 @@ async function init() {
   wireBoard();
   wireSearch();
   wireAgents();
+  wireChatScroll();
   wirePhone();
   wireDeskView();
   $('#status-limit').addEventListener('click', () => openSettings('usage'));

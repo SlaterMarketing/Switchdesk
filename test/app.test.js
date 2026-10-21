@@ -1073,3 +1073,28 @@ appTest('an always-ask prompt can stop asking about its rule', async ({ w }) => 
   assert.deepEqual(await w.evaluate(() => state.settings.permissions.ask), ['rm -rf']);
   assert.deepEqual(await w.evaluate(() => state.settings.permissions.allow || []), [], 'no allow rules were added');
 });
+
+appTest('scrolling up to read stays put while new messages arrive', async ({ w }) => {
+  await chatWith(w, 'cursor');
+  const host = () => w.evaluate(() => { const el = $('#messages-host'); return { top: el.scrollTop, gap: el.scrollHeight - el.scrollTop - el.clientHeight, jump: !$('#jump-latest').classList.contains('hidden') }; });
+  await w.evaluate(() => { for (let i = 0; i < 80; i++) appendChat(h('div', { class: 'notice' }, `line ${i}`)); });
+  assert.ok((await host()).gap < 5, 'following along at the end');
+  const box = await (await w.$('#messages-host')).boundingBox();
+  await w.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await w.mouse.wheel(0, -1500);
+  await w.waitForTimeout(300);
+  const reading = await host();
+  assert.ok(reading.gap > 200, 'scrolled up');
+  await w.evaluate(() => appendChat(h('div', { class: 'notice' }, 'something new')));
+  const after = await host();
+  assert.equal(after.top, reading.top, "a new message doesn't pull you down");
+  assert.ok(after.jump, 'a button offers the latest');
+  await w.click('#jump-latest');
+  assert.ok((await host()).gap < 5);
+  // Sending your own message always goes to the end.
+  await w.mouse.wheel(0, -1500);
+  await w.waitForTimeout(300);
+  await sendMessage(w, 'hello');
+  await idle(w);
+  assert.ok((await host()).gap < 5);
+});

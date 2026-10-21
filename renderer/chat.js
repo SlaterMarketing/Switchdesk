@@ -188,17 +188,39 @@ function newChat() {
   $('#input').focus();
 }
 
+// New messages keep the chat at its latest, unless you've scrolled up to read: then it stays where
+// you are, and a button takes you back down. Sending a message or switching chats goes to the end.
 function scrollChat(chat, force) {
   const el = $('#messages-host');
   if (chat && chat.id !== activeChatId) return;
-  if (force || el.scrollHeight - el.scrollTop - el.clientHeight < 140) el.scrollTop = el.scrollHeight;
+  if (force && chat) chat.readingBack = false;
+  if (force || !(chat && chat.readingBack)) el.scrollTop = el.scrollHeight;
+  else $('#jump-latest').classList.remove('hidden');
+  if (force || !(chat && chat.readingBack)) $('#jump-latest').classList.add('hidden');
+}
+
+function wireChatScroll() {
+  const el = $('#messages-host');
+  let last = 0;
+  el.addEventListener('scroll', () => {
+    const chat = activeChat();
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Moving up means reading back; reaching the end again means following along.
+    if (chat && el.scrollTop < last - 2 && gap > 40) chat.readingBack = true;
+    else if (chat && gap < 40) {
+      chat.readingBack = false;
+      $('#jump-latest').classList.add('hidden');
+    }
+    last = el.scrollTop;
+  });
+  $('#jump-latest').addEventListener('click', () => scrollChat(activeChat(), true));
 }
 
 function appendChat(node, chat = activeChat()) {
   const empty = $('.empty-chat', chat.el);
   if (empty) empty.remove();
   chat.el.append(node);
-  scrollChat(chat, true);
+  scrollChat(chat);
   return node;
 }
 
@@ -554,6 +576,7 @@ function startTurn(chat, shown, mode, images, rwText) {
     ),
     chat
   );
+  scrollChat(chat, true); // your own message: back to the end
   chat.turn = {
     bubble,
     mode,

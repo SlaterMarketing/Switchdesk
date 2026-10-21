@@ -1005,3 +1005,6 @@ body.desk .code-intro { display: none; }
 .phone-url { user-select: all; }
 .phone-pair { margin: 8px 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .phone-code { font: 600 20px ui-monospace, monospace; letter-spacing: 2px; }
+#composer { position: relative; }
+.jump-latest { position: absolute; top: -44px; left: 50%; transform: translateX(-50%); z-index: 5; border: 1px solid var(--border); background: var(--bg-elev, var(--bg)); color: var(--text-strong); border-radius: 99px; padding: 6px 14px; font-size: 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+.jump-latest:hover { background: var(--bg-hover); }
