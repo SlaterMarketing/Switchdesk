@@ -1060,3 +1060,16 @@ test('a chat started with no folder carries on when you open one', { timeout: 12
     await app.close().catch(() => {});
   }
 });
+
+appTest('an always-ask prompt can stop asking about its rule', async ({ w }) => {
+  await w.evaluate(async () => (state.settings = await desk.setSettings({ permissions: { skipAll: true, ask: ['ls', 'rm -rf'] } })));
+  await chatWith(w, 'cursor', 'plan');
+  await sendMessage(w, 'plan it');
+  await w.waitForSelector('.card.approval:not(.resolved)', { timeout: 30000 });
+  const buttons = await w.$$eval('.card.approval:not(.resolved) button', (b) => b.map((x) => x.textContent));
+  assert.deepEqual(buttons, ['Allow', 'Allow, and stop asking about "ls"', 'Deny']);
+  await w.click('.card.approval button:has-text("stop asking")');
+  await w.waitForSelector('.card.plan', { timeout: 30000 });
+  assert.deepEqual(await w.evaluate(() => state.settings.permissions.ask), ['rm -rf']);
+  assert.deepEqual(await w.evaluate(() => state.settings.permissions.allow || []), [], 'no allow rules were added');
+});

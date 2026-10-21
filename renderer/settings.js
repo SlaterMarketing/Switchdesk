@@ -179,7 +179,8 @@ async function settingsPermissions(body) {
     h(
       'div',
       { class: 'set-box' },
-      toggle('skipAll', 'Skip all permission prompts', 'Every agent runs commands, edits files and fetches pages without asking, like --dangerously-skip-permissions. Codex also leaves its folder sandbox. Blocked commands below are still refused.', 'Agents will run any command and change any file without asking you first. Blocked commands are still refused. Turn this on?'),
+      toggle('skipAll', 'Skip all permission prompts', 'Every agent runs commands, edits files and fetches pages without asking, like --dangerously-skip-permissions. Codex also leaves its folder sandbox. Blocked commands below are still refused, and "Always ask first" commands still ask unless you turn that off too.', 'Agents will run any command and change any file without asking you first. Blocked commands are still refused. Turn this on?'),
+      pol.skipAll ? toggle('skipAsk', 'Don’t ask about "Always ask first" commands either', 'Nothing asks at all, not even rm -rf or git push --force. Blocked commands are still refused.', 'Agents will run rm -rf, git push --force and the rest of "Always ask first" without asking you. Turn this on?') : null,
       toggle('commands', 'Run any command without asking', 'Every command is allowed except the blocked ones.'),
       toggle('edits', 'Edit files without asking', 'Only files inside the open folders. Edits elsewhere still ask.'),
       toggle('web', 'Fetch web pages and search without asking', '')

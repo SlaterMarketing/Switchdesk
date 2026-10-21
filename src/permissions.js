@@ -5,8 +5,8 @@
 //   skipAll  answer yes to everything else, without asking
 //   commands run any command        edits  edit and read files in the open folders
 //   web      fetch pages and search   allow  commands (and tools) that are always fine
-//   ask      commands that always ask you first, whatever else says yes: prompts skipped, any
-//            command allowed, an allow rule, or the agent in Auto mode
+//   ask      commands that always ask you first, whatever else says yes: prompts skipped (unless
+//            skipAsk says not then too), any command allowed, an allow rule, or the agent in Auto mode
 'use strict';
 
 // Commands that can't be taken back. renderer/settings.js shows the same list.
@@ -19,15 +19,44 @@ const WEB = new Set(['WebFetch', 'WebSearch']);
 // Tools that are questions for the user, not permissions: always shown.
 const ALWAYS_ASK = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
-const policyOf = (settings) => ({ ...DEFAULTS, ...((settings && settings.permissions) || {}) });
+const policyOf = (settings) => {
+  const pol = { ...DEFAULTS, ...((settings && settings.permissions) || {}) };
+  // Skipping prompts and choosing not to be asked even about these: then nothing asks.
+  if (pol.skipAll && pol.skipAsk) pol.ask = [];
+  return pol;
+};
 
-// A command line split into the commands it runs, so `ok && rm -rf /` can't ride on `ok`.
+// A shell reads its commands from a here-document (`bash <<EOF`); anything else reads text.
+const SHELLS = /^(bash|sh|zsh|dash|ksh|fish|pwsh|powershell|ssh|sudo bash|sudo sh)\b/;
+
+// A command line split into the commands it runs, so `ok && rm -rf /` can't ride on `ok`. The
+// text of a here-document (`cat > f <<'EOF' … EOF`) isn't commands, unless it goes to a shell.
 function splitCommand(cmd) {
   const parts = [];
   let cur = '';
   let quote = null;
+  let heredoc = null; // { end, tabs, shell } once `<<WORD` is seen on this line
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i];
+    if (!quote && c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      const m = /^<<(-?)\s*(['"]?)([\w.-]+)\2/.exec(cmd.slice(i));
+      if (m) {
+        heredoc = { end: m[3], tabs: !!m[1], shell: SHELLS.test(cur.trim().replace(/^.*[|;&]\s*/, '')) };
+        i += m[0].length - 1;
+        continue;
+      }
+    }
+    if (!quote && c === '\n' && heredoc) {
+      const lines = cmd.slice(i + 1).split('\n');
+      const at = lines.findIndex((l) => (heredoc.tabs ? l.replace(/^\t+/, '') : l).trim() === heredoc.end);
+      const body = (at < 0 ? lines : lines.slice(0, at)).join('\n');
+      parts.push(cur);
+      cur = '';
+      if (heredoc.shell) parts.push(...splitCommand(body));
+      i += body.length + 1 + (at < 0 ? 0 : lines[at].length);
+      heredoc = null;
+      continue;
+    }
     if (quote) {
       if (c === quote) quote = null;
       else if (c === '\\' && quote === '"') cur += cmd[i++] || '';
@@ -138,4 +167,21 @@ const claudeAskRules = (settings) =>
     .filter((r) => r && !r.includes('*') && !/[()]/.test(r))
     .map((r) => `Bash(${r}:*)`);
 
-module.exports = { SHELL_TOOLS: SHELL, DEFAULTS, ASK_DEFAULTS, policyOf, decide, splitCommand, matches, looksOnly, claudeAskRules };
+// What "Always allow" saves for a command: one rule per program it runs ("npm test", "git"), and
+// never one for a program that deletes or can't be undone, which would allow it with any arguments.
+const NEVER_ALLOW = /^(rm|rmdir|del|erase|rd|Remove-Item|ri|dd|mkfs\S*|shred|format|chmod|chown|kill|killall|pkill|curl|wget|iex|Invoke-Expression|eval|exec|xargs|git (push|reset|clean|checkout|rebase))$/i;
+function allowRulesFor(cmd) {
+  const rules = new Set();
+  for (const p of splitCommand(String(cmd || ''))) {
+    const words = p.split(/\s+/);
+    // A program's name: no quotes, brackets or other punctuation that only turns up in text.
+    if (!/^[\w][\w./\\:-]*$/.test(words[0]) || /^(EOF|import|export|const|let|var|function|await|return|if|then|else|fi|do|done)$/.test(words[0])) continue;
+    const rule = words[1] && /^[a-z][\w:-]*$/i.test(words[1]) ? `${words[0]} ${words[1]}` : words[0];
+    if (!NEVER_ALLOW.test(rule) && !NEVER_ALLOW.test(words[0])) rules.add(rule);
+  }
+  return [...rules];
+}
+// Rules "Always allow" saved before it understood here-documents: lines of code, not programs.
+const junkRule = (r) => /^\S+:(\s|$)/.test(r.trim()) || !/^[\w][\w./\\:-]*( [\w][\w:.-]*)?( \*)?$/.test(r.trim()) || /^(EOF|import|export|const|let|var|function|await|return|console\.\S*|rm)\b/.test(r.trim());
+
+module.exports = { SHELL_TOOLS: SHELL, DEFAULTS, ASK_DEFAULTS, policyOf, decide, splitCommand, matches, looksOnly, claudeAskRules, allowRulesFor, junkRule };

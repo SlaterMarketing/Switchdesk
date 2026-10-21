@@ -793,7 +793,13 @@ function approvalKey(toolName, input) {
 
 
 // What "Always allow" saves for every agent: a command rule, or one of the broad switches.
-function sharedAllowRule(toolName, input) {
+function sharedAllowRule(toolName, input, suggested) {
+  if (isShell(toolName) && suggested) {
+    // Worked out by Switchdesk (permissions.js), which knows quotes, here-documents and risky programs.
+    if (!suggested.length) return { rules: [], label: '', done: '' };
+    const shown = suggested.map((r) => `"${r}"`).join(', ');
+    return { rules: suggested, label: `Always allow ${shown}`, done: `Every agent can now run ${shown} without asking` };
+  }
   if (isShell(toolName)) {
     // One rule per command in a chain, so "make && make test" is allowed next time as a whole.
     const parts = (input.command || '').split(/&&|\|\||[;|\n]/).map((p) => p.trim().replace(/^(sudo|env|time|nohup)\s+/, '')).filter(Boolean);
@@ -862,14 +868,34 @@ function handleApproval(req) {
     $('.actions', card).replaceChildren(h('span', { class: 'resolution' }, text));
   };
   // "Always allow" saves a Switchdesk rule, so every agent gets it, not just this one.
-  const shared = sharedAllowRule(toolName, input);
+  const shared = sharedAllowRule(toolName, input, req.allowRules);
   const alwaysLabel = shared.label;
+  // An always-ask rule asked: allowing the command's programs wouldn't stop it asking, so the
+  // choice is to stop asking about that rule.
+  const stopAsking = req.askRule
+    ? h(
+        'button',
+        {
+          class: 'btn small',
+          title: 'Removes it from "Always ask first" in Settings → Permissions',
+          onclick: async () => {
+            const pol = { ...(state.settings.permissions || {}) };
+            const ask = (pol.ask || ASK_DEFAULTS).filter((r) => r !== req.askRule);
+            state.settings = await desk.setSettings({ permissions: { ...pol, ask } });
+            allow();
+            resolve(`Allowed. Switchdesk won't ask about "${req.askRule}" again (Settings → Permissions).`);
+          },
+        },
+        `Allow, and stop asking about "${req.askRule}"`
+      )
+    : null;
   card.append(
     h(
       'div',
       { class: 'actions' },
       h('button', { class: 'btn small primary', onclick: () => (allow(), resolve('Allowed')) }, 'Allow'),
-      h(
+      stopAsking,
+      req.askRule || !alwaysLabel ? null : h(
         'button',
         {
           class: 'btn small',

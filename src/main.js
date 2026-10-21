@@ -74,6 +74,16 @@ function loadSettings() {
   } catch {
     /* first run */
   }
+  // Older versions saved lines of code (from here-documents) and bare "rm" as allowed commands.
+  const allow = settings.permissions && settings.permissions.allow;
+  if (Array.isArray(allow) && !settings.permissions.cleaned) {
+    settings.permissions = { ...settings.permissions, allow: allow.filter((r) => !permissions.junkRule(r)), cleaned: 1 };
+    try {
+      saveSettings();
+    } catch {
+      /* read-only for now */
+    }
+  }
 }
 function saveSettings() {
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
@@ -911,7 +921,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
         // Other agents asked in Auto mode only because of the always-ask rules (holdAuto): the rest is yes.
         const autoApprove = chat.mode === 'auto' && agent !== 'claude' && chat.session.holdAuto;
         const auto = permissions.decide(settings, req, { mode: chat.mode, inWorkspace: inFolders, autoApprove });
-        if (auto && auto.behavior === 'ask') req = { ...req, description: `It matches your always-ask rule "${auto.rule}" (Settings → Permissions).` };
+        if (auto && auto.behavior === 'ask') req = { ...req, askRule: auto.rule, description: `It matches your always-ask rule "${auto.rule}" (Settings → Permissions).` };
         else if (auto) {
           if (auto.behavior === 'deny' && auto.rule) {
             const what = permissions.SHELL_TOOLS.has(req.toolName) ? `\`${String(req.input.command || '').slice(0, 200)}\`` : req.toolName;
@@ -921,7 +931,8 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
         }
         const reqId = crypto.randomUUID();
         chat.approvals.set(reqId, resolve);
-        sendTo(ctx, 'approval-request', { chatId, reqId, toolName: req.toolName, input: req.input, description: req.description });
+        const allowRules = permissions.SHELL_TOOLS.has(req.toolName) ? permissions.allowRulesFor(req.input && (req.input.command || req.input.cmd)) : undefined;
+        sendTo(ctx, 'approval-request', { chatId, reqId, toolName: req.toolName, input: req.input, description: req.description, askRule: req.askRule, allowRules });
       }),
     onExit: async ({ code, stderr }) => {
       denyPending(chat, 'Claude Code stopped.');

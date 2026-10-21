@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.2
+
+- **Skip all permission prompts can now skip everything.** With prompts skipped, commands in "Always ask first" (rm -rf, git push --force and so on) still asked. That's still the default, but a new switch under Skip all turns those off too, and a prompt from one of those rules now offers "Allow, and stop asking about …".
+- **Always allow no longer saves lines of code as commands.** A command that wrote a file with a here-document (`cat > file <<'EOF' …`) was read line by line, so Always allow saved things like "import" and "const p", and could save "rm", which would allow any rm without asking. Here-documents are now read as text, and Always allow never saves a rule for rm and other commands that delete or can't be undone. Rules like these already saved are removed when you update.
+
 ## 0.34.1
 
 - **A chat started with no folder open now carries on when you open one.** Before, opening a folder cleared it. Now the conversation stays in its tab, and the agent gets everything so far with your next message, so it can pick up the work in that folder.
