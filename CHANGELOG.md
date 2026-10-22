@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.4
+
+- **Claude's questions explain their options.** Each option now shows what it means under its name, instead of only on hover, so "Both" says both of what. Questions that take several answers let you pick several, and the card shows what you answered.
+- Empty "Thought for a moment" blocks are gone. Those were thinking the model keeps to itself, so there was nothing to open. The empty AskUserQuestion row above a question is gone too.
+
 ## 0.34.3
 
 - **Scroll up to read while the agent works.** New messages no longer pull you back to the bottom while you're reading further up. A **↓ Latest** button appears instead, and the chat follows along again once you're back at the end. Sending a message still takes you to the end.

@@ -778,7 +778,9 @@ function handleStream(chat, turn, e) {
         /* finalized by the full assistant message */
       }
     } else if (b && b.kind === 'thinking') {
-      $('summary', b.el).textContent = 'Thought for a moment';
+      // Thinking the model keeps to itself arrives with no words: nothing to show.
+      if (!b.text.trim()) b.el.remove();
+      else $('summary', b.el).textContent = 'Thought for a moment';
     } else if (b && b.kind === 'text') {
       renderMarkdown(b.el, b.text);
     }
@@ -1095,37 +1097,60 @@ function planCard(chat, input, allow, deny, turnArg) {
   notifyAttention(chat);
 }
 
+// Claude's AskUserQuestion: each question with its options and what each one means, so the
+// choice makes sense without hovering. multiSelect questions take several.
 function questionCard(chat, input, deny) {
   const questions = input.questions || [];
-  const answers = new Map();
-  const card = h('div', { class: 'card approval' }, h('h4', {}, 'Claude has a question'));
+  const answers = new Map(); // question -> Set of chosen labels
+  const typed = new Map(); // question -> what you typed instead
+  const card = h('div', { class: 'card approval question' }, h('h4', {}, `${agentLabel(chat)} has ${questions.length > 1 ? 'some questions' : 'a question'}`));
   for (const q of questions) {
-    const other = h('input', { type: 'text', placeholder: 'Or type an answer' });
-    other.addEventListener('input', () => answers.set(q.question, other.value));
+    const picked = new Set();
+    answers.set(q.question, picked);
+    const other = h('input', { type: 'text', placeholder: q.multiSelect ? 'Or add your own answer' : 'Or type your own answer' });
+    other.addEventListener('input', () => typed.set(q.question, other.value.trim()));
     const opts = (q.options || []).map((o) =>
       h(
         'button',
         {
-          class: 'btn small',
-          title: o.description || '',
+          class: 'q-option',
           onclick: (e) => {
-            answers.set(q.question, o.label);
-            for (const b of e.target.parentElement.querySelectorAll('button')) b.classList.remove('primary');
-            e.target.classList.add('primary');
+            const btn = e.currentTarget;
+            if (q.multiSelect) picked.has(o.label) ? picked.delete(o.label) : picked.add(o.label);
+            else {
+              picked.clear();
+              picked.add(o.label);
+              for (const b of btn.parentElement.querySelectorAll('.q-option')) b.classList.remove('chosen');
+            }
+            btn.classList.toggle('chosen', picked.has(o.label));
           },
         },
-        o.label
+        h('b', {}, o.label),
+        o.description ? h('span', { class: 'q-desc' }, o.description) : null
       )
     );
-    card.append(h('div', { style: 'margin:6px 0' }, h('div', {}, q.question), h('div', { class: 'actions', style: 'margin-top:6px' }, ...opts), other));
+    card.append(
+      h(
+        'div',
+        { class: 'q-block' },
+        q.header ? h('div', { class: 'q-header' }, q.header) : null,
+        h('div', { class: 'q-text' }, q.question),
+        q.multiSelect ? h('div', { class: 'muted small' }, 'Pick any that apply.') : null,
+        h('div', { class: 'q-options' }, ...opts),
+        other
+      )
+    );
   }
   const submit = h('button', { class: 'btn small primary' }, 'Answer');
   submit.addEventListener('click', () => {
-    const text = [...answers].map(([q, a]) => `"${q}" → ${a}`).join('\n');
+    const lines = questions.map((q) => {
+      const a = [...answers.get(q.question), ...(typed.get(q.question) ? [typed.get(q.question)] : [])];
+      return [q, a.length ? a.join(', ') : '(no answer)'];
+    });
     // The answer goes back as the tool's result message, which Claude reads.
-    deny(`The user answered your question${questions.length > 1 ? 's' : ''}:\n${text || '(no answer)'}`);
+    deny(`The user answered your question${questions.length > 1 ? 's' : ''}:\n${lines.map(([q, a]) => `"${q.question}" → ${a}`).join('\n')}`);
     card.classList.add('resolved');
-    submit.replaceWith(h('span', { class: 'resolution' }, 'Answered'));
+    submit.replaceWith(h('span', { class: 'resolution' }, `Answered: ${lines.map(([, a]) => a).join(' · ')}`));
   });
   card.append(h('div', { class: 'actions' }, submit));
   appendChat(card, chat);

@@ -1098,3 +1098,26 @@ appTest('scrolling up to read stays put while new messages arrive', async ({ w }
   await idle(w);
   assert.ok((await host()).gap < 5);
 });
+
+appTest("Claude's questions show what each option means, and take several when asked", async ({ w }) => {
+  await w.evaluate(() => {
+    window.__answer = null;
+    questionCard(activeChat(), {
+      questions: [
+        { header: 'Refund', question: 'How do you want to handle this?', options: [{ label: 'Both (Recommended)', description: 'Pay Jennifer now and rework the payout flow.' }, { label: 'Just pay Jennifer', description: 'Only the A$50 refund.' }] },
+        { question: 'Which shops?', multiSelect: true, options: [{ label: 'Comics Lounge' }, { label: 'Kintana' }] },
+      ],
+    }, (m) => (window.__answer = m));
+  });
+  const card = await w.$eval('.card.question', (e) => e.innerText);
+  assert.match(card, /Pay Jennifer now and rework the payout flow\./, 'the explanation is on the card, not only on hover');
+  assert.match(card, /REFUND|Refund/);
+  await w.click('.q-option:has-text("Both")');
+  await w.click('.q-option:has-text("Comics Lounge")');
+  await w.click('.q-option:has-text("Kintana")');
+  await w.click('.card.question button:has-text("Answer")');
+  const a = await w.evaluate(() => window.__answer);
+  assert.match(a, /"How do you want to handle this\?" → Both \(Recommended\)/);
+  assert.match(a, /"Which shops\?" → Comics Lounge, Kintana/);
+  assert.match(await w.$eval('.card.question .resolution', (e) => e.textContent), /Answered: Both \(Recommended\) · Comics Lounge, Kintana/);
+});
