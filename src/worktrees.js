@@ -248,6 +248,36 @@ async function push(io, wt, to, { message, pushUrl, remote = 'origin' } = {}) {
   return { sha: (await git(at, ['rev-parse', 'HEAD'])).trim() };
 }
 
+// Commits everything left in the copy (a long run's finished milestone). committed is false when
+// there was nothing to commit.
+async function commit(io, wt, message) {
+  const at = io.at(wt.root);
+  let committed = false;
+  if ((await git(at, ['status', '--porcelain'])).trim()) {
+    await git(at, ['add', '-A']);
+    await git(at, ['commit', '-q', '--no-verify', '-m', message || 'Changes from Switchdesk'], { env: { GIT_TERMINAL_PROMPT: '0' } });
+    committed = true;
+  }
+  return { sha: (await git(at, ['rev-parse', 'HEAD'])).trim(), committed };
+}
+
+// Moves everything since commit `sha` (committed or not) onto a branch of its own and puts the copy
+// back at `sha`, so a milestone that didn't work out is kept for a look but isn't built on. Returns
+// that branch, or null when there was nothing to move.
+async function setAside(io, wt, name, sha) {
+  const at = io.at(wt.root);
+  const dirty = !!(await git(at, ['status', '--porcelain'])).trim();
+  if (!dirty && (await git(at, ['rev-parse', 'HEAD'])).trim() === sha) return null;
+  const branch = `${wt.branch}-${slugify(name)}-${crypto.randomBytes(2).toString('hex')}`;
+  if (dirty) {
+    await git(at, ['add', '-A']);
+    await git(at, ['commit', '-q', '--no-verify', '-m', `Set aside: ${name}`], { env: { GIT_TERMINAL_PROMPT: '0' } });
+  }
+  await git(at, ['branch', branch, 'HEAD']);
+  await git(at, ['reset', '-q', '--hard', sha]);
+  return branch;
+}
+
 // The copy's latest commit, and whether anything is left uncommitted.
 async function head(io, wt) {
   const at = io.at(wt.root);
@@ -260,7 +290,7 @@ async function exists(io, wt) {
 
 // The functions above, for one place the copies live.
 function bind(io) {
-  const fns = { create, changes, fileDiff, merge, remove, push, head, exists };
+  const fns = { create, changes, fileDiff, merge, remove, push, head, exists, commit, setAside };
   return { isUnder: io.isUnder, ...Object.fromEntries(Object.entries(fns).map(([k, f]) => [k, (...a) => f(io, ...a)])) };
 }
 

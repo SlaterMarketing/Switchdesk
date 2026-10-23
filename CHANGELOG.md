@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.35.0
+
+- **Long runs, for leaving a big job overnight.** Press 🌙 in the chat header and say what you want done. The agent plans it as milestones, each with a "done when", and the plan opens as a document to edit. Press Build it and each milestone runs in a fresh chat, so the work doesn't get worse as one conversation fills up. A second agent checks each one against its "done when", sends it back for fixes if needed, and Switchdesk commits it on the run's own branch. Questions never stop the run: the agent picks what it would recommend and notes the question. Risky commands on your always-ask list are refused rather than left waiting. At a usage limit the run carries on in another agent, or waits for one to reset, and your computer stays awake while it works (keep the lid open and plugged in). In the morning you get a summary of every milestone, commit, question and assumption, with Review and Merge. Nothing is in your folder until you merge.
+
 ## 0.34.7
 
 - **The mode and agent menus stay on screen.** In a narrow chat panel the menus under the composer ran past its right edge and cut off their descriptions. They now slide left and narrow to fit.

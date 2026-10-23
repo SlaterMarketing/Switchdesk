@@ -1,4 +1,4 @@
-/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy, sendToSeveral, secondOpinion, openReplace, openSchedules,
+/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy, sendToSeveral, secondOpinion, openReplace, openSchedules, openLongRuns,
    addSelectionToChat, inlineEdit, toggleTerminal, newTerminal, showSidePanel, openSearch, openSettings, openPreview, toggleTheme, loadHistory,
    agentState, acct, multiAccount, chooseAgent, agentOf, activeChat, chatAccount, isMac, debugCmd, restartDebugging, toggleBreakpoint, activeTab, editor */
 'use strict';
@@ -16,6 +16,7 @@ function paletteCommands() {
     ['Replace in Files', '⌘⇧H', () => openReplace()],
     ['Send to Several Agents…', '', sendToSeveral],
     ['Second Opinion on My Changes…', '', () => secondOpinion()],
+    ['Start a Long Run…', '', () => openLongRuns()],
     ['Scheduled Tasks…', '', () => openSchedules()],
     ['Schedule a Task…', '', () => openSchedules('new')],
     ['New Window', '⌘⇧N', () => desk.newWindow(null)],

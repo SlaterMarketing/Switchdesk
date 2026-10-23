@@ -1143,6 +1143,70 @@ appTest('the composer menus stay inside a narrow chat panel', async ({ w }) => {
   assert.equal(await inside('#agent-menu'), 'inside');
 });
 
+test('a long run plans milestones, works through each in a fresh chat, checks it and commits it', { timeout: 150000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const fs = require('fs');
+  const { execFileSync } = require('child_process');
+  const demo = path.join(p.agentDir, 'demo.json');
+  const block = (tag, o) => '```' + tag + '\n' + JSON.stringify(o) + '\n```';
+  fs.writeFileSync(
+    demo,
+    JSON.stringify([
+      { match: "You're planning a long run", steps: [{ say: 'Two steps.\n\n' + block('milestones', [{ title: 'Write the notes', what: 'Add notes.md.', done_when: 'notes.md exists', after: [] }, { title: 'Write the todo', what: 'Add todo.md.', done_when: 'todo.md lists two items', after: [1] }]) }] },
+      { match: 'Your milestone, 1 of 2', steps: [{ write: { path: 'notes.md', content: '# Notes\n' } }, { say: 'Done.\n\n' + block('milestone', { status: 'done', summary: 'Added notes.md.', questions: [{ question: 'Markdown or text?', assumption: 'Markdown' }], notes: 'Notes live in notes.md.' }) }] },
+      { match: 'The milestone: Write the notes', steps: [{ say: block('verdict', { pass: true, problems: [] }) }] },
+      { match: 'Your milestone, 2 of 2', steps: [{ write: { path: 'todo.md', content: '- one\n' } }, { say: block('milestone', { status: 'done', summary: 'Added todo.md.' }) }] },
+      { match: 'The milestone: Write the todo', steps: [{ say: block('verdict', { pass: false, problems: ['todo.md has one item, not two.'] }) }] },
+      { match: 'Fix these', steps: [{ write: { path: 'todo.md', content: '- one\n- two\n' } }, { say: block('milestone', { status: 'done', summary: 'todo.md has two items now.' }) }] },
+      { match: 'Check it again', steps: [{ say: block('verdict', { pass: true, problems: [] }) }] },
+    ])
+  );
+  const { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
+  try {
+    await w.click('#btn-long-run');
+    await w.fill('.long-run-form textarea', 'Write the notes and the todo list');
+    // Cursor does the work and checks it here.
+    for (const sel of await w.$$('.long-run-form select')) await sel.selectOption({ label: 'Cursor' });
+    await w.click('.long-run-form button:has-text("Plan it")');
+    // The plan opens as a document to edit; Build it starts the run.
+    await w.waitForSelector('#plan-bar button:has-text("Build it")', { timeout: 30000 });
+    assert.match(await w.$eval('#plan-preview', (e) => e.innerText), /Write the notes[\s\S]*Done when: notes.md exists[\s\S]*Write the todo/);
+    await w.click('#plan-bar button:has-text("Build it")');
+    await w.waitForSelector('.card.long-run.summary', { timeout: 90000 });
+    const summary = await w.$eval('.card.long-run.summary', (e) => e.innerText);
+    assert.match(summary, /2 of 2 milestones/);
+    assert.match(summary, /Markdown or text\? Assumed: Markdown/);
+    assert.match(summary, /todo\.md has two items now/);
+    // Each milestone is its own commit on the run's branch, and your folder is untouched.
+    const run = await w.evaluate(() => state.settings.longRuns[0]);
+    assert.equal(run.phase, 'done');
+    assert.equal(run.milestones[1].rounds, 1);
+    const log = execFileSync('git', ['log', '--format=%s', '-3'], { cwd: run.worktree.root, encoding: 'utf8' }).trim().split('\n');
+    assert.deepEqual(log.slice(0, 2), ['Write the todo', 'Write the notes']);
+    assert.equal(fs.readFileSync(path.join(run.worktree.root, 'todo.md'), 'utf8'), '- one\n- two\n');
+    assert.equal(fs.existsSync(path.join(dir, 'notes.md')), false);
+    // Nothing a run's agent asks waits for an answer: questions and risky commands get one at once.
+    const answers = await w.evaluate((id) => {
+      const got = [];
+      const chat = { longRun: { run: id, role: 'work', i: 0 } };
+      const ask = (req) => longRunApproval(chat, req, () => got.push('allow'), (m) => got.push(m));
+      ask({ toolName: 'AskUserQuestion', input: {} });
+      ask({ toolName: 'Bash', input: { command: 'git push --force' }, askRule: 'git push --force' });
+      ask({ toolName: 'Bash', input: { command: 'npm test' } });
+      return got;
+    }, run.id);
+    assert.match(answers[0], /Nobody is around to answer/);
+    assert.match(answers[1], /"git push --force" isn't allowed/);
+    assert.equal(answers[2], 'allow');
+    // The checks' chats closed once their milestone was settled.
+    assert.deepEqual(await w.evaluate(() => chats.filter((c) => c.longRun).map((c) => c.longRun.role)), ['plan', 'work', 'work']);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, project());

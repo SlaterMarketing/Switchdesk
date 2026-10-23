@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('desk', {
   cancelLogin: call('setup:login-cancel'),
   openExternal: call('open-external'),
   dictate: call('dictate'),
+  keepAwake: call('keep-awake'),
   phone: { status: call('phone:status'), set: call('phone:set'), newCode: call('phone:new-code'), tailscaleOnly: call('phone:tailscale-only'), pairCode: call('phone:pair-code'), onRequest: on('phone-request'), answer: call('phone:answer') },
   reportProblem: call('report:problem'),
   onSetupLog: on('setup-log'),
@@ -94,6 +95,8 @@ contextBridge.exposeInMainWorld('desk', {
     forPr: call('worktree:for-pr'),
     push: call('worktree:push'),
     head: call('worktree:head'),
+    commit: call('worktree:commit'),
+    setAside: call('worktree:set-aside'),
   },
   github: {
     status: call('gh:status'),

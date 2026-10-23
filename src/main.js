@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme, screen, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, nativeTheme, screen, safeStorage, powerSaveBlocker } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -1574,6 +1574,23 @@ function registerIpc() {
     return copies(ctx).create(ctx.workspace, name || `pr ${n}`, { rev: sha });
   });
   handle('worktree:head', async (ctx, wt) => copies(ctx).head(await ownCopy(ctx, wt)));
+  handle('worktree:commit', async (ctx, wt, message) => copies(ctx).commit(await ownCopy(ctx, wt), message));
+  handle('worktree:set-aside', async (ctx, wt, name, sha) => copies(ctx).setAside(await ownCopy(ctx, wt), name, sha));
+  // Long runs keep the computer awake while they work. Each window says whether it has one going.
+  const awake = new Set();
+  let awakeId = null;
+  const syncAwake = () => {
+    if (awake.size && awakeId === null) awakeId = powerSaveBlocker.start('prevent-app-suspension');
+    if (!awake.size && awakeId !== null) (powerSaveBlocker.stop(awakeId), (awakeId = null));
+    return awakeId !== null;
+  };
+  handle('keep-awake', (ctx, on) => {
+    const id = ctx.win.id;
+    if (on && !awake.has(id)) ctx.win.once('closed', () => (awake.delete(id), syncAwake()));
+    if (on) awake.add(id);
+    else awake.delete(id);
+    return syncAwake();
+  });
   // headRepo: the fork a pull request comes from, which its fixes are pushed to.
   handle('worktree:push', async (ctx, wt, to, message, headRepo) => {
     const repo = await ghRepo(ctx);

@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
-   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc, renderCompareBar, opinionDone, secondOpinion,
+   activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc, renderCompareBar, opinionDone, secondOpinion, longRunTurnEnded, longRunApproval,
    acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker, agentState, agentStatus, agentInfo, reopenAgentChat */
 'use strict';
 
@@ -724,7 +724,8 @@ function handleEvent(chat, ev) {
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
       if (chat.pr && chat.pr.watch && chat.pr.watch.fixing) prTurnEnded(chat, ev.is_error || !turn || turn.interrupted);
-      if (chat.scheduled) scheduleDone(chat, ev.is_error);
+      if (chat.longRun) longRunTurnEnded(chat, turn, ev);
+      else if (chat.scheduled) scheduleDone(chat, ev.is_error);
       else if (!document.hasFocus()) {
         new Notification('Switchdesk', { body: `${agentLabel(chat)} finished: ${chat.title}` });
         desk.flashWindow();
@@ -854,6 +855,7 @@ function handleApproval(req) {
   const allow = (updatedInput) => answer({ behavior: 'allow', updatedInput: updatedInput || input });
   const deny = (message) => answer({ behavior: 'deny', message: message || 'The user denied this action.' });
 
+  if (chat.longRun && longRunApproval(chat, req, allow, deny)) return;
   if (toolName === 'AskUserQuestion') return questionCard(chat, input, deny);
   if (turn.mode === 'ask') return deny("Ask mode is on, so nothing can be changed. Answer the user's question without modifying files or running commands that change anything.");
   if (toolName === 'ExitPlanMode') return planCard(chat, input, allow, deny);
@@ -1588,9 +1590,12 @@ desk.onChatExit(({ chatId, code, stderr }) => {
   const chat = chatById(chatId);
   if (!chat) return;
   if (chat.busy) {
+    const turn = chat.turn;
+    const error = `Claude Code stopped unexpectedly (code ${code}).\n${(stderr || '').trim().slice(-1500)}`.trim();
     if (chat.turn && chat.turn.interrupted) appendChat(h('div', { class: 'notice' }, chat.turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
-    else appendChat(turnError(`Claude Code stopped unexpectedly (code ${code}).\n${(stderr || '').trim().slice(-1500)}`.trim(), chat), chat);
+    else appendChat(turnError(error, chat), chat);
     endTurn(chat);
+    if (chat.longRun) longRunTurnEnded(chat, turn, { is_error: !(turn && turn.interrupted), result: error });
   }
 });
 

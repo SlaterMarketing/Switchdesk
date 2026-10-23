@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, activeChat, createChat, switchChat, renderChatTabs, appendChat, openDiff, addReviews,
-   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison, canPushTo, issueRef */
+   reloadOpenFiles, refreshFiles, refreshGit, renderTree, queueSaveWorkspace, renderCompareBar, useComparison, canPushTo, issueRef, longRunBusy */
 'use strict';
 
 // ------------------------------------------------------------------ parallel agents (own copies)
@@ -153,6 +153,7 @@ async function mergeWorktree(chat, { after } = {}) {
 
 async function discardWorktree(chat, { silent } = {}) {
   if (chat.busy) return toast('Stop Claude before discarding its copy.');
+  if (!silent && longRunBusy(chat)) return toast('A long run is working in this copy. Stop the run first.');
   if (!silent && !confirm("Delete Claude's copy and its branch? Changes you haven't merged are lost.")) return false;
   desk.chatClose(chat.id);
   await desk.worktree.remove(chat.worktree).catch(() => {});
@@ -167,6 +168,8 @@ async function discardWorktree(chat, { silent } = {}) {
 // Closing a chat tab that has its own copy deletes the copy, after asking if it has unmerged work.
 async function closeWorktreeChat(chat) {
   if (!chat.worktree || chat.worktree.removed) return true;
+  // A long run's chats share its copy: that goes when you discard it from the run's own chat.
+  if (chat.longRun && chat.longRun.role !== 'plan') return true;
   await refreshWorktree(chat);
   const n = (chat.wtChanges || []).length;
   if (n && !confirm(`This chat's copy has ${n} changed file${n > 1 ? 's' : ''} you haven't merged. Close the chat and delete the copy?`)) return false;
