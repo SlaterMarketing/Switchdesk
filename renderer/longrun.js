@@ -656,7 +656,23 @@ function longRunBusy(chat) {
   return !!run && ['running', 'paused'].includes(run.phase);
 }
 
+// A run that's meant to be working but has nothing running (a step that went missing) is nudged
+// on after two quiet minutes, so a night isn't lost to a hiccup.
+const runQuiet = new Map(); // run id -> minutes with nothing running
+function watchRuns() {
+  for (const run of folderRuns()) {
+    const working = run.phase === 'running' && (runTimers.has(run.id) || chats.some((c) => c.longRun && c.longRun.run === run.id && (c.busy || c.making || c.queue.length)));
+    const quiet = run.phase === 'running' && !working ? (runQuiet.get(run.id) || 0) + 1 : 0;
+    runQuiet.set(run.id, quiet);
+    if (quiet >= 2) {
+      runQuiet.set(run.id, 0);
+      resumeRun(run);
+    }
+  }
+}
+
 function wireLongRuns() {
   const btn = $('#btn-long-run');
   if (btn) btn.addEventListener('click', () => openLongRuns());
+  setInterval(watchRuns, 60 * 1000);
 }
