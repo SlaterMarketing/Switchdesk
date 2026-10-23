@@ -599,7 +599,7 @@ function startTurn(chat, shown, mode, images, rwText) {
 // Claude's own turn after its background subagents finished: like one you sent, minus the message.
 function startBackgroundTurn(chat) {
   waitingForBackground(chat, false);
-  const mode = chat.lastMode || 'agent';
+  const mode = MODES.includes(chat.lastMode) ? chat.lastMode : 'agent';
   appendChat(h('div', { class: 'notice' }, 'Claude is carrying on with what its background subagents reported.'), chat);
   chat.turn = { bubble: null, mode, blocks: new Map(), tools: new Map(), streamedMsgIds: new Set(), autoEdits: mode === 'agent' || mode === 'auto' || mode === 'debug', started: Date.now(), background: true, planBuild: (chat.bgCarry && chat.bgCarry.planBuild) || null };
   chat.bgCarry = null;
@@ -1356,6 +1356,7 @@ async function rewindTo(chat, bubble) {
 // ------------------------------------------------------------------ composer
 
 function setMode(mode) {
+  if (!MODES.includes(mode)) mode = 'agent'; // Auto, from before it was folded into Agent
   state.mode = mode;
   const btn = $('#mode-btn');
   btn.dataset.mode = mode;

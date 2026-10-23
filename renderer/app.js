@@ -17,7 +17,8 @@ const h = (tag, attrs = {}, ...children) => {
 
 const isMac = desk.platform === 'darwin';
 if (isMac) document.body.classList.add('mac');
-const MODES = ['ask', 'plan', 'agent', 'debug', 'auto'];
+// Auto mode was folded into Agent: Settings → Permissions decides what asks first, in one place.
+const MODES = ['ask', 'plan', 'agent', 'debug'];
 const MODE_LABEL = { ask: 'Ask', plan: 'Plan', agent: 'Agent', debug: 'Debug', auto: 'Auto' };
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const HIDDEN_TOOLS = new Set(['ToolSearch', 'AskUserQuestion']); // plumbing, or shown as its own card

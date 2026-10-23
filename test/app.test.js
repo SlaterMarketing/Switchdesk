@@ -1121,3 +1121,11 @@ appTest("Claude's questions show what each option means, and take several when a
   assert.match(a, /"Which shops\?" → Comics Lounge, Kintana/);
   assert.match(await w.$eval('.card.question .resolution', (e) => e.textContent), /Answered: Both \(Recommended\) · Comics Lounge, Kintana/);
 });
+
+appTest('Auto mode is part of Agent now', async ({ w }) => {
+  const modes = await w.$$eval('#mode-menu button', (b) => b.map((x) => x.dataset.mode));
+  assert.deepEqual(modes, ['ask', 'plan', 'agent', 'debug']);
+  await w.evaluate(() => setMode('auto')); // saved from before
+  assert.equal(await w.evaluate(() => state.mode), 'agent');
+  assert.match(await w.$eval('#mode-btn', (e) => e.textContent), /^Agent/);
+});

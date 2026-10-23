@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.5
+
+- **Auto mode is now part of Agent.** The mode menu has Ask, Plan, Agent and Debug. Agent edits files and runs commands, and Settings → Permissions decides what asks you first, so there's one place for that instead of two. Chats that were on Auto carry on in Agent.
+
 ## 0.34.4
 
 - **Claude's questions explain their options.** Each option now shows what it means under its name, instead of only on hover, so "Both" says both of what. Questions that take several answers let you pick several, and the card shows what you answered.
