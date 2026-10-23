@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.36.0
+
+- **Long runs have a page of their own.** It opens beside your files when the run starts, and 🌙 in the chat header shows how far it's got (like 🌙 3/7) and opens it again. A bar across the top shows every milestone, green when done and red when it didn't work out. The milestone being worked on shows what the agent is doing right now. Each milestone opens to show what it was meant to do, what it did, what its check found and the questions it answered for itself, with its commit and how long it took. When the run ends, a "Worth a look" box at the top lists anything that didn't work out and every assumption it made, next to Review and Merge.
+- **A run no longer leaves a tab per step.** Each milestone's chats close once it's settled. They stay in your past chats, and "Open its chat" on the run's page brings one back. The run's chat keeps a small card instead of the long list.
+
 ## 0.35.0
 
 - **Long runs, for leaving a big job overnight.** Press 🌙 in the chat header and say what you want done. The agent plans it as milestones, each with a "done when", and the plan opens as a document to edit. Press Build it and each milestone runs in a fresh chat, so the work doesn't get worse as one conversation fills up. A second agent checks each one against its "done when", sends it back for fixes if needed, and Switchdesk commits it on the run's own branch. Questions never stop the run: the agent picks what it would recommend and notes the question. Risky commands on your always-ask list are refused rather than left waiting. At a usage limit the run carries on in another agent, or waits for one to reset, and your computer stays awake while it works (keep the lid open and plugged in). In the morning you get a summary of every milestone, commit, question and assumption, with Review and Merge. Nothing is in your folder until you merge.

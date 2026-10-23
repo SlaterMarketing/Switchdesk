@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, chatById, activeChat, createChat, switchChat, renderChatTabs, appendChat, send, compareChoices, agentOf, agentInfo, agentLabel,
-   queueSaveWorkspace, folderId, openPlanDoc, renderMarkdown, LIMIT_RE, CARRY_ON, autoPick, refreshWorktree, renderWorktreeBar, reviewWorktree, mergeWorktree, git */
+   queueSaveWorkspace, folderId, openPlanDoc, activeTab, activateTab, openSession, renderMarkdown, LIMIT_RE, CARRY_ON, autoPick, refreshWorktree, renderWorktreeBar, reviewWorktree, mergeWorktree, git */
 'use strict';
 
 // ------------------------------------------------------------------ long runs
@@ -187,6 +187,12 @@ function parseMilestones(md) {
 
 // ------------------------------------------------------------------ starting one
 
+// The 🌙 button: the folder's run that's going, or a new one.
+function longRunButton() {
+  const run = folderRuns().find((r) => ['running', 'paused', 'ready'].includes(r.phase));
+  return run ? openRunPage(run) : openLongRuns();
+}
+
 async function openLongRuns() {
   if (!state.folder) return toast('Open a folder first.');
   if (git.status && git.status.repo === false) return toast('Long runs work in a copy of the folder, so it needs to be a git repository. Use the Git panel to set one up.');
@@ -314,6 +320,7 @@ async function startRun(run) {
   run.started = run.started || Date.now();
   run.failures = run.failures || 0;
   await saveRun(run);
+  openRunPage(run);
   nextMilestone(run);
 }
 
@@ -334,6 +341,7 @@ async function nextMilestone(run) {
   }
   m.resumed = m.status !== 'pending';
   m.status = 'working';
+  m.startedAt = m.startedAt || Date.now();
   m.rounds = m.rounds || 0;
   m.nudges = 0;
   m.moves = 0;
@@ -473,6 +481,7 @@ async function commitMilestone(run, i) {
     return giveUp(run, i, 'failed', `Committing it failed: ${String(err.message || err).slice(0, 300)}`);
   }
   m.status = 'done';
+  m.endedAt = Date.now();
   closeCheck(m);
   await saveRun(run);
   nextMilestone(run);
@@ -483,6 +492,7 @@ async function giveUp(run, i, status, why) {
   const m = run.milestones[i];
   m.status = status;
   m.why = why;
+  m.endedAt = Date.now();
   try {
     m.setAside = await desk.worktree.setAside(run.worktree, `milestone ${i + 1}`, run.sha);
   } catch {
@@ -494,15 +504,31 @@ async function giveUp(run, i, status, why) {
   nextMilestone(run);
 }
 
+// A settled milestone's chats close, so a night's run doesn't leave a tab per step. They stay in
+// your past chats, and the run's page opens them again.
 function closeCheck(m) {
-  const c = m.checkChat && chatById(m.checkChat);
+  closeRunChat(m.checkChat);
   m.checkChat = null;
-  if (!c || c.busy) return;
+  if (settled(m)) {
+    const w = chatById(m.chat);
+    if (w && w.sessionId) m.session = w.sessionId;
+    if (closeRunChat(m.chat)) m.chat = null;
+  }
+}
+
+function closeRunChat(id) {
+  const c = id && chatById(id);
+  if (!c || c.busy) return false;
   desk.chatClose(c.id);
   c.el.remove();
   chats.splice(chats.indexOf(c), 1);
-  if (activeChat() === null && chats.length) switchChat(chats[chats.length - 1].id);
+  if (activeChat() === null && chats.length) {
+    const run = c.longRun && runById(c.longRun.run);
+    const home = run && chatById(run.chat);
+    switchChat((home || chats[chats.length - 1]).id);
+  }
   renderChatTabs();
+  return true;
 }
 
 async function finishRun(run, stopped) {
@@ -510,7 +536,7 @@ async function finishRun(run, stopped) {
   run.phase = stopped ? 'stopped' : 'done';
   run.finished = Date.now();
   await saveRun(run);
-  if (runDocs.has(run.id)) runDocs.get(run.id).resolve(`${doneCount(run)} of ${run.milestones.length} milestones done. See the summary in the run's chat.`, 'built');
+  if (runDocs.has(run.id)) runDocs.get(run.id).resolve(`${doneCount(run)} of ${run.milestones.length} milestones done. The run's page has the summary.`, 'built');
   const chat = chatById(run.chat);
   if (chat) {
     refreshWorktree(chat);
@@ -518,6 +544,8 @@ async function finishRun(run, stopped) {
     // If you were following the run, the summary is what you come back to.
     if (!activeChat() || activeChat().longRun) switchChat(chat.id);
   }
+  const t = activeTab();
+  if (!t || t.kind === 'run' || t.kind === 'plan') openRunPage(run);
   try {
     const n = new Notification('Switchdesk', { body: `Long run ${stopped ? 'stopped' : 'finished'}: ${doneCount(run)} of ${run.milestones.length} milestones done. ${run.title}` });
     n.onclick = () => (window.focus(), chat && switchChat(chat.id));
@@ -527,22 +555,56 @@ async function finishRun(run, stopped) {
   desk.flashWindow && desk.flashWindow();
 }
 
-const doneCount = (run) => run.milestones.filter((m) => m.status === 'done').length;
-
-// ------------------------------------------------------------------ the run's card
+// ------------------------------------------------------------------ the run's page
+//
+// Each run has a page of its own (a tab beside your files): where it's up to, what's happening now,
+// every milestone with what it did and what its check found, and in the morning the summary. The
+// run's chat keeps a small card that opens it.
 
 const RUN_STATUS_TEXT = { pending: 'Waiting', working: 'Working', checking: 'Being checked', done: 'Done', failed: "Didn't work out", blocked: 'Blocked', skipped: 'Skipped' };
-const RUN_STATUS_ICON = { pending: '○', working: '◐', checking: '◑', done: '✓', failed: '✗', blocked: '✗', skipped: '–' };
+const RUN_STATUS_ICON = { pending: '', working: '', checking: '', done: '✓', failed: '✗', blocked: '!', skipped: '–' };
+const doneCount = (run) => run.milestones.filter((m) => m.status === 'done').length;
+const settled = (m) => ['done', 'failed', 'blocked', 'skipped'].includes(m.status);
 
 function runState(run) {
   const n = run.milestones.length;
-  if (run.phase === 'planning') return 'Planning';
-  if (run.phase === 'ready') return `Planned: ${n} milestones, waiting for you to start it`;
+  const at = run.milestones.findIndex((m) => m.status === 'working' || m.status === 'checking');
+  if (run.phase === 'planning') return 'Planning the milestones';
+  if (run.phase === 'ready') return `${n} milestones planned. Waiting for you to start it`;
   if (run.phase === 'paused') return `Paused at ${doneCount(run)} of ${n} done${run.why ? `. ${run.why}` : ''}`;
-  if (run.phase === 'running') return `${doneCount(run)} of ${n} done${run.why ? `. ${run.why}` : ''}`;
+  if (run.phase === 'running') return run.why || (at >= 0 ? `On milestone ${at + 1} of ${n}` : `${doneCount(run)} of ${n} done`);
   return `${run.phase === 'stopped' ? 'Stopped' : 'Finished'}: ${doneCount(run)} of ${n} done`;
 }
 
+function duration(ms) {
+  const min = Math.max(0, Math.round(ms / 60000));
+  if (min < 1) return 'under a minute';
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60 ? `${min % 60} min` : ''}`.trim();
+}
+
+// One segment per milestone, coloured by how it went.
+function runProgress(run) {
+  return h('div', { class: 'run-progress', title: `${doneCount(run)} of ${run.milestones.length} done` }, ...run.milestones.map((m, i) => h('span', { class: `seg ${m.status}`, title: `${i + 1}. ${m.title}: ${RUN_STATUS_TEXT[m.status]}` })));
+}
+
+function runButtons(run, { small } = {}) {
+  const btn = (label, fn, cls = '') => h('button', { class: `btn${small ? ' small' : ''} ${cls}`, onclick: fn }, label);
+  const n = run.milestones.length;
+  const chat = chatById(run.chat);
+  const finished = run.phase === 'done' || run.phase === 'stopped';
+  return [
+    run.phase === 'ready' && n ? btn('Start the run', () => beginRun(run), 'primary') : null,
+    run.phase === 'running' ? btn('Pause after this step', () => ((run.phase = 'paused'), (run.why = 'You paused it.'), saveRun(run))) : null,
+    run.phase === 'paused' ? btn('Resume', () => resumeRun(run), 'primary') : null,
+    finished && chat ? btn('Review the changes', () => reviewWorktree(chat)) : null,
+    finished && chat ? btn('Merge into my folder', () => mergeWorktree(chat), 'primary') : null,
+    run.phase === 'ready' ? btn('Cancel', () => finishRun(run, true)) : null,
+    run.phase === 'running' || run.phase === 'paused' ? btn('Stop', () => confirm('Stop the run? Finished milestones stay committed on its branch.') && finishRun(run, true), 'danger') : null,
+  ].filter(Boolean);
+}
+
+// The small card in the run's chat.
 function showRunCard(run, chat) {
   const card = h('div', { class: 'card long-run' });
   runCards.set(run.id, card);
@@ -551,62 +613,165 @@ function showRunCard(run, chat) {
 }
 
 function renderRunCard(run) {
+  renderRunPage();
+  updateRunButton();
   const card = runCards.get(run.id);
   if (!card) return;
-  const n = run.milestones.length;
-  const elapsed = run.started ? Math.round(((run.finished || Date.now()) - run.started) / 60000) : 0;
-  const btn = (label, fn, cls = '') => h('button', { class: `btn small ${cls}`, onclick: fn }, label);
+  const go = ['ready', 'paused'].includes(run.phase) ? runButtons(run, { small: true }).slice(0, 1) : [];
   card.replaceChildren(
-    h('div', { class: 'row' }, h('h4', {}, `🌙 ${run.title}`), h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, runState(run), elapsed ? ` · ${elapsed < 120 ? `${elapsed} min` : `${Math.round(elapsed / 6) / 10} h`}` : '')),
-    h('div', { class: 'muted small' }, `${agentInfo(run.worker.id).label} does the work, ${agentInfo(run.checker.id).label} checks it. On branch ${run.worktree ? run.worktree.branch : '…'}.`),
-    ...run.milestones.map((m, i) =>
-      h(
-        'div',
-        { class: `run-step ${m.status}` },
-        h('span', { class: 'todo-icon' }, RUN_STATUS_ICON[m.status] || '○'),
-        h('span', {}, `${i + 1}. ${m.title}`),
-        h('span', { class: 'muted small' }, ` · ${RUN_STATUS_TEXT[m.status] || ''}${m.rounds ? ` (fixed ${m.rounds}×)` : ''}`),
-        m.chat && chatById(m.chat) ? h('a', { href: '#', class: 'small', onclick: (e) => (e.preventDefault(), switchChat(m.chat)) }, ' open') : null
-      )
-    ),
-    h(
-      'div',
-      { class: 'actions' },
-      run.phase === 'ready' && n ? btn('Start the run', () => beginRun(run), 'primary') : null,
-      run.phase === 'running' ? btn('Pause after this step', () => ((run.phase = 'paused'), (run.why = 'You paused it.'), saveRun(run))) : null,
-      run.phase === 'paused' ? btn('Resume', () => resumeRun(run), 'primary') : null,
-      run.phase === 'ready' ? btn('Cancel', () => finishRun(run, true)) : null,
-      run.phase === 'running' || run.phase === 'paused' ? btn('Stop and summarise', () => confirm('Stop the run? Finished milestones stay committed on its branch.') && finishRun(run, true), 'danger') : null
-    )
+    h('h4', {}, `🌙 ${run.title}`),
+    h('div', { class: 'muted small' }, runState(run)),
+    run.milestones.length ? runProgress(run) : null,
+    h('div', { class: 'actions' }, ...go, h('button', { class: `btn small${go.length ? '' : ' primary'}`, onclick: () => openRunPage(run) }, 'Open the run'))
   );
 }
 
-function summaryCard(run) {
+function openRunPage(run) {
+  const id = `run:${run.id}`;
+  let t = state.tabs.find((x) => x.id === id);
+  if (!t) {
+    t = { id, kind: 'run', rel: `Long run: ${run.title}`, runId: run.id };
+    state.tabs.push(t);
+  }
+  activateTab(t.id);
+}
+
+let runPageTimer = null;
+// Called by activateTab for every tab (and with null to hide the page).
+function showRunPage(t) {
+  const on = !!(t && t.kind === 'run');
+  $('#run-view').classList.toggle('hidden', !on);
+  clearInterval(runPageTimer);
+  runPageTimer = null;
+  if (!on) return;
+  renderRunPage();
+  // The live line and the clock move on their own while the page shows.
+  runPageTimer = setInterval(renderRunPage, 2000);
+}
+
+// What the agent on the current milestone is doing right now: its latest step, in words.
+function liveLine(run, m) {
+  const c = chatById(m.status === 'checking' ? m.checkChat : m.chat);
+  if (!c) return '';
+  const rows = c.el.querySelectorAll('.tool .label');
+  const last = rows.length ? rows[rows.length - 1].textContent.trim() : '';
+  const who = agentLabel(c);
+  if (!c.busy) return `${who} is between steps`;
+  return last ? `${who}: ${last}` : `${who} is reading the code`;
+}
+
+function runPage(run) {
+  const n = run.milestones.length;
+  const finished = run.phase === 'done' || run.phase === 'stopped';
+  const elapsed = run.started ? duration((run.finished || Date.now()) - run.started) : '';
   const qs = run.milestones.flatMap((m, i) => (m.questions || []).map((q) => ({ ...q, i })));
-  const lines = [
-    `### ${run.phase === 'stopped' ? 'Stopped' : 'Done'}: ${doneCount(run)} of ${run.milestones.length} milestones`,
-    '',
-    ...run.milestones.map((m, i) => `- ${RUN_STATUS_ICON[m.status] || '○'} **${i + 1}. ${m.title}**${m.commit ? ` (\`${m.commit.slice(0, 7)}\`)` : ''}: ${m.status === 'done' ? m.summary || 'Done.' : m.why || RUN_STATUS_TEXT[m.status]}${m.checkNote ? ` ${m.checkNote}` : ''}${m.setAside ? ` Its changes are kept on \`${m.setAside}\`.` : ''}`),
-    '',
-    ...(qs.length ? ['**Questions it answered for itself**', '', ...qs.map((q) => `- ${q.i + 1}. ${q.question} *Assumed: ${q.assumption || 'not said'}*`), ''] : []),
-    `Everything is on branch \`${run.worktree.branch}\`. Nothing is in your folder until you merge.`,
-  ];
-  const body = h('div', { class: 'msg-text' });
-  renderMarkdown(body, lines.join('\n'));
-  const chat = chatById(run.chat);
+  const trouble = run.milestones.map((m, i) => ({ m, i })).filter(({ m }) => ['failed', 'blocked'].includes(m.status));
+  const head = h(
+    'div',
+    { class: 'run-head' },
+    h('div', { class: 'run-eyebrow' }, '🌙 Long run'),
+    h('h2', {}, run.title),
+    run.goal !== run.title ? h('div', { class: 'run-goal muted' }, run.goal) : null,
+    h('div', { class: `run-state ${run.phase}` }, h('span', { class: 'dot' }), runState(run)),
+    n ? runProgress(run) : null,
+    h(
+      'div',
+      { class: 'run-meta muted small' },
+      [`${doneCount(run)} of ${n} done`, elapsed && (finished ? `took ${elapsed}` : `running for ${elapsed}`), `${agentInfo(run.worker.id).label} works, ${agentInfo(run.checker.id).label} checks`, run.worktree && `branch ${run.worktree.branch}`].filter(Boolean).join(' · ')
+    ),
+    h('div', { class: 'actions' }, ...runButtons(run))
+  );
+  // In the morning: what needs you first.
+  const morning = finished
+    ? h(
+        'div',
+        { class: 'run-morning' },
+        h('h3', {}, trouble.length || qs.length ? 'Worth a look' : 'All done, nothing needs you'),
+        ...trouble.map(({ m, i }) => h('div', { class: 'run-flag bad' }, h('b', {}, `${i + 1}. ${m.title}: ${RUN_STATUS_TEXT[m.status].toLowerCase()}. `), m.why || '', m.setAside ? h('span', { class: 'muted' }, ` Its work is kept on ${m.setAside}.`) : null)),
+        ...qs.map((q) => h('div', { class: 'run-flag' }, h('b', {}, q.question), h('span', { class: 'muted' }, ` It went with: ${q.assumption || 'not said'} (milestone ${q.i + 1})`))),
+        h('div', { class: 'muted small' }, "Nothing is in your folder until you merge. Review shows every file it changed.")
+      )
+    : null;
+  const steps = h(
+    'div',
+    { class: 'run-steps' },
+    ...run.milestones.map((m, i) => {
+      const now = m.status === 'working' || m.status === 'checking';
+      const took = m.startedAt && (m.endedAt || now) ? duration((m.endedAt || Date.now()) - m.startedAt) : '';
+      const open = m.chat && chatById(m.chat) ? () => switchChat(m.chat) : m.session ? () => openSession({ id: m.session, agent: run.worker.id, agentAccount: run.worker.account, title: `🌙 ${i + 1}. ${m.title}` }, run.worktree) : null;
+      const detail = [
+        m.what ? h('p', {}, m.what) : null,
+        h('p', {}, h('b', {}, 'Done when: '), m.done_when || 'not said'),
+        m.summary && m.status !== 'skipped' ? h('p', {}, h('b', {}, 'What it did: '), m.summary) : null,
+        m.problems && m.problems.length ? h('div', {}, h('b', {}, m.status === 'done' ? `Its check found, and it fixed:` : 'Its check found:'), h('ul', {}, ...m.problems.map((p) => h('li', {}, p)))) : null,
+        (m.questions || []).length ? h('div', {}, h('b', {}, 'Questions it answered for itself:'), h('ul', {}, ...m.questions.map((q) => h('li', {}, `${q.question} `, h('span', { class: 'muted' }, `It went with: ${q.assumption || 'not said'}`))))) : null,
+        m.why && m.status !== 'done' ? h('p', { class: 'bad' }, m.why) : null,
+        m.checkNote ? h('p', { class: 'muted' }, m.checkNote) : null,
+      ].filter(Boolean);
+      const el = h(
+        'details',
+        { class: `run-ms ${m.status}`, open: (m.ui ? m.ui === 'open' : now) || undefined },
+        h(
+          'summary',
+          // What you opened or closed stays that way while the page re-renders.
+          { onclick: (e) => (m.ui = e.currentTarget.parentElement.open ? 'shut' : 'open') },
+          h('span', { class: `run-num ${m.status}` }, RUN_STATUS_ICON[m.status] || String(i + 1)),
+          h('span', { class: 'run-ms-title' }, m.title),
+          h('span', { class: 'spacer' }),
+          m.rounds ? h('span', { class: 'run-tag' }, `fixed ${m.rounds}×`) : null,
+          m.commit ? h('code', { class: 'run-sha', title: m.commit }, m.commit.slice(0, 7)) : null,
+          took ? h('span', { class: 'muted small' }, took) : null,
+          h('span', { class: `run-pill ${m.status}` }, RUN_STATUS_TEXT[m.status])
+        ),
+        now ? h('div', { class: 'run-live' }, h('span', { class: 'spinner' }), liveLine(run, m)) : null,
+        h('div', { class: 'run-ms-body' }, ...detail, open ? h('button', { class: 'btn small', onclick: open }, m.status === 'checking' ? 'Open the work chat' : 'Open its chat') : null)
+      );
+      return el;
+    })
+  );
+  return [head, morning, n ? h('h3', { class: 'run-steps-head' }, 'Milestones') : h('div', { class: 'muted' }, 'The agent is planning the milestones in the run’s chat.'), steps].filter(Boolean);
+}
+
+function renderRunPage() {
+  const t = activeTab();
+  if (!t || t.kind !== 'run') return;
+  const run = runById(t.runId);
+  const view = $('#run-view');
+  // Only when something changed, so text you're selecting stays put.
+  const now = run && run.milestones.find((m) => m.status === 'working' || m.status === 'checking');
+  const key = run ? JSON.stringify([run, now && liveLine(run, now), Math.floor(Date.now() / 60000), state.tabs.length]) : '';
+  if (view.dataset.key === key && view.childElementCount) return;
+  view.dataset.key = key;
+  const scroll = view.scrollTop;
+  view.replaceChildren(...(run ? runPage(run) : [h('div', { class: 'muted' }, 'This run is gone.')]));
+  view.scrollTop = scroll;
+}
+
+// The 🌙 button shows how far the folder's run has got.
+function updateRunButton() {
+  const btn = $('#btn-long-run');
+  if (!btn) return;
+  const run = folderRuns().find((r) => r.phase === 'running' || r.phase === 'paused');
+  btn.textContent = run ? `🌙 ${doneCount(run)}/${run.milestones.length}` : '🌙';
+  btn.classList.toggle('run-on', !!run);
+}
+
+// What the run's chat says when it ends: the headline, and the page has the rest.
+function summaryCard(run) {
+  const qs = run.milestones.reduce((n, m) => n + (m.questions || []).length, 0);
+  const bad = run.milestones.filter((m) => ['failed', 'blocked'].includes(m.status)).length;
+  const notes = [bad && `${bad} didn't work out`, qs && `${qs} question${qs > 1 ? 's' : ''} it answered for itself`].filter(Boolean);
   return h(
     'div',
     { class: 'card long-run summary' },
-    h('h4', {}, `🌙 Morning summary: ${run.title}`),
-    body,
-    chat ? h('div', { class: 'actions' }, h('button', { class: 'btn small', onclick: () => reviewWorktree(chat) }, 'Review the changes'), h('button', { class: 'btn small primary', onclick: () => mergeWorktree(chat) }, 'Merge into my folder')) : null
+    h('h4', {}, `🌙 ${run.phase === 'stopped' ? 'Stopped' : 'Finished'}: ${run.title}`),
+    h('div', {}, `${doneCount(run)} of ${run.milestones.length} milestones done${notes.length ? `. ${notes.join(', ')}: worth a look` : ''}.`),
+    h('div', { class: 'actions' }, h('button', { class: 'btn small primary', onclick: () => openRunPage(run) }, 'Open the summary'), chatById(run.chat) ? h('button', { class: 'btn small', onclick: () => mergeWorktree(chatById(run.chat)) }, 'Merge into my folder') : null)
   );
 }
 
 function showRun(run) {
-  const chat = chatById(run.chat) || chats.find((c) => c.longRun && c.longRun.run === run.id && c.longRun.role === 'plan');
-  if (!chat) return toast("The run's chat isn't open any more.");
-  switchChat(chat.id);
+  openRunPage(run);
 }
 
 async function resumeRun(run) {
@@ -673,6 +838,6 @@ function watchRuns() {
 
 function wireLongRuns() {
   const btn = $('#btn-long-run');
-  if (btn) btn.addEventListener('click', () => openLongRuns());
+  if (btn) btn.addEventListener('click', () => longRunButton());
   setInterval(watchRuns, 60 * 1000);
 }

@@ -1177,10 +1177,7 @@ test('a long run plans milestones, works through each in a fresh chat, checks it
       console.log(JSON.stringify(await w.evaluate(() => ({ runs: state.settings.longRuns, chats: chats.map((c) => [c.title, c.busy, c.longRun, c.el.innerText.slice(-600)]), active: activeChat() && activeChat().title })), null, 1), errors);
       throw e;
     });
-    const summary = await w.$eval('.card.long-run.summary', (e) => e.innerText);
-    assert.match(summary, /2 of 2 milestones/);
-    assert.match(summary, /Markdown or text\? Assumed: Markdown/);
-    assert.match(summary, /todo\.md has two items now/);
+    assert.match(await w.$eval('.card.long-run.summary', (e) => e.innerText), /2 of 2 milestones done\. 1 question it answered for itself: worth a look/);
     // Each milestone is its own commit on the run's branch, and your folder is untouched.
     const run = await w.evaluate(() => state.settings.longRuns[0]);
     assert.equal(run.phase, 'done');
@@ -1202,8 +1199,19 @@ test('a long run plans milestones, works through each in a fresh chat, checks it
     assert.match(answers[0], /Nobody is around to answer/);
     assert.match(answers[1], /"git push --force" isn't allowed/);
     assert.equal(answers[2], 'allow');
-    // The checks' chats closed once their milestone was settled.
-    assert.deepEqual(await w.evaluate(() => chats.filter((c) => c.longRun).map((c) => c.longRun.role)), ['plan', 'work', 'work']);
+    // Each milestone's chats closed once it was settled; the run's page shows how it went.
+    assert.deepEqual(await w.evaluate(() => chats.filter((c) => c.longRun).map((c) => c.longRun.role)), ['plan']);
+    await w.waitForSelector('#run-view:not(.hidden) .run-ms');
+    const page = await w.$eval('#run-view', (e) => e.innerText);
+    assert.match(page, /Finished: 2 of 2 done/);
+    assert.match(page, /Worth a look[\s\S]*Markdown or text\?[\s\S]*It went with: Markdown/);
+    assert.match(page, /Write the todo[\s\S]*fixed 1×/);
+    assert.match(await w.$eval('#run-view', (e) => e.textContent), /What it did: todo\.md has two items now/);
+    assert.equal(await w.$$eval('#run-view .run-progress .seg.done', (s) => s.length), 2);
+    // A closed milestone's chat opens again from the page.
+    await w.click('#run-view .run-ms:nth-child(2) summary');
+    await w.click('#run-view .run-ms:nth-child(2) button:has-text("Open its chat")');
+    await w.waitForFunction(() => /Write the todo/.test(activeChat().title));
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
