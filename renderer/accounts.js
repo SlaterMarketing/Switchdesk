@@ -62,8 +62,11 @@ function renderAccountPill() {
   const key = chat ? usageKey(chat) : `claude:${acct.folderAccount}`;
   const u = acct.usage.get(key);
   if (!u || !(u.short || u.long)) return (el.replaceChildren(), (el.title = ''));
+  // A window that has reset since it was reported starts again from nothing.
+  const passed = (w) => w && w.resetsAt && (typeof w.resetsAt === 'number' ? (w.resetsAt < 1e12 ? w.resetsAt * 1000 : w.resetsAt) : Date.parse(w.resetsAt)) < Date.now();
   const bar = (label, w) =>
     w &&
+    (w = passed(w) ? { ...w, pct: 0 } : w) &&
     h(
       'span',
       {
@@ -95,10 +98,21 @@ function noteAccountUsage(chat, windows) {
 }
 
 // What each account last reported, so the meter shows before the first message.
+// Another window's chat may have heard newer ones since (usage-limits), so the newest wins.
 async function loadUsageLimits() {
   const s = await desk.usage.summary().catch(() => null);
-  for (const [k, v] of Object.entries((s && s.limits) || {})) if (!acct.usage.has(k)) acct.usage.set(k, v);
+  for (const [k, v] of Object.entries((s && s.limits) || {})) newerUsage(k, v);
   renderAccountPill();
+}
+function newerUsage(key, windows) {
+  const had = acct.usage.get(key);
+  if (!had || !had.at || !windows.at || windows.at >= had.at) acct.usage.set(key, windows);
+}
+let usageWired = false;
+function wireUsageLimits() {
+  if (usageWired) return;
+  usageWired = true;
+  desk.usage.onLimits(({ key, windows }) => (newerUsage(key, windows), renderAccountPill()));
 }
 
 async function switchChatAccount(chat, id) {

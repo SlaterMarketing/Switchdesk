@@ -1129,3 +1129,23 @@ appTest('Auto mode is part of Agent now', async ({ w }) => {
   assert.equal(await w.evaluate(() => state.mode), 'agent');
   assert.match(await w.$eval('#mode-btn', (e) => e.textContent), /^Agent/);
 });
+
+test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
+  const p = profile();
+  const { app, w, errors } = await launch(p, project());
+  try {
+    const key = await w.evaluate(() => usageKey(activeChat()));
+    await w.evaluate((k) => (acct.usage.set(k, { short: { pct: 46 }, long: { pct: 59 }, at: Date.now() - 86400e3 }), renderAccountPill()), key);
+    const [w2] = await Promise.all([app.waitForEvent('window'), w.evaluate((d) => desk.newWindow(d), project())]);
+    await w2.waitForFunction(() => typeof desk !== 'undefined' && typeof acct !== 'undefined', null, { timeout: 30000 });
+    // A chat in the other window hears newer limits.
+    await w2.evaluate((k) => desk.usage.limits(k, { short: { pct: 97 }, long: { pct: 41 }, at: Date.now() }), key);
+    await until(w, () => /5h.*97%.*7d.*41%/s.test($('#status-limit').innerText));
+    // A window that has reset since shows as empty again.
+    await w.evaluate((k) => (acct.usage.set(k, { short: { pct: 80, resetsAt: Date.now() - 1000 }, long: { pct: 41 }, at: Date.now() }), renderAccountPill()), key);
+    assert.match(await w.$eval('#status-limit', (e) => e.innerText), /5h.*0%/s);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});

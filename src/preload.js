@@ -193,7 +193,7 @@ contextBridge.exposeInMainWorld('desk', {
     signOut: call('complete:sign-out'),
     onStatus: on('complete-status'),
   },
-  usage: { record: call('usage:record'), limits: call('usage:limits'), summary: call('usage:summary') },
+  usage: { record: call('usage:record'), limits: call('usage:limits'), summary: call('usage:summary'), onLimits: on('usage-limits') },
 
   term: {
     create: call('term:create'),

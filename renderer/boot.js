@@ -36,6 +36,7 @@ async function init() {
   $('#status-perms').addEventListener('click', () => openSettings('permissions'));
   renderPermissionBadge();
   await loadAccounts();
+  wireUsageLimits();
   loadUsageLimits();
   await loadAgents();
   setMode(state.settings.mode || 'agent');

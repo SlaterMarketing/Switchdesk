@@ -465,6 +465,8 @@ async function settingsAbout(body) {
 async function settingsUsage(body) {
   await loadAccounts();
   const { keys, limits } = await desk.usage.summary();
+  for (const [k, v] of Object.entries(limits)) newerUsage(k, v);
+  renderAccountPill(); // the status bar shows what this page does
   const all = [...new Set([...Object.keys(limits), ...Object.keys(keys)])].sort((a, b) => ((keys[b] && keys[b].month.input + keys[b].month.output) || 0) - ((keys[a] && keys[a].month.input + keys[a].month.output) || 0));
   const bar = (label, w) =>
     w &&

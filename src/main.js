@@ -1967,7 +1967,11 @@ function registerIpc() {
   handle('complete:sign-out', () => autocomplete.signOut());
 
   handle('usage:record', (ctx, key, turn) => usage.record(key, turn));
-  handle('usage:limits', (ctx, key, windows) => usage.setLimits(key, windows));
+  // Every window shows the same plan limits: the latest any of them heard.
+  handle('usage:limits', (ctx, key, windows) => {
+    usage.setLimits(key, windows);
+    broadcast('usage-limits', { key, windows }, ctx);
+  });
   handle('usage:summary', () => usage.summary());
   handle('git:diff', async (ctx) => {
     if (!ctx.workspace) return '';
