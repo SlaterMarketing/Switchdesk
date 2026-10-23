@@ -1066,6 +1066,20 @@ async function showSetup() {
   render();
 }
 
+// A composer menu opens from its button's left edge; slide it left (and narrow it) so it
+// never runs past the chat panel or the window when the panel is narrow
+function keepInside(menu) {
+  menu.style.marginLeft = '';
+  menu.style.maxWidth = '';
+  if (menu.classList.contains('hidden')) return;
+  const box = (menu.closest('#composer') || document.body).getBoundingClientRect();
+  const left = Math.max(0, box.left) + 4, right = Math.min(innerWidth, box.right) - 4;
+  menu.style.maxWidth = `${Math.max(160, right - left)}px`;
+  const r = menu.getBoundingClientRect();
+  const shift = Math.min(r.right - right, r.left - left);
+  if (shift > 0) menu.style.marginLeft = `${-shift}px`;
+}
+
 // ------------------------------------------------------------------ wiring
 
 function wire() {
@@ -1096,7 +1110,7 @@ function wire() {
 
   const modeBtn = $('#mode-btn');
   const modeMenu = $('#mode-menu');
-  modeBtn.addEventListener('click', () => modeMenu.classList.toggle('hidden'));
+  modeBtn.addEventListener('click', () => (modeMenu.classList.toggle('hidden'), keepInside(modeMenu)));
   for (const b of modeMenu.querySelectorAll('button')) b.addEventListener('click', () => (setMode(b.dataset.mode), modeMenu.classList.add('hidden')));
   document.addEventListener('mousedown', (e) => {
     if (!e.target.closest('.mode-wrap')) modeMenu.classList.add('hidden');

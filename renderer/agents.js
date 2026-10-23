@@ -71,6 +71,7 @@ function toggleAgentMenu() {
   const menu = h('div', { id: 'agent-menu', class: 'popup' });
   $('#agent-wrap').append(menu);
   fillAgentMenu(menu, true);
+  keepInside(menu);
   const away = (e) => {
     if (!menu.isConnected) return removeEventListener('mousedown', away, true);
     if (!menu.contains(e.target) && e.target !== $('#agent-btn')) {

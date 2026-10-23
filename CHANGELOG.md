@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.34.7
+
+- **The mode and agent menus stay on screen.** In a narrow chat panel the menus under the composer ran past its right edge and cut off their descriptions. They now slide left and narrow to fit.
+
 ## 0.34.6
 
 - **The usage meter in the status bar is right in every window.** Each window kept the plan limits from its own last chat turn, so with several windows open the status bar could show a reading from days ago while Settings → Usage showed the latest. Now every window shows the newest reading from any of them, and a 5-hour or weekly window that has reset since shows as empty until the next report.

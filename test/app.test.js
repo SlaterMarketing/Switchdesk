@@ -1130,6 +1130,19 @@ appTest('Auto mode is part of Agent now', async ({ w }) => {
   assert.match(await w.$eval('#mode-btn', (e) => e.textContent), /^Agent/);
 });
 
+appTest('the composer menus stay inside a narrow chat panel', async ({ w }) => {
+  await w.evaluate(() => document.documentElement.style.setProperty('--chat-w', '330px'));
+  const inside = (sel) => w.evaluate((s) => {
+    const m = document.querySelector(s).getBoundingClientRect(), c = document.querySelector('#composer').getBoundingClientRect();
+    return m.left >= c.left - 1 && m.right <= Math.min(innerWidth, c.right) + 1 ? 'inside' : `${m.left}-${m.right} vs ${c.left}-${c.right}`;
+  }, sel);
+  await w.click('#mode-btn');
+  assert.equal(await inside('#mode-menu'), 'inside');
+  await w.click('#mode-btn');
+  await w.click('#agent-btn');
+  assert.equal(await inside('#agent-menu'), 'inside');
+});
+
 test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, project());
