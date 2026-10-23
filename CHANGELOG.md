@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.37.1
+
+- **A plan's to-dos tick off one at a time, as each is really done.** Before, finishing a turn ticked every to-do at once, even ones not started, like later stages waiting for your play-test. Now each to-do follows the agent's own to-do list and ticks only when the agent marks that one finished. The one being worked on shows as in progress. Ticks carry over to later turns in the same chat (say, "start stage 2"). When a turn ends partway, the plan's header says how far it got, like "4 of 11 done", rather than "Built ✓". Agents are now asked to keep their to-do list worded like the plan's, so the two match up.
+
 ## 0.37.0
 
 - **A chat that hits its limit carries on when the limit resets.** When an agent runs out partway through and no other agent has room, the chat says when it will carry on, then picks up by itself once the limit resets. That's at the time the agent gives, or its plan window's reset, or every half hour when neither is known. It checks the clock, so it still goes after your computer has slept. Cancel stops it, and sending a message yourself does too. When other agents are ready you still get to pick one, with "wait and carry on at …" beside them. Turn it off in Settings → Usage. Long runs now wait for the reset too, rather than trying every 15 minutes.

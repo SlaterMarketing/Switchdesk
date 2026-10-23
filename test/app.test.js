@@ -849,7 +849,7 @@ appTest('with no other agent to move to, a chat that hits its limit carries on w
   await w.evaluate((at) => appendChat(turnError(limitText(`Usage limit reached|${at}`), activeChat(), `Usage limit reached|${at}`)), at);
   await w.waitForSelector('.reset-wait');
   const when = new Date((at + 120) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  assert.match(await w.$eval('.reset-wait', (e) => e.innerText), new RegExp(`carries on by itself at ${when.replace(/\s/g, '\\s')}, when the limit resets`));
+  assert.match(await w.$eval('.reset-wait', (e) => e.innerText), new RegExp(`carries on by itself (\\w+ )?at ${when.replace(/\s/g, '\\s')}, when the limit resets`));
   // The time comes (after the computer slept, say): it carries on by itself.
   await w.evaluate(() => {
     for (const x of resetWaits.values()) x.at = Date.now() - 1;
@@ -1151,6 +1151,28 @@ appTest("Claude's questions show what each option means, and take several when a
   assert.match(a, /"How do you want to handle this\?" → Both \(Recommended\)/);
   assert.match(a, /"Which shops\?" → Comics Lounge, Kintana/);
   assert.match(await w.$eval('.card.question .resolution', (e) => e.textContent), /Answered: Both \(Recommended\) · Comics Lounge, Kintana/);
+});
+
+appTest("a plan's to-dos tick off one by one as the agent finishes them, not all at once", async ({ w }) => {
+  const md = '# Camp\n\nBuild it in stages.\n\n## To-dos\n\n- [ ] Stage 1: placeholder bow with sway\n- [ ] Stage 2: guard with sword and patrol route\n- [ ] Stage 3: sword combat and takedown\n';
+  await w.evaluate((md) => {
+    window.__doc = openPlanDoc(md, { onBuild() {}, onKeep() {} });
+    __doc.resolve('Building', 'building');
+    __doc.todos([
+      { content: 'Stage 1: placeholder bow with sway', status: 'completed' },
+      { content: 'Stage 2: guard with sword and patrol route', status: 'in_progress' },
+      { content: 'Write DownwindGuard.h', status: 'completed' }, // a small step doesn't tick a big to-do
+    ]);
+  }, md);
+  const states = () => w.$$eval('#plan-preview .plan-todo', (e) => e.map((x) => x.className.replace('plan-todo ', '')));
+  assert.deepEqual(await states(), ['completed', 'in_progress', 'pending']);
+  // The turn ends partway: only what's done is ticked, and the bar says how far it got.
+  await w.evaluate(() => __doc.resolve('Built. The changes are in the chat.', 'built'));
+  assert.deepEqual(await states(), ['completed', 'pending', 'pending']);
+  assert.match(await w.$eval('#plan-bar', (e) => e.innerText), /1 of 3 done/);
+  // A later turn's list only has the next stage: what was ticked stays ticked.
+  await w.evaluate(() => __doc.todos([{ content: 'Stage 2: guard with sword, patrol route', status: 'completed' }]));
+  assert.deepEqual(await states(), ['completed', 'completed', 'pending']);
 });
 
 appTest('Auto mode is part of Agent now', async ({ w }) => {

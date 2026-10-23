@@ -653,6 +653,7 @@ function startTurn(chat, shown, mode, images, rwText) {
     started: Date.now(),
     planBuild: chat.planBuildNext || null,
   };
+  if (chat.planBuildNext) chat.planJob = chat.planBuildNext;
   chat.cleanupNext = false;
   chat.planBuildNext = null;
   chat.lastMode = mode;
@@ -787,6 +788,7 @@ function handleEvent(chat, ev) {
       if (turn && turn.mode === 'debug' && !turn.interrupted && !ev.is_error) debugModeCard(chat, turn);
       if (turn && chat.opinion && !turn.interrupted && !ev.is_error) opinionDone(chat, turn);
       if (turn && turn.planBuild && !turn.interrupted) planBuildEnded(chat, turn.planBuild, ev.is_error);
+      else if (chat.planJob && chat.planJob.idle) chat.planJob.idle();
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
       if (chat.pr && chat.pr.watch && chat.pr.watch.fixing) prTurnEnded(chat, ev.is_error || !turn || turn.interrupted);
@@ -859,7 +861,9 @@ function handleAssistant(chat, turn, msg) {
   for (const b of msg.content || []) {
     if (b.type === 'tool_use') {
       turn.replyTexts = [];
-      if (turn.planBuild && b.name === 'TodoWrite' && b.input && Array.isArray(b.input.todos)) turn.planBuild.todos(b.input.todos);
+      // The plan's to-dos follow the agent's list, in the build and in any later turn of its chat.
+      const job = turn.planBuild || chat.planJob;
+      if (job && b.name === 'TodoWrite' && b.input && Array.isArray(b.input.todos)) job.todos(b.input.todos);
       if (turn.planBuild && b.name !== 'ExitPlanMode' && (EDIT_TOOLS.has(b.name) || /^(Bash|PowerShell|shell|execute|edit|write)/i.test(b.name))) turn.planBuild.started = true;
       if (HIDDEN_TOOLS.has(b.name)) continue;
       let row = turn.tools.get(b.id);
@@ -1051,11 +1055,14 @@ function offerPlan(chat, turn) {
   if (!doc && (reply.length < 200 || !/^\s*(#{1,4}\s|\d+[.)]\s|[-*]\s)/m.test(reply))) return;
   const plan = doc ? doc.text : reply;
   const where = doc && doc.path ? ` (it's also saved at ${doc.path})` : '';
-  planCard(chat, { plan, path: doc && doc.path }, (input, job) => ((chat.planBuildNext = job), send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${input.plan}`, 'agent', 'Build the plan', chat)), (message) => send(message, 'plan', 'Keep planning', chat), turn);
+  planCard(chat, { plan, path: doc && doc.path }, (input, job) => ((chat.planBuildNext = job), send(`Build this plan now${where}. Follow it step by step${input.plan !== plan ? '; I edited it, so this version is the one to follow' : ''}. ${PLAN_TRACK}\n\n${input.plan}`, 'agent', 'Build the plan', chat)), (message) => send(message, 'plan', 'Keep planning', chat), turn);
 }
 
 // A turn that was meant to build a plan ended. If the agent stopped before changing anything
 // (usually to ask something), say so where you're looking, so it doesn't look like Build did nothing.
+// So the plan's to-dos tick off one by one, and only when they're really done.
+const PLAN_TRACK = "Keep a to-do list with the plan's to-dos, worded as they are in the plan. Mark each one done only once it is actually finished, and leave any you don't get to in this turn as not done.";
+
 function planBuildEnded(chat, build, failed) {
   if (build.started) return build.say('Built. The changes are in the chat.', 'built');
   if (failed) return build.say('Approved, but the build stopped with an error. See the chat.', 'error');
@@ -1106,18 +1113,20 @@ function planCard(chat, input, allow, deny, turnArg) {
     if (turn) turn.autoEdits = true; // Approving a plan works like Agent mode from here on.
     // Show the build in the chat it belongs to, so it's clear the click did something.
     if (chat.id !== activeChatId) switchChat(chat.id);
-    const job = { started: false, todos: (list) => doc.todos(list), say: (text, status) => (doc.resolve(text, status), $('.resolution', card) && ($('.resolution', card).textContent = text)) };
+    const job = { started: false, todos: (list) => doc.todos(list), idle: () => doc.idle(), say: (text, status) => (doc.resolve(text, status), $('.resolution', card) && ($('.resolution', card).textContent = text)) };
     // The agent's turn ended before you chose (it was stopped, or the request was dropped), so
     // there's nobody waiting for the approval: ask for the build as a new message instead.
     const stale = !turnArg && turn && chat.turn !== turn;
     if (stale) {
       chat.planBuildNext = job;
-      send(`Build this plan now. Follow it step by step${edited !== plan ? '; I edited it, so this version is the one to follow' : ''}:\n\n${edited}`, 'agent', 'Build the plan', chat);
+      send(`Build this plan now. Follow it step by step${edited !== plan ? '; I edited it, so this version is the one to follow' : ''}. ${PLAN_TRACK}\n\n${edited}`, 'agent', 'Build the plan', chat);
     } else {
       if (!turnArg && turn) {
         turn.planBuild = job;
+        chat.planJob = job;
         appendChat(h('div', { class: 'notice plan-go' }, `◆ Plan approved. ${agentLabel(chat)} is building it.`), chat);
       }
+      chat.planJob = job;
       allow({ ...input, plan: edited }, job);
       if (followUp && edited !== plan) send(`I edited the plan before approving it. Follow this version:\n\n${edited}`, 'agent', 'Use my edits to the plan', chat);
     }
@@ -1451,7 +1460,7 @@ function updateSendButton() {
 }
 
 // Plans end with their steps as a checklist, which the plan tab shows as its to-do list.
-const PLAN_TODOS = '\n\n[When you write the plan, end it with a "## To-dos" section: a short "- [ ] …" checklist of the concrete steps, one line each.]';
+const PLAN_TODOS = '\n\n[When you write the plan, end it with a "## To-dos" section: a short "- [ ] …" checklist of the concrete steps, one line each. When you build it, keep your to-do list worded the same way, and mark each one done only once it is actually finished.]';
 
 function buildPrompt(text) {
   const code = state.chips.filter((c) => c.kind !== 'image');

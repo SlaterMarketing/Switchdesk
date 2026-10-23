@@ -1,4 +1,4 @@
-/* global $, h, state, monaco, editor, activeTab, activateTab, renderMarkdown, modal, openFile, chats, switchChat, agentLabel, toast, send, setMode, queueSaveWorkspace */
+/* global $, h, state, monaco, editor, activeTab, activateTab, renderMarkdown, modal, openFile, chats, switchChat, agentLabel, toast, send, setMode, queueSaveWorkspace, PLAN_TRACK */
 'use strict';
 
 // ------------------------------------------------------------------ plans as documents
@@ -26,7 +26,7 @@ function attachPlanModel(t) {
 
 // Opens the plan in a tab. Returns handles the chat's plan card uses.
 function openPlanDoc(markdown, { onBuild, onKeep, chat, path } = {}) {
-  const t = { id: `plan:${++planSeq}`, kind: 'plan', rel: `Plan: ${planTitle(markdown)}`, plan: { text: markdown, state: '', status: '', preview: true, onBuild, onKeep, live: null, chatId: chat && chat.id, path } };
+  const t = { id: `plan:${++planSeq}`, kind: 'plan', rel: `Plan: ${planTitle(markdown)}`, plan: { text: markdown, state: '', status: '', preview: true, onBuild, onKeep, live: null, ticked: [], doing: null, chatId: chat && chat.id, path } };
   attachPlanModel(t);
   state.tabs.push(t);
   activateTab(t.id);
@@ -44,13 +44,22 @@ function openPlanDoc(markdown, { onBuild, onKeep, chat, path } = {}) {
     resolve: (label, status) => {
       t.plan.state = label;
       t.plan.status = status || t.plan.status || 'building';
+      if (t.plan.status !== 'building') t.plan.doing = null; // the turn ended: nothing is underway
       refresh();
       queueSaveWorkspace();
     },
-    // The agent's own to-do list while it builds (TodoWrite, or ACP and Codex plan updates).
+    // A later turn in the plan's chat ended: nothing is underway now.
+    idle: () => {
+      t.plan.doing = null;
+      refresh();
+    },
+    // The agent's own to-do list while it builds (TodoWrite, or ACP and Codex plan updates). The
+    // plan's to-dos it matches tick off as it finishes them, and stay ticked in later turns.
     todos: (list) => {
       t.plan.live = (list || []).map((x) => ({ text: x.content || x.activeForm || '', status: x.status }));
+      trackTodos(t.plan);
       refresh();
+      queueSaveWorkspace();
     },
   };
 }
@@ -66,6 +75,45 @@ function splitTodos(text) {
   const todos = [...section.matchAll(/^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm)].map((x) => ({ text: x[2].trim(), status: x[1] === ' ' ? 'pending' : 'completed' }));
   if (!todos.length) return { body: text, todos: [] };
   return { body: text.slice(0, m.index) + (next ? rest.slice(next.index) : ''), todos };
+}
+
+// Words that say what a to-do is, to match the agent's list against the plan's.
+const todoWords = (text) => new Set(String(text).toLowerCase().replace(/[`*_]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+function todoMatch(a, b) {
+  const x = todoWords(a);
+  const y = todoWords(b);
+  if (!x.size || !y.size) return 0;
+  const both = [...x].filter((w) => y.has(w)).length;
+  return both / new Set([...x, ...y]).size;
+}
+
+// Which of the plan's to-dos the agent's list says are done, or being done. Each of the agent's
+// items counts for the one plan to-do it's most like, and only when it's clearly the same thing, so
+// a small step finishing doesn't tick off a big to-do.
+function trackTodos(p) {
+  const { todos } = splitTodos(p.text);
+  const ticked = new Set(p.ticked || []);
+  p.doing = null;
+  for (const item of p.live || []) {
+    let best = null;
+    let score = 0.5;
+    for (const td of todos) {
+      const s = todoMatch(item.text, td.text);
+      if (s >= score) (best = td), (score = s);
+    }
+    if (!best) continue;
+    if (item.status === 'completed') ticked.add(best.text);
+    else if (item.status === 'in_progress' && !ticked.has(best.text)) p.doing = best.text;
+  }
+  p.ticked = [...ticked];
+}
+
+// The plan's to-dos with how each stands; without any, the agent's own list.
+function planTodoList(p) {
+  const { todos } = splitTodos(p.text);
+  if (!todos.length) return p.live || [];
+  const ticked = new Set(p.ticked || []);
+  return todos.map((x) => ({ ...x, status: x.status === 'completed' || ticked.has(x.text) ? 'completed' : p.doing === x.text ? 'in_progress' : 'pending' }));
 }
 
 function addTodo(t, text) {
@@ -126,7 +174,10 @@ function renderPlanBar(t) {
   const p = t.plan;
   const name = p.path ? p.path.split(/[\\/]/).pop() : planTitle(p.text);
   const toggle = h('button', { class: 'btn small', title: p.preview ? 'Edit the Markdown' : 'See it formatted', onclick: () => ((p.preview = !p.preview), showPlan(t)) }, p.preview ? 'Edit' : 'Done editing');
-  const status = p.status === 'building' ? h('span', { class: 'plan-status building' }, h('span', { class: 'spinner' }), 'Building') : p.status === 'built' ? h('span', { class: 'plan-status built' }, 'Built ✓') : p.status ? h('span', { class: `plan-status ${p.status}` }, p.status === 'sent' ? 'Sent back' : p.status === 'waiting' ? 'Waiting on you' : 'Stopped') : null;
+  const list = planTodoList(p);
+  const done = list.filter((x) => x.status === 'completed').length;
+  const partly = list.length && done < list.length;
+  const status = p.status === 'building' ? h('span', { class: 'plan-status building' }, h('span', { class: 'spinner' }), 'Building') : p.status === 'built' ? h('span', { class: `plan-status ${partly ? 'waiting' : 'built'}`, title: partly ? 'The agent finished its turn with some to-dos still to do' : '' }, partly ? `${done} of ${list.length} done` : 'Built ✓') : p.status ? h('span', { class: `plan-status ${p.status}` }, p.status === 'sent' ? 'Sent back' : p.status === 'waiting' ? 'Waiting on you' : 'Stopped') : null;
   bar.replaceChildren(
     ...[
       h('span', { class: 'plan-crumbs' }, h('span', { class: 'muted' }, 'Plans'), h('span', { class: 'muted' }, ' › '), h('span', { class: 'plan-icon' }, '◆'), h('span', { class: 'plan-name', title: p.path || name }, name)),
@@ -143,12 +194,11 @@ function renderPlanBar(t) {
 function renderPlanPreview(t) {
   const host = $('#plan-preview');
   const p = t.plan;
-  const { body, todos } = splitTodos(p.text);
+  const { body } = splitTodos(p.text);
   const doc = h('div', { class: 'msg-text plan-doc' });
   renderMarkdown(doc, body);
   linkFiles(doc);
-  // Without the agent's own progress, a finished build ticks off the plan's to-dos.
-  const list = p.live && p.live.length ? p.live : p.status === 'built' ? todos.map((x) => ({ ...x, status: 'completed' })) : todos;
+  const list = planTodoList(p);
   const done = list.filter((x) => x.status === 'completed').length;
   const input = h('input', { class: 'todo-new hidden', placeholder: 'A new to-do, then Enter', spellcheck: 'false' });
   input.addEventListener('keydown', (e) => {
@@ -163,7 +213,7 @@ function renderPlanPreview(t) {
       { class: 'plan-section-head' },
       h('span', {}, list.length ? `${list.length} To-do${list.length > 1 ? 's' : ''}${done ? ` · ${done} done` : ''}` : 'To-dos'),
       h('span', { class: 'spacer' }),
-      p.live ? null : h('button', { class: 'btn small', onclick: () => (input.classList.remove('hidden'), input.focus()) }, '＋ New')
+      h('button', { class: 'btn small', onclick: () => (input.classList.remove('hidden'), input.focus()) }, '＋ New')
     ),
     ...list.map((x) => {
       const row = h('div', { class: `plan-todo ${x.status}` }, h('span', { class: 'todo-icon' }, TODO_ICON[x.status] || '○'), inlineMarkdown(x.text));
@@ -223,7 +273,7 @@ function planSnapshot() {
     .map((t) => {
       const chat = chats.find((c) => c.id === t.plan.chatId);
       const p = t.plan;
-      return { text: p.text.slice(0, 200000), state: p.state, status: p.status, path: p.path || null, live: p.live, session: chat ? chat.sessionId || null : p.session || null, active: activeTab() === t };
+      return { text: p.text.slice(0, 200000), state: p.state, status: p.status, path: p.path || null, live: p.live, ticked: p.ticked, session: chat ? chat.sessionId || null : p.session || null, active: activeTab() === t };
     });
 }
 
@@ -233,14 +283,14 @@ function restorePlans(list) {
     if (!s || !s.text) continue;
     const chatFor = () => chats.find((c) => s.session && c.sessionId === s.session) || null;
     let doc;
-    const job = () => ({ started: false, todos: (l) => doc.todos(l), say: (text, status) => doc.resolve(text, status) });
+    const job = () => ({ started: false, todos: (l) => doc.todos(l), idle: () => doc.idle(), say: (text, status) => doc.resolve(text, status) });
     const onBuild = () => {
       const chat = chatFor();
       if (!chat) return toast('The chat this plan came from isn’t open any more.');
       if (chat.busy) return toast(`${agentLabel(chat)} is still working in that chat.`);
       switchChat(chat.id);
       chat.planBuildNext = job();
-      send(`Build this plan now. Follow it step by step:\n\n${doc.text()}`, 'agent', 'Build the plan', chat);
+      send(`Build this plan now. Follow it step by step. ${PLAN_TRACK}\n\n${doc.text()}`, 'agent', 'Build the plan', chat);
       setMode('agent');
       doc.resolve('Approved. Building it now.', 'building');
     };
@@ -258,6 +308,7 @@ function restorePlans(list) {
     t.plan.state = s.status === 'building' ? 'Was building when Switchdesk closed.' : s.state || '';
     t.plan.status = s.status === 'building' ? 'error' : s.status || '';
     t.plan.live = s.live || null;
+    t.plan.ticked = s.ticked || [];
     if (s.active) active = t;
   }
   return active;
