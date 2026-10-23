@@ -1,5 +1,5 @@
 /* global $, h, state, desk, toast, modal, chats, chatById, activeChat, createChat, switchChat, renderChatTabs, appendChat, send, compareChoices, agentOf, agentInfo, agentLabel,
-   queueSaveWorkspace, folderId, openPlanDoc, activeTab, activateTab, openSession, renderMarkdown, LIMIT_RE, CARRY_ON, autoPick, refreshWorktree, renderWorktreeBar, reviewWorktree, mergeWorktree, git */
+   queueSaveWorkspace, folderId, openPlanDoc, activeTab, activateTab, openSession, renderMarkdown, LIMIT_RE, CARRY_ON, CARRY_ON_RESET, RESET_SLACK, atText, limitResetAt, autoPick, refreshWorktree, renderWorktreeBar, reviewWorktree, mergeWorktree, git */
 'use strict';
 
 // ------------------------------------------------------------------ long runs
@@ -14,11 +14,10 @@
 const RUN_FIX_ROUNDS = 2; // times a milestone goes back for fixes after a failed check
 const RUN_NUDGES = 2; // times an agent that stopped without its report is told to carry on
 const RUN_MOVES = 3; // times one milestone moves to another agent when one runs out of usage
-const RUN_WAIT = 15 * 60 * 1000; // with every agent out of usage: try again this often
 const RUN_MAX_FAILURES = 3; // milestones that don't work out before the run stops
 
 const runCards = new Map(); // run id -> its card in the run's own chat
-const runTimers = new Map(); // run id -> a retry while every agent is out of usage
+const runTimers = new Map(); // run id -> { at, chat }: waiting for a limit to reset
 const runDocs = new Map(); // run id -> its plan document
 const liveRuns = new Map(); // run id -> the run, as this window is driving it
 
@@ -399,19 +398,11 @@ async function turnFailed(run, chat, m, error) {
       const pick = await autoPick(chat).catch(() => null);
       if (pick) return send(CARRY_ON, null, null, chat);
     }
-    run.why = `Every agent is out of usage. Trying again every ${RUN_WAIT / 60000} minutes.`;
+    // Every agent is out: wait for this one's limit to reset (watchRuns carries it on then).
+    const at = limitResetAt(chat) + RESET_SLACK;
+    run.why = `Every agent is out of usage. It carries on by itself ${atText(at)}, when the limit resets.`;
+    runTimers.set(run.id, { at, chat: chat.id });
     await saveRun(run);
-    clearTimeout(runTimers.get(run.id));
-    runTimers.set(
-      run.id,
-      setTimeout(() => {
-        runTimers.delete(run.id);
-        if (run.phase !== 'running' || !chats.includes(chat)) return;
-        run.why = '';
-        m.moves = 0;
-        send(CARRY_ON, null, null, chat);
-      }, RUN_WAIT)
-    );
     return;
   }
   // Any other error: try again a couple of times, then let the milestone go.
@@ -532,7 +523,7 @@ function closeRunChat(id) {
 }
 
 async function finishRun(run, stopped) {
-  clearTimeout(runTimers.get(run.id));
+  runTimers.delete(run.id);
   run.phase = stopped ? 'stopped' : 'done';
   run.finished = Date.now();
   await saveRun(run);
@@ -775,6 +766,7 @@ function showRun(run) {
 }
 
 async function resumeRun(run) {
+  runTimers.delete(run.id);
   run.phase = 'running';
   run.why = '';
   await saveRun(run);
@@ -823,13 +815,29 @@ function longRunBusy(chat) {
 
 // A run that's meant to be working but has nothing running (a step that went missing) is nudged
 // on after two quiet minutes, so a night isn't lost to a hiccup.
-const runQuiet = new Map(); // run id -> minutes with nothing running
+const runQuiet = new Map(); // run id -> half-minute checks with nothing running
 function watchRuns() {
+  // A limit that has reset: carry on where it stopped.
+  for (const [id, w] of [...runTimers]) {
+    const run = runById(id);
+    const chat = chatById(w.chat);
+    if (!run || run.phase !== 'running' || !chat) {
+      if (!run || run.phase !== 'paused') runTimers.delete(id);
+      continue;
+    }
+    if (w.at > Date.now() || chat.busy) continue;
+    runTimers.delete(id);
+    run.why = '';
+    const m = run.milestones[chat.longRun.i];
+    if (m) m.moves = 0;
+    saveRun(run);
+    send(CARRY_ON_RESET, 'agent', 'Carry on (the limit reset)', chat);
+  }
   for (const run of folderRuns()) {
     const working = run.phase === 'running' && (runTimers.has(run.id) || chats.some((c) => c.longRun && c.longRun.run === run.id && (c.busy || c.making || c.queue.length)));
     const quiet = run.phase === 'running' && !working ? (runQuiet.get(run.id) || 0) + 1 : 0;
     runQuiet.set(run.id, quiet);
-    if (quiet >= 2) {
+    if (quiet >= 4) {
       runQuiet.set(run.id, 0);
       resumeRun(run);
     }
@@ -839,5 +847,5 @@ function watchRuns() {
 function wireLongRuns() {
   const btn = $('#btn-long-run');
   if (btn) btn.addEventListener('click', () => longRunButton());
-  setInterval(watchRuns, 60 * 1000);
+  setInterval(watchRuns, 30 * 1000);
 }

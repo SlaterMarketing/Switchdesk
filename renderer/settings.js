@@ -506,6 +506,12 @@ async function settingsUsage(body) {
   body.replaceChildren(
     h('h3', {}, 'Usage'),
     h('p', { class: 'muted small' }, "What each agent and Claude account has used in Switchdesk. Tokens in includes the conversation each turn re-reads. Plan limits are as the agent last reported them, so they update after each chat turn."),
+    h(
+      'label',
+      { class: 'check set-box' },
+      h('input', { type: 'checkbox', id: 'carry-on-reset', checked: state.settings.carryOnAtReset !== false, onchange: async (e) => (state.settings = await desk.setSettings({ carryOnAtReset: e.target.checked })) }),
+      h('span', {}, h('b', {}, 'Carry on when a limit resets. '), h('span', { class: 'muted' }, "When an agent runs out partway through and there's no other agent with room, the chat waits and carries on by itself once the limit resets. Long runs always do."))
+    ),
     ...(boxes.length ? boxes : [h('div', { class: 'muted small' }, 'Nothing yet. Usage shows here once you’ve chatted with an agent.')])
   );
 }

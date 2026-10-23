@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.37.0
+
+- **A chat that hits its limit carries on when the limit resets.** When an agent runs out partway through and no other agent has room, the chat says when it will carry on, then picks up by itself once the limit resets. That's at the time the agent gives, or its plan window's reset, or every half hour when neither is known. It checks the clock, so it still goes after your computer has slept. Cancel stops it, and sending a message yourself does too. When other agents are ready you still get to pick one, with "wait and carry on at …" beside them. Turn it off in Settings → Usage. Long runs now wait for the reset too, rather than trying every 15 minutes.
+
 ## 0.36.0
 
 - **Long runs have a page of their own.** It opens beside your files when the run starts, and 🌙 in the chat header shows how far it's got (like 🌙 3/7) and opens it again. A bar across the top shows every milestone, green when done and red when it didn't work out. The milestone being worked on shows what the agent is doing right now. Each milestone opens to show what it was meant to do, what it did, what its check found and the questions it answered for itself, with its commit and how long it took. When the run ends, a "Worth a look" box at the top lists anything that didn't work out and every assumption it made, next to Review and Merge.

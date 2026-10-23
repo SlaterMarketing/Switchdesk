@@ -839,6 +839,37 @@ appTest('when an agent hits its limit, the chat carries on in another one', asyn
   assert.match(sent, /hit its usage limit/);
 });
 
+appTest('with no other agent to move to, a chat that hits its limit carries on when the limit resets', async ({ w, p }) => {
+  await chatWith(w, 'cursor');
+  await sendMessage(w, 'remember the word mango');
+  await idle(w);
+  // No other agent is ready, and the limit resets in an hour.
+  await w.evaluate(() => (window.agentStatus = async () => ({ installed: false })));
+  const at = Math.floor(Date.now() / 1000) + 3600;
+  await w.evaluate((at) => appendChat(turnError(limitText(`Usage limit reached|${at}`), activeChat(), `Usage limit reached|${at}`)), at);
+  await w.waitForSelector('.reset-wait');
+  const when = new Date((at + 120) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  assert.match(await w.$eval('.reset-wait', (e) => e.innerText), new RegExp(`carries on by itself at ${when.replace(/\s/g, '\\s')}, when the limit resets`));
+  // The time comes (after the computer slept, say): it carries on by itself.
+  await w.evaluate(() => {
+    for (const x of resetWaits.values()) x.at = Date.now() - 1;
+    checkResetWaits();
+  });
+  await idle(w);
+  assert.match(prompts(p, 'cursor').pop(), /it has reset now/);
+  assert.match(await w.$eval('.reset-wait', (e) => e.innerText), /The limit has reset, so it carried on/);
+  // Sending something yourself cancels a wait; and it can be switched off.
+  await w.evaluate(() => appendChat(turnError('Usage limit reached', activeChat())));
+  await w.waitForSelector('.reset-wait:has-text("Cancel")');
+  await sendMessage(w, 'never mind');
+  await idle(w);
+  assert.equal(await w.evaluate(() => resetWaits.size), 0);
+  await w.evaluate(async () => (state.settings = await desk.setSettings({ carryOnAtReset: false })));
+  await w.evaluate(() => appendChat(turnError('Usage limit reached', activeChat())));
+  await w.waitForSelector('.limit-options button:has-text("wait and carry on")');
+  assert.equal(await w.evaluate(() => resetWaits.size), 0);
+});
+
 test('the mic button starts the computer’s dictation in the chat box', { timeout: 120000 }, async () => {
   const p = profile();
   const log = path.join(p.userData, 'dictate.log');

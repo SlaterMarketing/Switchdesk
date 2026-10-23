@@ -17,13 +17,14 @@ const activeChat = () => chats.find((c) => c.id === activeChatId) || null;
 const chatById = (id) => chats.find((c) => c.id === id) || null;
 
 // An error that ended a turn, with a way to report it (a GitHub issue you read before sending).
-function turnError(text, chat) {
+// raw: the agent's own words, which can say when a limit resets.
+function turnError(text, chat, raw) {
   const report = h('button', { class: 'err-report', title: 'Open a GitHub issue with this error, your version and system filled in. You can edit it before sending.', onclick: () => desk.reportProblem({ agent: agentOf(chat), error: text }) }, 'Report this');
   const limit = LIMIT_RE.test(text);
-  if (limit) noteLimitHit(chat);
-  // On Auto, Switchdesk carries on in the next agent by itself.
-  if (limit && chat.auto) setTimeout(() => autoCarryOn(chat), 0);
-  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), limit ? null : report, limit && !chat.auto ? limitOptions(chat) : null);
+  if (limit) noteLimitHit(chat, raw || text);
+  // On Auto, Switchdesk carries on in the next agent by itself. A long run sees to its own.
+  if (limit && chat.auto && !chat.longRun) setTimeout(() => autoCarryOn(chat), 0);
+  return h('div', { class: 'turn-error' }, h('span', { class: 'err-text' }, text), limit ? null : report, limit && !chat.auto && !chat.longRun ? limitOptions(chat) : null);
 }
 
 // What agents say when a plan or API key has run out for now.
@@ -50,10 +51,73 @@ function limitOptions(chat) {
       const s = await agentStatus(a.id);
       if (s.installed && s.loggedIn) row.append(h('button', { class: 'btn small', onclick: () => go(() => pickAgent(a.id)) }, a.label));
     }
-    if (row.children.length === 1) row.replaceChildren(h('span', { class: 'small' }, 'Set up another agent in Settings → Agents to carry on while this one is out.'));
+    const others = row.children.length > 1;
+    // With nowhere else to go, it waits for the limit to reset and carries on (Settings → Usage).
+    if (!others && carryOnAtReset()) return row.replaceChildren(), carryOnLater(chat);
+    if (!others) row.replaceChildren(h('span', { class: 'small' }, 'Set up another agent in Settings → Agents to carry on while this one is out, or'));
+    else row.append(h('span', { class: 'small' }, 'or'));
+    row.append(h('button', { class: 'btn small', onclick: () => (row.remove(), carryOnLater(chat)) }, `wait and carry on ${atText(limitResetAt(chat))}`));
   })();
   return row;
 }
+
+// ---------- carrying on when a limit resets
+//
+// A chat whose agent ran out, with no other agent to move to, waits for the limit to reset and then
+// carries on by itself. It checks the clock rather than a timer, so it still goes after the
+// computer has slept. Sending anything yourself in the meantime cancels the wait.
+
+const CARRY_ON_RESET = 'Carry on with the task from where it stopped. You hit your usage limit partway through, and it has reset now.';
+const RESET_SLACK = 2 * 60e3; // a little after the reset, so the agent's count has moved on
+const RESET_TRIES = 6;
+const resetWaits = new Map(); // chat id -> { at, el }
+const resetTries = new Map(); // chat id -> waits in a row without a turn that worked
+
+const carryOnAtReset = () => !state.settings || state.settings.carryOnAtReset !== false;
+const atText = (t) => {
+  const d = new Date(t);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? `at ${time}` : `${d.toLocaleDateString([], { weekday: 'long' })} at ${time}`;
+};
+
+function carryOnLater(chat, why) {
+  const tries = (resetTries.get(chat.id) || 0) + 1;
+  if (tries > RESET_TRIES) return appendChat(h('div', { class: 'notice' }, `${why ? why + ' ' : ''}It has waited for the limit ${RESET_TRIES} times in a row, so it stopped. Send a message to carry on.`), chat);
+  resetTries.set(chat.id, tries);
+  cancelCarryOn(chat);
+  const at = limitResetAt(chat) + RESET_SLACK;
+  const el = h(
+    'div',
+    { class: 'notice reset-wait' },
+    `${why ? why + ' ' : ''}It carries on by itself ${atText(at)}, when the limit resets. `,
+    h('a', { href: '#', onclick: (e) => (e.preventDefault(), cancelCarryOn(chat, 'Cancelled. Send a message when you want to carry on.')) }, 'Cancel')
+  );
+  resetWaits.set(chat.id, { at, el });
+  appendChat(el, chat);
+  queueSaveWorkspace();
+}
+
+function cancelCarryOn(chat, say) {
+  const w = resetWaits.get(chat.id);
+  if (!w) return;
+  resetWaits.delete(chat.id);
+  w.el.replaceChildren(say || 'You carried on yourself, so it stopped waiting.');
+}
+
+function checkResetWaits() {
+  for (const [id, w] of [...resetWaits]) {
+    const chat = chatById(id);
+    if (!chat) {
+      resetWaits.delete(id);
+      continue;
+    }
+    if (w.at > Date.now() || chat.busy) continue;
+    resetWaits.delete(id);
+    w.el.replaceChildren('The limit has reset, so it carried on.');
+    send(CARRY_ON_RESET, MODES.includes(chat.lastMode) ? chat.lastMode : 'agent', 'Carry on (the limit reset)', chat);
+  }
+}
+setInterval(checkResetWaits, 20 * 1000);
 
 function emptyState() {
   return h(
@@ -564,6 +628,7 @@ function userBubble(chat, body, rw) {
 }
 
 function startTurn(chat, shown, mode, images, rwText) {
+  cancelCarryOn(chat); // you sent something while it waited for a limit to reset
   const bubble = appendChat(
     userBubble(
       chat,
@@ -699,11 +764,12 @@ function handleEvent(chat, ev) {
     case 'result':
       if (ev.session_id) chat.sessionId = ev.session_id;
       chat.usage.turns++;
+      if (!ev.is_error) resetTries.delete(chat.id);
       recordUsage(chat, ev);
       if (chat.id === activeChatId) renderChatMeta();
       if (turn) {
         if (turn.interrupted) appendChat(h('div', { class: 'notice' }, turn.forQueued ? 'Interrupted to send your new message.' : 'Stopped.'), chat);
-        else if (ev.is_error) appendChat(turnError(limitText(ev.result) || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`, chat), chat);
+        else if (ev.is_error) appendChat(turnError(limitText(ev.result) || (ev.errors || []).join('\n') || `Claude Code stopped (${ev.subtype}).`, chat, ev.result), chat);
         else {
           const secs = Math.round((ev.duration_ms || Date.now() - turn.started) / 1000);
           const denied = (ev.permission_denials || []).length;

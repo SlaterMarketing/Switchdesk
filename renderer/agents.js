@@ -464,11 +464,29 @@ async function readyAgents() {
 
 // Limits an agent ran into, by usage key: until when (or 5 hours, when it didn't say).
 const limitHits = new Map();
-function noteLimitHit(chat) {
+const limitKnown = new Set(); // keys whose reset time came from the agent
+// When an agent that ran out is back: the time its error gave (Claude Code's "…|1760000000"), or
+// the reset of the plan window that's full, or failing those the soonest reset it reported.
+function noteLimitHit(chat, raw) {
   const key = usageKey(chat);
+  const said = /\|(\d{9,})\s*$/.exec(String(raw || ''));
+  if (said) return limitHits.set(key, +said[1] * 1000), limitKnown.add(key);
   const u = acct.usage.get(key);
-  const resets = [u && u.short && u.short.resetsAt, u && u.long && u.long.resetsAt].map((t) => (typeof t === 'number' ? (t < 1e12 ? t * 1000 : t) : Date.parse(t || ''))).filter((t) => t > Date.now());
-  limitHits.set(key, resets.length ? Math.min(...resets) : Date.now() + 5 * 3600e3);
+  const when = (t) => (typeof t === 'number' ? (t < 1e12 ? t * 1000 : t) : Date.parse(t || ''));
+  const wins = [u && u.short, u && u.long].filter((w) => w && when(w.resetsAt) > Date.now());
+  const full = wins.filter((w) => w.pct >= 95);
+  const resets = (full.length ? full : wins).map((w) => when(w.resetsAt));
+  // Not knowing, it counts as out for a while (so Auto passes it over), and a wait tries again sooner.
+  limitHits.set(key, resets.length ? (full.length ? Math.max(...resets) : Math.min(...resets)) : Date.now() + 5 * 3600e3);
+  if (resets.length) limitKnown.add(key);
+  else limitKnown.delete(key);
+}
+
+// When a chat that ran out can try again: its reset, or in half an hour when that isn't known.
+function limitResetAt(chat) {
+  const key = usageKey(chat);
+  const at = limitHits.get(key);
+  return limitKnown.has(key) && at > Date.now() ? at : Date.now() + 30 * 60e3;
 }
 
 // How much of its plan an agent has left, 0 to 100, as last reported. Agents that don't report it
@@ -529,7 +547,8 @@ async function autoCarryOn(chat) {
   if (chat !== activeChat()) switchChat(chat.id);
   const from = agentLabel(chat);
   const pick = await autoPick(chat);
-  if (!pick) return appendChat(h('div', { class: 'notice' }, `${from} is out of usage and no other agent has room right now. Set up another one in Settings → Agents, or wait for it to reset.`), chat);
+  const why = `${from} is out of usage and no other agent has room right now.`;
+  if (!pick) return carryOnAtReset() ? carryOnLater(chat, why) : appendChat(h('div', { class: 'notice' }, `${why} Set up another one in Settings → Agents, or wait for it to reset.`), chat);
   send(CARRY_ON, null, null, chat);
 }
 
