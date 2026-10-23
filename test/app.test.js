@@ -1173,7 +1173,10 @@ test('a long run plans milestones, works through each in a fresh chat, checks it
     await w.waitForSelector('#plan-bar button:has-text("Build it")', { timeout: 30000 });
     assert.match(await w.$eval('#plan-preview', (e) => e.innerText), /Write the notes[\s\S]*Done when: notes.md exists[\s\S]*Write the todo/);
     await w.click('#plan-bar button:has-text("Build it")');
-    await w.waitForSelector('.card.long-run.summary', { timeout: 90000 });
+    await w.waitForSelector('.card.long-run.summary', { timeout: 60000 }).catch(async (e) => {
+      console.log(JSON.stringify(await w.evaluate(() => ({ runs: state.settings.longRuns, chats: chats.map((c) => [c.title, c.busy, c.longRun, c.el.innerText.slice(-600)]), active: activeChat() && activeChat().title })), null, 1), errors);
+      throw e;
+    });
     const summary = await w.$eval('.card.long-run.summary', (e) => e.innerText);
     assert.match(summary, /2 of 2 milestones/);
     assert.match(summary, /Markdown or text\? Assumed: Markdown/);
