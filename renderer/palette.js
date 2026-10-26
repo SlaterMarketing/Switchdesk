@@ -1,4 +1,4 @@
-/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy, sendToSeveral, secondOpinion, openReplace, openSchedules, openLongRuns,
+/* global $, h, state, desk, modal, fuzzyScore, MODES, MODE_LABEL, setMode, setFolder, addWorkspaceFolder, saveActive, closeTab, quickOpen, newChat, newChatInCopy, sendToSeveral, secondOpinion, openReplace, openSchedules, openLongRuns, folderRuns, stopRun,
    addSelectionToChat, inlineEdit, toggleTerminal, newTerminal, showSidePanel, openSearch, openSettings, openPreview, toggleTheme, loadHistory,
    agentState, acct, multiAccount, chooseAgent, agentOf, activeChat, chatAccount, isMac, debugCmd, restartDebugging, toggleBreakpoint, activeTab, editor */
 'use strict';
@@ -17,6 +17,7 @@ function paletteCommands() {
     ['Send to Several Agents…', '', sendToSeveral],
     ['Second Opinion on My Changes…', '', () => secondOpinion()],
     ['Start a Long Run…', '', () => openLongRuns()],
+    ...folderRuns().filter((r) => ['running', 'paused', 'waiting'].includes(r.phase)).map((r) => [`Stop the Long Run: ${r.title}`, '', () => stopRun(r)]),
     ['Scheduled Tasks…', '', () => openSchedules()],
     ['Schedule a Task…', '', () => openSchedules('new')],
     ['New Window', '⌘⇧N', () => desk.newWindow(null)],

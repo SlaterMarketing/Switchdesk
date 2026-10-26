@@ -2,6 +2,13 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.38.0
+
+- **Stop really stops a long run.** Stop (on the run's page, or "Stop the Long Run" in the command palette) now halts the agent mid-step and sends nothing more. Before, it only stopped the run from moving on, and the agent kept working. Finished milestones stay committed on the run's branch, and unfinished work stays in its copy.
+- **Long runs can stop for you.** The plan can now include milestones only you can do, like play-testing or making a call. When the run reaches one, it asks you on a card in the run's chat, on its page and on your phone, and meanwhile carries on with anything that doesn't depend on it. Press Done (with a note if you like) or Skip it. What you say is passed on to the milestones after it.
+- **Switchdesk runs each milestone's check itself.** A milestone can have a check command, like `npm test`. Switchdesk runs it before committing, and if it fails, the agent gets the output and fixes it. So "the tests pass" no longer rests on the agent's word. The run's page shows each check's result.
+- **Long runs re-plan as they go.** After each milestone, the planner looks at what's left in light of what was learned. It can drop a milestone that's no longer needed or add one that's missing. The run's page lists any plan changes. You can turn this off when starting a run.
+
 ## 0.37.2
 
 - **Long runs no longer get stuck sending "Carry on".** When the agent left something running in the background, such as an editor or a server, Switchdesk waited for it to finish before reading the milestone report. It never finished, so the run sat still and kept being told to carry on. Long runs now read the report as soon as the turn ends. A report with a Windows path in it (C:\Users\…), which isn't valid as written, is read too. A run picking up again now uses a report the agent already gave, rather than asking again.

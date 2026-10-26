@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('desk', {
     push: call('worktree:push'),
     head: call('worktree:head'),
     commit: call('worktree:commit'),
+    run: call('worktree:run'),
     setAside: call('worktree:set-aside'),
   },
   github: {

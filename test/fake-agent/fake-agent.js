@@ -64,11 +64,18 @@ Make the cart total handle an empty cart, in \`cart.js\`.
 
 // A scripted turn from $FAKE_AGENT_DEMO: { read }, { write: { path, content } }, { run: { command, output } },
 // { say } and { wait } steps, each shown the way a real agent's would be.
+let stopped = false; // the turn was cancelled
+let wake = () => {};
 async function demo(steps) {
-  const later = (ms) => new Promise((r) => setTimeout(r, ms));
+  const later = (ms) =>
+    new Promise((r) => {
+      const t = setTimeout(r, ms);
+      wake = () => (clearTimeout(t), r());
+    });
   let n = 0;
   for (const s of steps) {
     const id = `d${++n}`;
+    if (stopped) break;
     if (s.wait) await later(s.wait);
     else if (s.say) say(s.say);
     else if (s.read) {
@@ -91,8 +98,9 @@ async function prompt(m) {
   const text = m.params.prompt.map((p) => p.text || '').join('');
   const scripted = process.env.FAKE_AGENT_DEMO && JSON.parse(fs.readFileSync(process.env.FAKE_AGENT_DEMO, 'utf8')).find((d) => text.includes(d.match) && (!d.agent || d.agent === NAME));
   if (scripted) {
+    stopped = false;
     await demo(scripted.steps);
-    return send({ id: m.id, result: { stopReason: 'end_turn' } });
+    return send({ id: m.id, result: { stopReason: stopped ? 'cancelled' : 'end_turn' } });
   }
   if (/Review pull request #\d+ "/.test(text)) {
     say('One real problem.\n\n```findings\n[{"file": "cart.js", "line": 2, "severity": "error", "title": "Null cart throws", "detail": "total(null) throws a TypeError."}]\n```\n');
@@ -141,7 +149,5 @@ require('readline')
     else if (m.method === 'session/load' || m.method === 'session/resume') (SID = m.params.sessionId), (cwd = m.params.cwd || cwd), send({ id: m.id, result: { modes: MODES } });
     else if (m.method === 'session/set_mode') (mode = m.params.modeId), send({ id: m.id, result: {} });
     else if (m.method === 'session/prompt') prompt(m);
-    else if (m.method === 'session/cancel') {
-      /* nothing to stop */
-    } else if (m.id != null) send({ id: m.id, result: {} });
+    else if (m.method === 'session/cancel') (stopped = true), wake(); else if (m.id != null) send({ id: m.id, result: {} });
   });

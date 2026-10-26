@@ -1275,6 +1275,74 @@ test('a long run plans milestones, works through each in a fresh chat, checks it
   }
 });
 
+test('a long run runs each milestone’s check, waits for you where it needs you, re-plans, and stops at once', { timeout: 150000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const fs = require('fs');
+  const demo = path.join(p.agentDir, 'demo.json');
+  const block = (tag, o) => '```' + tag + '\n' + JSON.stringify(o) + '\n```';
+  const done = (summary) => block('milestone', { status: 'done', summary });
+  fs.writeFileSync(
+    demo,
+    JSON.stringify([
+      { match: "You're planning a long run", steps: [{ say: block('milestones', [{ title: 'Write the notes', what: 'Add notes.md.', done_when: 'notes.md exists', check: 'test -f notes.md', after: [] }, { title: 'Try the notes', needs_you: 'Read notes.md and say if it reads well', after: [1] }, { title: 'Write the todo', what: 'Add todo.md.', done_when: 'todo.md exists', after: [] }]) }] },
+      // It says it's done without writing the file: Switchdesk's own check catches that.
+      { match: 'Your milestone, 1 of 3', steps: [{ say: done('Added notes.md.') }] },
+      { match: 'Switchdesk ran `test -f notes.md` and it failed', steps: [{ write: { path: 'notes.md', content: '# Notes\n' } }, { say: done('Really added notes.md.') }] },
+      { match: 'The milestone: Write the notes', steps: [{ say: block('verdict', { pass: true, problems: [] }) }] },
+      { match: 'Milestone m1, "Write the notes", is done', steps: [{ say: block('replan', { changes: 'Added a readme once you have read the notes.', milestones: [{ id: 'm2', title: 'Try the notes', needs_you: 'Read notes.md and say if it reads well', after: ['m1'] }, { id: 'm3', title: 'Write the todo', what: 'Add todo.md.', done_when: 'todo.md exists', after: [] }, { title: 'Write the readme', what: 'Add README.md.', done_when: 'README.md exists', after: ['m2'] }] }) }] },
+      { match: 'Your milestone, 3 of 4', steps: [{ write: { path: 'todo.md', content: '- one\n' } }, { say: done('Added todo.md.') }] },
+      { match: 'The milestone: Write the todo', steps: [{ say: block('verdict', { pass: true, problems: [] }) }] },
+      { match: 'Your milestone, 4 of 4', steps: [{ say: 'Starting on the readme.' }, { wait: 60000 }, { say: done('Added README.md.') }] },
+    ])
+  );
+  const { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
+  try {
+    await w.click('#btn-long-run');
+    await w.fill('.long-run-form textarea', 'Notes, a look from me, then the todo');
+    for (const sel of await w.$$('.long-run-form select')) await sel.selectOption({ label: 'Cursor' });
+    await w.click('.long-run-form button:has-text("Plan it")');
+    await w.waitForSelector('#plan-bar button:has-text("Build it")', { timeout: 30000 });
+    assert.match(await w.$eval('#plan-preview', (e) => e.innerText), /Check: test -f notes\.md[\s\S]*Needs you: Read notes\.md[\s\S]*After: 1/);
+    await w.click('#plan-bar button:has-text("Build it")');
+    // The todo goes ahead while the notes wait for you; then nothing else can go on without you.
+    const state = () => w.evaluate(() => state.settings.longRuns[0]);
+    await w.waitForFunction(() => (state.settings.longRuns[0] || {}).phase === 'waiting', null, { timeout: 60000 }).catch(async (e) => {
+      console.log(JSON.stringify(await state(), null, 1), errors);
+      throw e;
+    });
+    let run = await state();
+    assert.deepEqual(run.milestones.map((m) => [m.title, m.status]), [['Write the notes', 'done'], ['Try the notes', 'waiting'], ['Write the todo', 'done'], ['Write the readme', 'pending']]);
+    assert.equal(run.milestones[0].rounds, 1);
+    assert.equal(run.milestones[0].checkRun.ok, true);
+    assert.match(run.changes[0].text, /Added a readme/);
+    assert.equal(await w.$$eval('.card.long-run-wait:not(.resolved)', (c) => c.length), 1);
+    await w.waitForSelector('#run-view:not(.hidden) .run-yours');
+    assert.match(await w.$eval('#run-view', (e) => e.innerText), /Waiting on you: Try the notes[\s\S]*Plan changes \(1\)/);
+    await w.fill('#run-view .run-yours textarea', 'Reads well, keep it short');
+    await w.click('#run-view .run-yours button:has-text("Done")');
+    // What you said reaches the next milestone.
+    await w.waitForFunction(() => chats.some((c) => c.longRun && c.longRun.role === 'work' && c.busy && /4\/4/.test(c.title)), null, { timeout: 30000 });
+    assert.match(await w.evaluate(() => workerPrompt(runById(state.settings.longRuns[0].id), 3)), /Try the notes \(from the person running this\): Reads well, keep it short/);
+    assert.equal(await w.$$eval('.card.long-run-wait:not(.resolved)', (c) => c.length), 0);
+    // Stop halts the agent mid-step.
+    await w.evaluate(() => (window.confirm = () => true));
+    await w.waitForFunction(() => /Starting on the readme/.test(chats.find((c) => /4\/4/.test(c.title)).el.innerText));
+    await w.click('#run-view .run-head button:has-text("Stop")');
+    await w.waitForFunction(() => state.settings.longRuns[0].phase === 'stopped' && !chats.some((c) => c.longRun && c.busy), null, { timeout: 15000 }).catch(async (e) => {
+      console.log(JSON.stringify(await w.evaluate(() => [state.settings.longRuns[0].phase, chats.map((c) => [c.title, c.busy])])));
+      console.log(fs.readFileSync(path.join(p.agentDir, 'log.jsonl'), 'utf8').split('\n').filter((l) => /cancel|prompt|"result"/.test(l)).slice(-8).map((l) => l.slice(0, 200)).join('\n'));
+      throw e;
+    });
+    run = await state();
+    assert.equal(run.milestones[3].status, 'pending');
+    assert.match(run.milestones[3].why, /stopped partway/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, project());

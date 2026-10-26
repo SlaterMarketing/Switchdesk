@@ -1073,3 +1073,15 @@ body.desk .code-intro { display: none; }
 .run-ms-body p, .run-ms-body ul { margin: 0; }
 .run-ms-body ul { padding-left: 18px; }
 .run-ms-body .bad { color: var(--err); }
+.run-progress .seg.waiting { background: var(--warn); }
+.run-num.waiting { border-color: var(--warn); color: var(--warn); }
+.run-pill.waiting { color: var(--warn); background: rgba(210, 153, 34, 0.14); }
+.run-yours { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+.run-yours .run-flag { display: flex; flex-direction: column; gap: 6px; }
+.run-yours h3 { margin: 0; font-size: 14px; }
+.run-yours textarea, .card.long-run-wait textarea { width: 100%; box-sizing: border-box; margin-top: 6px; }
+.run-yours .actions, .card.long-run-wait .actions { display: flex; gap: 6px; }
+.run-changes { margin-top: 16px; }
+.run-changes summary { cursor: pointer; font-weight: 600; }
+.run-output { max-height: 180px; overflow: auto; font-size: 11px; background: var(--bg-elev); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
+.run-state.waiting .dot { background: var(--warn); }

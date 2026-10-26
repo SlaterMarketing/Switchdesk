@@ -90,6 +90,37 @@ function saveSettings() {
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
 }
 
+// ---------- long run checks ----------
+
+// Runs a command through the shell in `cwd`, stopping it (and what it started) at the time limit.
+function runCheck(cwd, command, timeoutMs) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const win = process.platform === 'win32';
+    let out = '';
+    let timedOut = false;
+    const child = require('child_process').spawn(command, { cwd, shell: true, windowsHide: true, detached: !win, env: { ...process.env, CI: process.env.CI || '1' } });
+    const keep = (b) => (out = (out + b.toString('utf8')).slice(-8000));
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        if (win) execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
+        else process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, timeoutMs);
+    const done = (code) => {
+      clearTimeout(timer);
+      resolve({ code: timedOut ? null : code, ok: !timedOut && code === 0, timedOut, output: out.trim(), ms: Date.now() - started });
+    };
+    child.on('error', (err) => ((out += `\n${err.message}`), done(127)));
+    child.on('close', (code) => done(code));
+  });
+}
+
 // ---------- windows ----------
 //
 // Each window has its own workspace: a main folder, plus any extra folders added to it. Files in an
@@ -1575,6 +1606,13 @@ function registerIpc() {
   });
   handle('worktree:head', async (ctx, wt) => copies(ctx).head(await ownCopy(ctx, wt)));
   handle('worktree:commit', async (ctx, wt, message) => copies(ctx).commit(await ownCopy(ctx, wt), message));
+  // A long run's check for a milestone: a command (the tests, a build) run in the run's copy.
+  // Passes when it exits 0. Only the end of what it printed comes back.
+  handle('worktree:run', async (ctx, wt, command, timeoutMs) => {
+    if (ctx.remote) throw new Error("Checks don't run in SSH folders yet.");
+    await ownCopy(ctx, wt);
+    return runCheck(wt.path, String(command), Math.min(Math.max(timeoutMs || 20 * 60e3, 10e3), 2 * 3600e3));
+  });
   handle('worktree:set-aside', async (ctx, wt, name, sha) => copies(ctx).setAside(await ownCopy(ctx, wt), name, sha));
   // Long runs keep the computer awake while they work. Each window says whether it has one going.
   const awake = new Set();
