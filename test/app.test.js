@@ -1239,6 +1239,10 @@ test('a long run plans milestones, works through each in a fresh chat, checks it
     assert.deepEqual(log.slice(0, 2), ['Write the todo', 'Write the notes']);
     assert.equal(fs.readFileSync(path.join(run.worktree.root, 'todo.md'), 'utf8'), '- one\n- two\n');
     assert.equal(fs.existsSync(path.join(dir, 'notes.md')), false);
+    // A report with a Windows path in it (not valid JSON as written) still counts.
+    const report = await w.evaluate(() => fenced('Done.\n\n```milestone\n{"status": "done", "summary": "Set C:\\Users\\Willi\\Game up"}\n```', 'milestone'));
+    assert.equal(report.status, 'done');
+    assert.match(report.summary, /Willi/);
     // Nothing a run's agent asks waits for an answer: questions and risky commands get one at once.
     const answers = await w.evaluate((id) => {
       const got = [];

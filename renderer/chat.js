@@ -777,8 +777,10 @@ function handleEvent(chat, ev) {
           appendChat(h('div', { class: 'turn-foot' }, `${secs}s · ${ev.num_turns || 1} step${ev.num_turns === 1 ? '' : 's'}${denied ? ` · ${denied} action${denied > 1 ? 's' : ''} denied` : ''}`), chat);
         }
       }
-      // Subagents still running in the background: Claude carries on when they finish.
-      if (turn && !turn.interrupted && !ev.is_error && runningInBackground(chat)) {
+      if (turn) chat.lastTurnText = (turn.replyTexts || []).map((b) => b.text).join('\n\n');
+      // Subagents still running in the background: Claude carries on when they finish. A long run
+      // doesn't wait for them (an editor or server left running would hold it up for good).
+      if (turn && !turn.interrupted && !ev.is_error && runningInBackground(chat) && !chat.longRun) {
         chat.bgCarry = { planBuild: turn.planBuild };
         endTurn(chat);
         waitingForBackground(chat, true);

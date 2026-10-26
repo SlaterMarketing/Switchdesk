@@ -130,14 +130,23 @@ const RUN_NUDGE = 'Nobody is around to answer, so carry on: choose what you woul
 
 // ------------------------------------------------------------------ the plan as a document
 
+// The last block marked `tag` in an agent's reply, as JSON. Agents often write Windows paths with
+// single backslashes (C:\Users\…), which isn't valid JSON, so those are read as written.
 function fenced(text, tag) {
-  const m = new RegExp('```' + tag + '\\s*\\n([\\s\\S]*?)```').exec(text || '');
-  if (!m) return null;
-  try {
-    return JSON.parse(m[1]);
-  } catch {
-    return null;
+  const all = [...String(text || '').matchAll(new RegExp('```' + tag + '[ \\t]*\\r?\\n([\\s\\S]*?)```', 'g'))];
+  if (!all.length) return null;
+  const body = all[all.length - 1][1].trim();
+  for (const src of [body, body.replace(/\\(?!["\\/bfnrtu])/g, '\\\\'), body.replace(/\\/g, '\\\\')]) {
+    try {
+      return JSON.parse(src);
+    } catch {
+      /* try the next way */
+    }
   }
+  // Still not JSON: a report is a report. Take what can be read from it.
+  const field = (k) => (new RegExp(`"${k}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(body) || [])[1];
+  const pass = /"pass"\s*:\s*(true|false)/.exec(body);
+  return { status: field('status') || 'done', summary: field('summary') || '', notes: field('notes') || '', pass: pass ? pass[1] === 'true' : undefined, problems: [], unreadable: true };
 }
 
 function cleanMilestones(list) {
@@ -376,6 +385,8 @@ async function longRunTurnEnded(chat, turn, ev) {
   const i = chat.longRun.i;
   const m = run.milestones[i];
   if (!m || run.phase === 'done' || run.phase === 'stopped') return;
+  // Only the turn the run is waiting on moves it on: not a later turn of a chat it has finished with.
+  if (role === 'work' ? m.status !== 'working' || (m.chat && m.chat !== chat.id) : m.status !== 'checking' || (m.checkChat && m.checkChat !== chat.id)) return;
   if (turn && turn.interrupted && turn.forQueued) return; // your message goes next; its turn carries the run on
   if (!turn || turn.interrupted) {
     // You pressed Stop: the run waits for you.
@@ -773,6 +784,9 @@ async function resumeRun(run) {
   // A milestone whose chat is still open and waiting carries on there; otherwise it starts afresh.
   const m = run.milestones.find((x) => x.status === 'working' || x.status === 'checking');
   const c = m && chatById(m.status === 'checking' ? m.checkChat : m.chat);
+  // It already said it's done (and the run missed it): take that rather than asking again.
+  if (c && !c.busy && m.status === 'working' && fenced(c.lastTurnText, 'milestone')) return workDone(run, c, c.longRun.i, c.lastTurnText);
+  if (c && !c.busy && m.status === 'checking' && fenced(c.lastTurnText, 'verdict')) return checkDone(run, c, c.longRun.i, c.lastTurnText);
   if (c && !c.busy) return send(m.status === 'checking' ? 'Carry on checking, and finish with the `verdict` block.' : 'Carry on with the milestone, and finish with the `milestone` block.', 'agent', 'Carry on', c);
   if (c && c.busy) return; // its turn ending carries the run on
   nextMilestone(run);
