@@ -8,6 +8,8 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 - Settings now save in the background, at most once a second. Saving a window's tabs no longer sends every folder's tabs and chats to every other window. With a few windows open, that was a lot of work on every small change.
 - Folders that tools rewrite constantly no longer wake Switchdesk up, like build caches and Unreal and Unity's generated folders. The phone page stops checking in while it's in the background.
 
+- **Add to Claude Desktop works with the Microsoft Store version of Claude.** That version keeps its settings in a different folder, so Switchdesk didn't show up in it. Press the button again, then restart Claude.
+
 ## 0.39.0
 
 - **Other apps can hand work to Switchdesk.** Claude Desktop, Cursor and other apps with MCP can now pass Switchdesk a coding task. It starts a chat in the folder they name, with the agent and mode they ask for, in its own copy if they like. They can then check on it, send follow-ups, stop it and read the result. Switchdesk opens a window for a folder that isn't open, and starts itself if it isn't running. Handed-over work is an ordinary chat, so you can watch it, answer what it asks and stop it yourself. To set it up, go to Settings → Other apps and press Add to Claude Desktop or Add to Cursor (then restart that app), or copy the entry for any other app. It works on this computer only.
