@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy | Switchdesk</title>
+<meta name="description" content="Switchdesk has no account, no analytics and no telemetry, and this website sets no cookies. Here is everything the app and the site connect to, and why.">
+<meta name="theme-color" content="#111216">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://switchdesk.dev/privacy/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://switchdesk.dev/privacy/">
+<meta property="og:title" content="Switchdesk privacy">
+<meta property="og:description" content="No account, no analytics, no telemetry. Everything the app and the site connect to, and why.">
+<meta property="og:image" content="https://switchdesk.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../icon.svg" alt="">Switchdesk</a>
+    <a class="btn small primary" href="https://github.com/SlaterMarketing/switchdesk/releases/latest">Download</a>
+  </div>
+</header>
+<main>
+  <section class="wrap hero">
+    <p class="eyebrow">Privacy</p>
+    <h1>We don't collect <span class="grad">anything about you.</span></h1>
+    <p class="lede">Switchdesk has no account, no analytics and no telemetry. It doesn't send your code or your chats to us, because there's no "us" server to send them to. This website sets no cookies and runs no trackers.</p>
+    <p class="note">Last updated 20 October 2026</p>
+  </section>
+
+  <section class="wrap block">
+    <h2>Who this is from</h2>
+    <p class="body">Switchdesk is an open-source project made by Will Slater of <a href="https://slatermarketing.co.uk">Slater Marketing</a> in the UK. Questions about this page are welcome as a <a href="https://github.com/SlaterMarketing/switchdesk/issues">GitHub issue</a>, or through the contact details on slatermarketing.co.uk.</p>
+  </section>
+
+  <section class="wrap block">
+    <h2>The app</h2>
+    <p class="body">Switchdesk runs on your computer. Everything it connects to is listed here, and almost all of it only happens when you choose it. Anything you type into an agent goes to that agent's maker, not to us.</p>
+    <div class="table-wrap" style="margin-top:24px">
+      <table>
+        <thead><tr><th>What</th><th>Who it talks to</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><th>Your agents</th><td>The agent's own maker (Anthropic, OpenAI, GitHub, Cursor, Moonshot, Google, Alibaba or DeepSeek)</td><td>When you chat. Each runs the maker's own CLI with your sign-in or API key, under that maker's terms and privacy policy, exactly as it would in a terminal.</td></tr>
+          <tr><th>Updates</th><td>GitHub</td><td>At start-up and every four hours, to check this project's releases.</td></tr>
+          <tr><th>Tab autocomplete</th><td>GitHub, or DeepSeek or Alibaba</td><td>When you've signed in to Copilot or added a DeepSeek or Qwen key. Code near your cursor goes to that engine with your own account or key. Settings → Autocomplete turns it off.</td></tr>
+          <tr><th>GitHub and Linear</th><td>GitHub, Linear</td><td>Only after you connect them, with your own token.</td></tr>
+          <tr><th>Connected services</th><td>The service you ask for (Jira, Notion, Sentry and so on)</td><td>Only after you sign in to it. The sign-in happens in your browser, and the token stays on your computer.</td></tr>
+          <tr><th>Search by meaning</th><td>Hugging Face and jsDelivr</td><td>Off unless you turn it on. It downloads a small model once, then runs on your computer.</td></tr>
+          <tr><th>Phone check-in</th><td>Your own phone, over your Wi-Fi or Tailscale</td><td>Off unless you turn it on. Nothing passes through the internet or through us, and a phone has to scan the QR code before it can see anything.</td></tr>
+          <tr><th>Report a problem</th><td>GitHub</td><td>Opens a new GitHub issue in your browser with your version and system filled in. Nothing is sent until you submit it there, and issues are public.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="body">API keys and sign-in tokens you give Switchdesk are encrypted with your operating system's keychain and stored only on your computer. Agents' own logins stay with each agent's CLI, and Switchdesk never sees them.</p>
+  </section>
+
+  <section class="wrap block">
+    <h2>This website</h2>
+    <p class="body">switchdesk.dev is a static page with no cookies, no analytics and no forms. Its fonts are served from this site.</p>
+    <div class="cards">
+      <div class="card"><h3>Hosting</h3><p>The site is hosted by GitHub Pages, which logs visitors' IP addresses for security as described in GitHub's privacy statement. Cloudflare provides the domain's DNS.</p></div>
+      <div class="card"><h3>Download buttons and star count</h3><p>Your browser asks GitHub's API for the latest release and the star count, so the buttons can point at the right installer for your computer.</p></div>
+      <div class="card"><h3>Product Hunt badge</h3><p>From 31 October 2026, the home page shows a badge image loaded from Product Hunt.</p></div>
+      <div class="card"><h3>Links out</h3><p>The video tour is on YouTube and the code is on GitHub. Those sites' own policies apply once you follow a link.</p></div>
+    </div>
+  </section>
+
+  <section class="wrap block">
+    <h2>Your data and your rights</h2>
+    <p class="body">We don't hold personal data about people who use Switchdesk or visit this site, so there is nothing for us to share, sell or delete. Under UK GDPR you can still ask us what we hold, and we'll answer. For data held by an agent's maker or another service, ask that company directly.</p>
+    <p class="body">If you open an issue or pull request on GitHub, it's public on GitHub under your account, and GitHub's privacy statement applies.</p>
+  </section>
+
+  <section class="wrap block">
+    <h2>Using the agents</h2>
+    <p class="body">Switchdesk is free software under the <a href="https://github.com/SlaterMarketing/switchdesk/blob/main/LICENSE">MIT licence</a>, which is all the terms the app has. Each agent is used under its maker's own terms, so sign in with your own plan or API key, and don't share one plan between several people.</p>
+  </section>
+
+  <section class="wrap block" style="padding-bottom:72px">
+    <h2>Changes</h2>
+    <p class="body">If this changes, the new version goes here with a new date. Every past version is in the site's <a href="https://github.com/SlaterMarketing/switchdesk/commits/main/site/privacy/index.html">history on GitHub</a>.</p>
+  </section>
+</main>
+<footer>
+  <div class="wrap">
+    <p>Free and open source under the MIT licence. Claude, Codex, GitHub Copilot, Cursor, Kimi, Gemini, Qwen and DeepSeek are trademarks of their respective owners. Switchdesk is not made by, affiliated with or endorsed by any of them.</p>
+    <p class="made-by">Made by <a href="https://slatermarketing.co.uk">Will Slater</a>, fractional CMO and product lead for startups. · <a href="../">Home</a></p>
+  </div>
+</footer>
+</body>
+</html>
