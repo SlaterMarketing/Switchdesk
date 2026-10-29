@@ -74,9 +74,31 @@ function configFile(appName, home = os.homedir()) {
   return path.join(home, '.config', 'Claude', 'claude_desktop_config.json');
 }
 
+// Claude Desktop from the Microsoft Store keeps its settings in its own package folder, not the
+// usual one. Both get the entry, so it works whichever is installed.
+function configFiles(appName, home = os.homedir()) {
+  const files = [configFile(appName, home)];
+  if (appName !== 'cursor' && process.platform === 'win32') {
+    const pkgs = path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Packages');
+    let names = [];
+    try {
+      names = fs.readdirSync(pkgs).filter((n) => /^Claude_/i.test(n));
+    } catch {
+      /* no Store apps */
+    }
+    for (const n of names) files.push(path.join(pkgs, n, 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+  }
+  return files;
+}
+
 // Adds (or updates) Switchdesk in an app's MCP settings, keeping everything else in the file.
 function addTo(appName, spec, home) {
-  const f = configFile(appName, home);
+  const files = configFiles(appName, home);
+  for (const f of files) addToFile(f, spec);
+  return files[files.length - 1];
+}
+
+function addToFile(f, spec) {
   let cfg = {};
   if (fs.existsSync(f)) {
     const text = fs.readFileSync(f, 'utf8');
@@ -93,11 +115,13 @@ function addTo(appName, spec, home) {
 }
 
 function addedTo(appName, home) {
-  try {
-    return !!JSON.parse(fs.readFileSync(configFile(appName, home), 'utf8')).mcpServers.switchdesk;
-  } catch {
-    return false;
-  }
+  return configFiles(appName, home).every((f) => {
+    try {
+      return !!JSON.parse(fs.readFileSync(f, 'utf8')).mcpServers.switchdesk;
+    } catch {
+      return false;
+    }
+  });
 }
 
 module.exports = { start, stop, serverSpec, configFile, addTo, addedTo };
