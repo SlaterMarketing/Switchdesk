@@ -7,7 +7,6 @@ Each release's notes, newest first. The release page on GitHub shows the same no
 - **Easier on your battery.** A chat's agent that's been idle for 10 minutes now stops, along with the MCP servers it started. Your next message starts it again on the same conversation, a few seconds slower. A chat that's working, waiting on you, or has something running in the background is left alone. Before, every chat you'd used that day kept its agent running.
 - Settings now save in the background, at most once a second. Saving a window's tabs no longer sends every folder's tabs and chats to every other window. With a few windows open, that was a lot of work on every small change.
 - Folders that tools rewrite constantly no longer wake Switchdesk up, like build caches and Unreal and Unity's generated folders. The phone page stops checking in while it's in the background.
-
 - **Add to Claude Desktop works with the Microsoft Store version of Claude.** That version keeps its settings in a different folder, so Switchdesk didn't show up in it. Press the button again, then restart Claude.
 
 ## 0.39.0
