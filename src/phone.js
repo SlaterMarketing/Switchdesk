@@ -227,7 +227,9 @@ document.addEventListener('submit', async (e) => {
   refresh();
 });
 refresh();
-setInterval(refresh, 3000);
+// Only while it's on screen: a tab left open in the background doesn't keep asking.
+setInterval(() => !document.hidden && refresh(), 3000);
+document.addEventListener('visibilitychange', () => !document.hidden && refresh());
 </script></body></html>`;
 
 module.exports = { createPhoneServer, addresses };

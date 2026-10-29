@@ -1416,6 +1416,43 @@ test('other apps hand work to Switchdesk through its MCP server, and read the re
   }
 });
 
+test('a chat left alone stops its agent, and the next message picks the conversation up again', { timeout: 90000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const fs = require('fs');
+  const runs = () => (fs.existsSync(path.join(p.agentDir, 'claude-runs.jsonl')) ? fs.readFileSync(path.join(p.agentDir, 'claude-runs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  const { app, w, errors } = await launch(p, dir, { SWITCHDESK_SLEEP_AFTER: '2000' });
+  try {
+    await w.evaluate(async (bin) => {
+      state.settings = await desk.setSettings({ claudePath: bin });
+      await agentStatus('claude', true);
+      await checkCli();
+    }, path.join(__dirname, 'fake-claude', 'claude'));
+    await chatWith(w, 'claude', 'ask');
+    await sendMessage(w, 'hello there');
+    await w.waitForFunction(() => activeChat().busy || activeChat().sessionId);
+    await idle(w);
+    const first = runs().find((r) => r.pid && !r.args.includes('--version') && r.args.includes('--input-format'));
+    assert.ok(first, JSON.stringify(runs()) + (await w.evaluate(() => activeChat().el.innerText)));
+    // Left alone, its process ends.
+    await w.waitForTimeout(500);
+    const deadline = Date.now() + 15000;
+    while (!runs().some((r) => r.exit === first.pid) && Date.now() < deadline) await w.waitForTimeout(300);
+    assert.ok(runs().some((r) => r.exit === first.pid), 'the idle agent stopped');
+    assert.doesNotMatch(await w.evaluate(() => activeChat().el.innerText), /stopped|exited|error/i);
+    // The next message starts it again on the same conversation.
+    await sendMessage(w, 'and again');
+    await idle(w);
+    const again = runs().filter((r) => r.pid && r.args.includes('--input-format')).pop();
+    assert.notEqual(again.pid, first.pid);
+    assert.equal(again.args[again.args.indexOf('--resume') + 1], `fake-claude-${first.pid}`);
+    assert.equal(await w.$$eval('.msg-user', (m) => m.length), 2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, project());

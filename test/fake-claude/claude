@@ -42,6 +42,16 @@ if (arg[0] === 'mcp' && arg[1] === 'add') {
 
 const log = (x) => fs.appendFileSync(path.join(DIR, 'claude.jsonl'), JSON.stringify(x) + '\n');
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+// Each run of the CLI, and when it ends, for the tests of chats that go to sleep.
+const run = (x) => {
+  try {
+    fs.appendFileSync(path.join(DIR, 'claude-runs.jsonl'), JSON.stringify(x) + '\n');
+  } catch {
+    /* no log folder */
+  }
+};
+run({ pid: process.pid, args: arg });
+process.on('exit', () => run({ exit: process.pid }));
 const SID = `fake-claude-${process.pid}`;
 const later = (ms) => new Promise((r) => setTimeout(r, ms));
 const pending = new Map();

@@ -46,6 +46,9 @@ const { stripAppNotes } = require('./agent-events');
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'out', '.venv', 'venv', '__pycache__', '.cache', '.turbo', 'target', '.idea', 'coverage']);
+// Folders that tools rewrite all the time (build caches, game engines' generated files): changes in
+// them don't refresh anything, so a dev server or an engine running doesn't keep Switchdesk busy.
+const UNWATCHED_DIRS = new Set([...IGNORED_DIRS, '.svelte-kit', '.nuxt', '.output', '.expo', '.gradle', '.parcel-cache', '.vercel', '.angular', '.vite', '.yarn', '.pnpm-store', 'Pods', '.terraform', '.mypy_cache', '.pytest_cache', '.tox', '.godot', '.import', 'Intermediate', 'DerivedDataCache', 'Saved', 'Binaries', 'Library', 'Temp', 'obj']);
 
 let loginHandle = null;
 let loginCtx = null; // the window that started the Claude sign-in
@@ -86,7 +89,26 @@ function loadSettings() {
     }
   }
 }
+// Settings are saved a moment after they change, in the background: they hold every folder's
+// tabs and chats, so saving on every change kept the disk and CPU busy. Quitting saves at once.
+let settingsTimer = null;
+let settingsWriting = Promise.resolve();
 function saveSettings() {
+  if (settingsTimer) return;
+  settingsTimer = setTimeout(() => {
+    settingsTimer = null;
+    const text = JSON.stringify(settings, null, 2);
+    const tmp = `${settingsFile()}.tmp`;
+    settingsWriting = settingsWriting
+      .then(() => fs.promises.mkdir(path.dirname(settingsFile()), { recursive: true }))
+      .then(() => fs.promises.writeFile(tmp, text))
+      .then(() => fs.promises.rename(tmp, settingsFile()))
+      .catch(() => fs.promises.writeFile(settingsFile(), text).catch(() => {}));
+  }, 1000);
+}
+function saveSettingsNow() {
+  clearTimeout(settingsTimer);
+  settingsTimer = null;
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
 }
@@ -515,7 +537,7 @@ function startWatchers(ctx) {
         fs.watch(r.dir, { recursive: true }, (_evt, file) => {
           if (!file) return;
           const rel = file.split(path.sep).join('/');
-          if (rel.split('/').some((seg) => IGNORED_DIRS.has(seg))) return;
+          if (rel.split('/').some((seg) => UNWATCHED_DIRS.has(seg))) return;
           pending.add(r.key ? `${r.key}/${rel}` : rel);
           clearTimeout(timer);
           timer = setTimeout(() => {
@@ -981,6 +1003,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     askRules: permissions.claudeAskRules(settings),
     holdAuto: permissions.policyOf(settings).ask.length > 0,
     onEvent: (ev) => {
+      chat.lastActive = Date.now();
       backgroundTurn(ctx, chatId, chat, ev);
       trackStream(ctx, chat.turn, ev);
       sendTo(ctx, 'chat-event', { chatId, ev });
@@ -1123,10 +1146,14 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
     chats.delete(key);
     chat = null;
   }
+  // A chat that was put to sleep picks up its conversation where it left off.
+  if (!sessionId && asleep.has(key)) sessionId = asleep.get(key);
+  asleep.delete(key);
   if (!chat || !chat.session.alive) chat = await openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode, cwd, account, agent, agentAccount });
   else await chat.session.setModel(model);
   const turn = { id: crypto.randomUUID(), snap: await beginSnapshot(ctx, chat), blocks: new Map() };
   chat.turn = turn;
+  chat.lastActive = Date.now();
   chat.mode = mode;
   chat.session.unrestricted = permissions.policyOf(settings).skipAll;
   chat.session.holdAuto = permissions.policyOf(settings).ask.length > 0;
@@ -1142,6 +1169,27 @@ async function chatInterrupt(ctx, chatId) {
   // If the CLI doesn't acknowledge, stop the process; the conversation can be resumed.
   if (r.error && chat.session.alive) chat.session.dispose();
 }
+
+// Each chat's agent is a long-lived process (and, for Claude Code, every MCP server it starts), so
+// a day of chats left dozens running, using memory and waking up for nothing. One left alone for
+// a while is stopped; your next message starts it again on the same conversation, a few seconds
+// slower. Not while it's working, waiting on you, or has something running in the background.
+const SLEEP_AFTER = Number(process.env.SWITCHDESK_SLEEP_AFTER) || 10 * 60e3;
+const asleep = new Map(); // chat key -> the conversation to pick up
+function sleepIdleChats() {
+  const now = Date.now();
+  for (const [key, c] of [...chats]) {
+    if (!c.session || !c.session.alive || c.turn || c.approvals.size || c.background || c.backgroundOwed) continue;
+    if (now - (c.lastActive || now) < SLEEP_AFTER || !c.session.sessionId) continue;
+    const caps = c.session.caps || {};
+    if (agents.AGENTS[c.agent].kind === 'acp' && !caps.loadSession && !(caps.sessionCapabilities && caps.sessionCapabilities.resume)) continue; // it couldn't pick up again
+    asleep.set(key, c.session.sessionId);
+    c.closing = true;
+    c.session.dispose();
+    chats.delete(key);
+  }
+}
+setInterval(sleepIdleChats, Math.min(60e3, SLEEP_AFTER)).unref();
 
 function closeChat(key) {
   const chat = chats.get(key);
@@ -1307,7 +1355,9 @@ function registerIpc() {
     saveSettings();
     if (patch.theme) nativeTheme.themeSource = patch.theme;
     if (patch.keybindings) buildMenu(); // shortcuts changed in Settings → Keyboard
-    broadcast('settings-changed', settings, ctx); // other windows keep their copy current
+    // Other windows keep their copy current. A window's own tabs and chats are only its business,
+    // and they're most of the settings, so saving them doesn't send everything to every window.
+    if (Object.keys(patch).some((k) => k !== 'workspaces')) broadcast('settings-changed', settings, ctx);
     return settings;
   });
   handle('cli:status', (ctx, account) => cli.cliStatus(settings.claudePath, accounts.envFor(accounts.exists(settings, account) ? account : folderAccount(ctx))));
@@ -2512,7 +2562,10 @@ app.on('before-quit', () => {
   if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();
   rememberWindows();
   quitting = true;
+  saveSettingsNow();
 });
+// Anything saved while the windows closed.
+app.on('will-quit', () => settingsTimer && saveSettingsNow());
 
 app.on('window-all-closed', () => {
   for (const key of [...chats.keys()]) closeChat(key);
