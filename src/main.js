@@ -23,6 +23,7 @@ const accounts = require('./accounts');
 const debuglog = require('./debuglog');
 const report = require('./report');
 const previewBridge = require('./preview-bridge');
+const handoff = require('./handoff');
 const mcpConnect = require('./mcp-connect');
 const { createGateway, known: knownMcp } = require('./mcp-gateway');
 const phone = require('./phone');
@@ -188,6 +189,50 @@ async function phoneAsk(what, args = {}) {
   if (!ctx) return { error: 'That chat was closed.' };
   return askWindow(ctx, what, { ...args, chat: String(args.chat).slice(at + 1) });
 }
+// ---------- other apps handing work over (handoff.js, handoff-mcp.js)
+// Claude Desktop, Cursor or any app with Switchdesk in its MCP settings can start a chat in a
+// folder, check on it, follow up and stop it. The chat's id is "<window>:<chat>", as for the phone.
+async function handoffAsk(name, args, from) {
+  const wins = liveWindows();
+  if (name === 'folders') return { open: wins.filter((c) => c.workspace && !c.remote).map((c) => c.workspace), recent: (settings.recentFolders || []).filter((f) => !remote.parseUrl(f) && fs.existsSync(f)) };
+  if (name === 'chats') {
+    const parts = await Promise.all(wins.map((c) => askWindow(c, 'state').then((r) => ({ c, r }), () => null)));
+    const want = args.folder && path.resolve(String(args.folder));
+    const list = parts
+      .filter((x) => x && x.r && x.r.chats && (!want || (x.c.workspace && !x.c.remote && path.resolve(x.c.workspace) === want)))
+      .flatMap((x) => x.r.chats.map((ch) => ({ chat: `${x.c.id}:${ch.id}`, title: ch.title, agent: ch.agent, folder: x.c.workspace, working: ch.busy, waiting_for_user: ch.waiting, last: ch.last })));
+    return { chats: list };
+  }
+  if (name === 'start') {
+    const dir = path.resolve(String(args.folder || ''));
+    if (!args.folder || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { error: `There's no folder at ${args.folder || '(no folder given)'}. switchdesk_folders lists the ones Switchdesk knows.` };
+    let ctx = windowWith(dir);
+    if (!ctx) {
+      // A window of its own for the folder, ready once its page has opened it.
+      ctx = createWindow(dir);
+      for (let i = 0; i < 60 && !(ctx.workspace && path.resolve(ctx.workspace) === dir); i++) await new Promise((r) => setTimeout(r, 500));
+      if (!ctx.workspace) return { error: "Switchdesk opened a window for the folder but it didn't finish opening. Try again." };
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    const r = await askWindow(ctx, 'start', { ...args, from });
+    return r.chat ? { ...r, chat: `${ctx.id}:${r.chat}`, next: 'Use switchdesk_read with wait_seconds to wait for its result.' } : r;
+  }
+  const id = String(args.chat || '');
+  const at = id.indexOf(':');
+  const ctx = wins.find((c) => String(c.id) === id.slice(0, at));
+  if (!ctx || !['read', 'send', 'stop'].includes(name)) return { error: ctx ? `Not something Switchdesk knows: ${name}` : "That chat is closed, or the id isn't right. switchdesk_chats lists them." };
+  const a = { ...args, chat: id.slice(at + 1) };
+  if (name === 'send') a.text = String(args.message || '');
+  if (name !== 'read') return askWindow(ctx, name, a);
+  const until = Date.now() + Math.min(Math.max(Number(args.wait_seconds) || 0, 0), 50) * 1000;
+  for (;;) {
+    const r = await askWindow(ctx, 'read', a);
+    if (r.error || !r.working || r.waiting_for_user || Date.now() >= until) return r;
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+}
+const handoffSpec = () => handoff.serverSpec({ execPath: process.execPath, appRoot: APP_ROOT, packaged: app.isPackaged, dataDir: app.getPath('userData') });
+
 async function startPhone() {
   if (phoneServer) return;
   const p = (settings.phone = { ...(settings.phone || {}) });
@@ -1739,6 +1784,8 @@ function registerIpc() {
     if (done) done(result);
   });
   handle('phone:status', () => phoneStatus());
+  handle('handoff:status', () => ({ claude: handoff.addedTo('claude'), cursor: handoff.addedTo('cursor'), spec: handoffSpec() }));
+  handle('handoff:add', (ctx, appName) => handoff.addTo(appName === 'cursor' ? 'cursor' : 'claude', handoffSpec()));
   handle('phone:set', async (ctx, on) => {
     phoneError = '';
     settings.phone = { ...(settings.phone || {}), on: !!on };
@@ -2442,6 +2489,7 @@ app.whenReady().then(() => {
   });
   registerIpc();
   buildMenu();
+  handoff.start(app.getPath('userData'), handoffAsk).catch(() => {});
   if (settings.phone && settings.phone.on) startPhone().catch((e) => (phoneError = `Couldn't start it: ${e.message}`));
   updater.start((status) => {
     lastUpdate = status;
@@ -2458,6 +2506,7 @@ app.whenReady().then(() => {
 
 // Quitting keeps the list of open windows; closing windows one by one doesn't.
 app.on('before-quit', () => {
+  handoff.stop();
   for (const ix of codeIndexes) ix.saveNow().catch(() => {});
   if (langServers) langServers.stopAll();
   if (autocomplete.copilot.lsp) autocomplete.copilot.lsp.kill();

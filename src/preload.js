@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('desk', {
   openExternal: call('open-external'),
   dictate: call('dictate'),
   keepAwake: call('keep-awake'),
+  handoff: { status: call('handoff:status'), add: call('handoff:add') },
   phone: { status: call('phone:status'), set: call('phone:set'), newCode: call('phone:new-code'), tailscaleOnly: call('phone:tailscale-only'), pairCode: call('phone:pair-code'), onRequest: on('phone-request'), answer: call('phone:answer') },
   reportProblem: call('report:problem'),
   onSetupLog: on('setup-log'),

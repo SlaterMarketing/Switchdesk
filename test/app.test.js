@@ -1343,6 +1343,79 @@ test('a long run runs each milestone’s check, waits for you where it needs you
   }
 });
 
+test('other apps hand work to Switchdesk through its MCP server, and read the result', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const other = project();
+  const fs = require('fs');
+  const { spawn } = require('child_process');
+  const demo = path.join(p.agentDir, 'demo.json');
+  fs.writeFileSync(demo, JSON.stringify([{ match: 'Add a changelog', steps: [{ write: { path: 'CHANGELOG.md', content: '# Changes\n' } }, { say: 'Added CHANGELOG.md.' }] }]));
+  const { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
+  try {
+    // Settings → Other apps adds Switchdesk to Claude Desktop's MCP settings, keeping what's there.
+    const cfgFile = path.join(p.home, '.config', 'Claude', 'claude_desktop_config.json');
+    fs.mkdirSync(path.dirname(cfgFile), { recursive: true });
+    fs.writeFileSync(cfgFile, JSON.stringify({ mcpServers: { other: { command: 'x' } }, theme: 'dark' }));
+    await w.evaluate(() => openSettings('apps'));
+    await w.click('button:has-text("Add to Claude Desktop")');
+    await w.waitForSelector('button:has-text("Added to Claude Desktop")');
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+    assert.equal(cfg.theme, 'dark');
+    assert.ok(cfg.mcpServers.other);
+    const spec = cfg.mcpServers.switchdesk;
+    await w.keyboard.press('Escape');
+    // Claude Desktop starts it the way the entry says.
+    const mcp = spawn(spec.command, spec.args, { env: { ...process.env, ...spec.env } });
+    let buf = '';
+    const waiting = new Map();
+    mcp.stdout.on('data', (c) => {
+      buf += c;
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const m = JSON.parse(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+        if (waiting.has(m.id)) waiting.get(m.id)(m);
+      }
+    });
+    let n = 0;
+    const rpc = (method, params) => new Promise((r) => (waiting.set(++n, r), mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n')));
+    const tool = async (name, args) => {
+      const r = (await rpc('tools/call', { name, arguments: args })).result;
+      return { ...JSON.parse(r.isError ? '{}' : r.content[0].text), isError: r.isError, text: r.content[0].text };
+    };
+    try {
+      await rpc('initialize', { protocolVersion: '2025-06-18', clientInfo: { name: 'claude-ai', version: '1' }, capabilities: {} });
+      assert.deepEqual((await rpc('tools/list')).result.tools.map((t) => t.name), ['switchdesk_folders', 'switchdesk_start', 'switchdesk_chats', 'switchdesk_read', 'switchdesk_send', 'switchdesk_stop']);
+      assert.deepEqual((await tool('switchdesk_folders', {})).open, [dir]);
+      // It hands over a task: a chat starts in the folder, with the agent it asked for.
+      const started = await tool('switchdesk_start', { folder: dir, task: 'Add a changelog file', agent: 'cursor' });
+      assert.equal(started.agent, 'Cursor');
+      const read = await tool('switchdesk_read', { chat: started.chat, wait_seconds: 30 });
+      assert.equal(read.working, false);
+      assert.match(read.messages.map((m) => m.text).join('\n'), /From Claude Desktop: Add a changelog file[\s\S]*Added CHANGELOG\.md/);
+      assert.equal(fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8'), '# Changes\n');
+      assert.match(await w.evaluate(() => activeChat().title), /Add a changelog file/);
+      assert.equal((await tool('switchdesk_chats', { folder: dir })).chats.length, 1);
+      // A folder that isn't open gets a window of its own.
+      const there = await tool('switchdesk_start', { folder: other, task: 'Add a changelog here too', agent: 'Cursor', own_copy: true });
+      assert.ok(there.chat && there.copy, there.text);
+      assert.equal((await tool('switchdesk_read', { chat: there.chat, wait_seconds: 30 })).working, false);
+      assert.equal(fs.existsSync(path.join(there.copy, 'CHANGELOG.md')), true);
+      assert.equal(fs.existsSync(path.join(other, 'CHANGELOG.md')), false);
+      assert.equal(app.windows().length, 2);
+      const bad = await tool('switchdesk_start', { folder: path.join(dir, 'nope'), task: 'x' });
+      assert.ok(bad.isError);
+      assert.match(bad.text, /There's no folder at/);
+    } finally {
+      mcp.kill();
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('the status bar shows the same plan limits in every window', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, project());

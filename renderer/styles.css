@@ -1085,3 +1085,4 @@ body.desk .code-intro { display: none; }
 .run-changes summary { cursor: pointer; font-weight: 600; }
 .run-output { max-height: 180px; overflow: auto; font-size: 11px; background: var(--bg-elev); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
 .run-state.waiting .dot { background: var(--warn); }
+.mcp-entry { font-size: 11px; background: var(--bg-elev); padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; user-select: text; }

@@ -18,6 +18,7 @@ const SETTINGS_SECTIONS = [
   ['keyboard', 'Keyboard'],
   ['usage', 'Usage'],
   ['phone', 'Phone'],
+  ['apps', 'Other apps'],
   ['about', 'About'],
 ];
 
@@ -40,7 +41,7 @@ function openSettings(section = 'general') {
     if (focus) id = 'agents';
     nav.replaceChildren(...SETTINGS_SECTIONS.map(([k, label]) => h('button', { class: k === id ? 'active' : '', 'data-section': k, onclick: () => show(k) }, label)));
     body.replaceChildren(h('div', { class: 'muted small' }, 'Loading…'));
-    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage, phone: settingsPhone, about: settingsAbout }[id];
+    const render = { general: settingsGeneral, agents: settingsAgents, instructions: settingsInstructions, permissions: settingsPermissions, mcp: settingsMcp, autocomplete: settingsAutocomplete, intel: settingsIntel, codebase: settingsCodebase, keyboard: settingsKeyboard, usage: settingsUsage, phone: settingsPhone, apps: settingsApps, about: settingsAbout }[id];
     render(body, close)
       .then(() => focus && $(`.agent-card[data-agent="${focus}"]`, body)?.scrollIntoView({ block: 'start' }))
       .catch((e) => body.replaceChildren(h('div', { class: 'turn-error' }, String(e.message || e))));
@@ -436,6 +437,38 @@ async function settingsPhone(body) {
     if (st.on) showCode();
   };
   render(await desk.phone.status());
+}
+
+// Other apps handing work to Switchdesk, through its MCP server (handoff-mcp.js).
+async function settingsApps(body) {
+  const st = await desk.handoff.status();
+  const add = (app, label) =>
+    h(
+      'button',
+      {
+        class: `btn${st[app] ? '' : ' primary'}`,
+        onclick: async () => {
+          try {
+            await desk.handoff.add(app);
+            toast(`Added. Restart ${label} to pick it up.`);
+            settingsApps(body);
+          } catch (err) {
+            toast(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+          }
+        },
+      },
+      st[app] ? `Added to ${label} ✓ (update)` : `Add to ${label}`
+    );
+  const entry = JSON.stringify({ mcpServers: { switchdesk: st.spec } }, null, 2);
+  body.replaceChildren(
+    h('h3', {}, 'Let other apps hand work over'),
+    h('p', { class: 'muted small' }, 'Claude Desktop, Cursor and other apps with MCP can hand a coding task to Switchdesk: it starts a chat in the folder they name, with the agent they ask for, and they can check on it, follow up, stop it and read the result. It shows here as an ordinary chat, so you can watch it, answer what it asks and stop it. It works on this computer only, and opens Switchdesk if it isn’t open.'),
+    h('p', { class: 'small' }, 'Then ask, say, “hand this to Switchdesk: fix the failing test in ~/Projects/shop”.'),
+    h('div', { class: 'row' }, add('claude', 'Claude Desktop'), add('cursor', 'Cursor')),
+    h('p', { class: 'muted small' }, 'Any other app: add this to its MCP servers.'),
+    h('pre', { class: 'mcp-entry' }, entry),
+    h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(entry).then(() => toast('Copied.')) }, 'Copy')
+  );
 }
 
 async function settingsAbout(body) {

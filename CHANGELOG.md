@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.39.0
+
+- **Other apps can hand work to Switchdesk.** Claude Desktop, Cursor and other apps with MCP can now pass Switchdesk a coding task. It starts a chat in the folder they name, with the agent and mode they ask for, in its own copy if they like. They can then check on it, send follow-ups, stop it and read the result. Switchdesk opens a window for a folder that isn't open, and starts itself if it isn't running. Handed-over work is an ordinary chat, so you can watch it, answer what it asks and stop it yourself. To set it up, go to Settings → Other apps and press Add to Claude Desktop or Add to Cursor (then restart that app), or copy the entry for any other app. It works on this computer only.
+
 ## 0.38.0
 
 - **Stop really stops a long run.** Stop (on the run's page, or "Stop the Long Run" in the command palette) now halts the agent mid-step and sends nothing more. Before, it only stopped the run from moving on, and the agent kept working. Finished milestones stay committed on the run's branch, and unfinished work stays in its copy.
