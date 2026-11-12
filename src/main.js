@@ -1474,7 +1474,7 @@ function registerIpc() {
       list.map(async (x) => {
         if (a.key && !agents.readKey(settings, id, x.id)) return [];
         const env = agents.envFor(settings, id, '', x.id);
-        const rows = await (a.kind === 'codex' ? codexSessions(bin, env, chatHome(ctx)) : acpSessions(bin, a.args, env, chatHome(ctx), a.authMethod)).catch(() => []);
+        const rows = await (a.kind === 'codex' ? codexSessions(bin, env, chatHome(ctx)) : acpSessions(bin, a.args, env, chatHome(ctx))).catch(() => []);
         return rows.map((r) => ({ ...r, agent: id, agentAccount: agents.homeVar(id) ? x.id : undefined }));
       })
     );
@@ -1486,7 +1486,7 @@ function registerIpc() {
     const bin = await agents.findBin(id, settings);
     if (!bin) return null;
     const env = agents.envFor(settings, id, '', account);
-    return a.kind === 'codex' ? codexHistory(bin, env, sessionId) : acpHistory(bin, a.args, env, ctx.workspace, a.authMethod, sessionId);
+    return a.kind === 'codex' ? codexHistory(bin, env, sessionId) : acpHistory(bin, a.args, env, ctx.workspace, sessionId);
   });
   // Codex can use an OpenAI API key instead of a ChatGPT sign-in; Codex stores it itself.
   handle('agents:codex-key', async (ctx, key, account) => {

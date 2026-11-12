@@ -448,8 +448,12 @@ async function acpStatus(bin, args, extraEnv, authMethod) {
   }
 }
 
-// A short-lived agent for one question about its saved conversations.
-async function acpAsk(bin, args, extraEnv, cwd, authMethod, fn) {
+// A short-lived agent for one question about its saved conversations. These run in the
+// background (the history list refreshes every couple of minutes, and reopened tabs load their
+// past messages), so they never call `authenticate`: for Cursor that opens a browser sign-in
+// whenever its login has expired, even if you aren't using Cursor. A signed-out agent just lists
+// nothing here; sending it a message in a chat is what signs it in again.
+async function acpAsk(bin, args, extraEnv, cwd, fn) {
   const env = await cli.childEnv(extraEnv);
   const child = spawnAgent(bin, args, { env, cwd });
   const rpc = new RpcPeer(child, { onNotification: (m, p) => rpc.onNote && rpc.onNote(m, p), onRequest: () => ({ outcome: { outcome: 'cancelled' } }) });
@@ -457,26 +461,17 @@ async function acpAsk(bin, args, extraEnv, cwd, authMethod, fn) {
   child.on('close', () => rpc.failAll('It stopped.'));
   try {
     const init = await rpc.request('initialize', CLIENT, 60000);
-    const auth = async (call) => {
-      try {
-        return await call();
-      } catch (err) {
-        if (err.code !== NOT_SIGNED_IN || !authMethod || !(init.authMethods || []).some((m) => m.id === authMethod)) throw err;
-        await rpc.request('authenticate', { methodId: authMethod }, 60000);
-        return call();
-      }
-    };
-    return await fn(rpc, init.agentCapabilities || {}, auth);
+    return await fn(rpc, init.agentCapabilities || {});
   } finally {
     setTimeout(() => child.kill(), 300);
   }
 }
 
 // Past conversations in a folder, for agents that can list them: [{ id, title, updatedAt }].
-function acpSessions(bin, args, extraEnv, cwd, authMethod) {
-  return acpAsk(bin, args, extraEnv, cwd, authMethod, async (rpc, caps, auth) => {
+function acpSessions(bin, args, extraEnv, cwd) {
+  return acpAsk(bin, args, extraEnv, cwd, async (rpc, caps) => {
     if (!(caps.sessionCapabilities && caps.sessionCapabilities.list)) return [];
-    const r = await auth(() => rpc.request('session/list', { cwd }, 30000));
+    const r = await rpc.request('session/list', { cwd }, 30000);
     return (r.sessions || [])
       .filter((x) => !x.cwd || x.cwd === cwd)
       .map((x) => ({ id: x.sessionId, title: chatTitle(x.title, 'Chat'), updatedAt: x.updatedAt ? Date.parse(x.updatedAt) || 0 : 0 }));
@@ -484,8 +479,8 @@ function acpSessions(bin, args, extraEnv, cwd, authMethod) {
 }
 
 // One conversation as chat messages, from the agent replaying it: [{ role, text } | { role: 'tool', name, input }].
-function acpHistory(bin, args, extraEnv, cwd, authMethod, sessionId) {
-  return acpAsk(bin, args, extraEnv, cwd, authMethod, async (rpc, caps, auth) => {
+function acpHistory(bin, args, extraEnv, cwd, sessionId) {
+  return acpAsk(bin, args, extraEnv, cwd, async (rpc, caps) => {
     if (!caps.loadSession) return null;
     const out = [];
     const add = (role, text) => {
@@ -503,7 +498,7 @@ function acpHistory(bin, args, extraEnv, cwd, authMethod, sessionId) {
         out.push({ role: 'tool', name: t.name, input: t.input });
       }
     };
-    await auth(() => rpc.request('session/load', { sessionId, cwd, mcpServers: [] }, 120000));
+    await rpc.request('session/load', { sessionId, cwd, mcpServers: [] }, 120000);
     return out.map((m) => (m.role === 'user' ? { ...m, text: stripAppNotes(m.text).trim() } : m)).filter((m) => m.role === 'tool' || m.text.trim());
   });
 }
