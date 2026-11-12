@@ -52,6 +52,7 @@
           <section id="panel-debug" class="side-panel hidden"></section>
           <section id="panel-history" class="side-panel hidden">
             <div class="panel-tools"><button id="btn-new-chat-side" class="btn small">New chat</button></div>
+            <div class="panel-tools history-search"><input id="history-filter" placeholder="Search chats" spellcheck="false" title="Search your chats by name (Ctrl+K in Desk)" /></div>
             <div id="history-list"></div>
           </section>
         </aside>
@@ -145,6 +146,7 @@
             <button id="btn-new-copy" class="icon-btn" title="New chat in its own copy, to run agents in parallel (⌘⌥N)">⑂</button>
             <button id="btn-new-chat" class="icon-btn" title="New chat (⌘N)">＋</button>
             <button id="btn-history" class="icon-btn" title="Past chats">◷</button>
+            <button id="btn-desk-outputs" class="icon-btn desk-outputs-btn hidden" title="Files this chat made"></button>
           </div>
           <div id="compare-bar" class="hidden"></div>
           <div id="worktree-bar" class="hidden"></div>
@@ -231,6 +233,7 @@
     <script src="linear.js"></script>
     <script src="board.js"></script>
     <script src="deskview.js"></script>
+    <script src="projects.js"></script>
     <script src="search.js"></script>
     <script src="terminal.js"></script>
     <script src="settings.js"></script>

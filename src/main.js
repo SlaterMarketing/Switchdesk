@@ -1260,6 +1260,7 @@ function registerIpc() {
   const notOverSsh = (what) => new Error(`${what} isn't available in SSH folders yet.`);
   const LOCAL_ONLY = {
     'file:reveal': null,
+    'file:url': null,
     'file:preview': null,
     'file:open-default': null,
     'sessions:list': [],
@@ -1631,6 +1632,21 @@ function registerIpc() {
     return conn.call('dirs', { path: dir || '~' });
   });
   handle('ssh:done-browsing', (ctx) => ctx.browse && (ctx.browse.close(), (ctx.browse = null)));
+  // Desk's projects, like Claude's app: a new one is a folder of its own under Documents/Switchdesk
+  // Projects, with its instructions in AGENTS.md (which every agent reads) and CLAUDE.md pointing at it.
+  handle('project:create', async (ctx, name, instructions) => {
+    const safe = String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 80);
+    if (!safe) throw new Error('Give the project a name.');
+    const base = path.join(app.getPath('documents'), 'Switchdesk Projects');
+    let dir = path.join(base, safe);
+    for (let i = 2; fs.existsSync(dir); i++) dir = path.join(base, `${safe} ${i}`);
+    await fsp.mkdir(dir, { recursive: true });
+    if (instructions && instructions.trim()) {
+      await fsp.writeFile(path.join(dir, 'AGENTS.md'), instructions.trim() + '\n', 'utf8');
+      await fsp.writeFile(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n', 'utf8');
+    }
+    return openFolder(ctx, dir);
+  });
   handle('folder:current', (ctx) => folderInfo(ctx));
   // What a window shows when it first loads: its folder, the one it was opened for, or nothing.
   handle('folder:start', async (ctx) => {
@@ -1673,6 +1689,13 @@ function registerIpc() {
   handle('file:reveal', (ctx, rel) => shell.showItemInFolder(resolveInWorkspace(ctx, rel)));
   // The Desk view's previews: a document as its text, an image as itself, anything else as just its path.
   handle('file:preview', (ctx, rel) => extract(resolveInWorkspace(ctx, rel)));
+  // The address of a file the Desk view shows live (HTML, SVG, PDF), with its modified time so a
+  // changed file loads afresh.
+  handle('file:url', async (ctx, rel) => {
+    const abs = resolveInWorkspace(ctx, rel);
+    const st = await fsp.stat(abs);
+    return `${pathToFileURL(abs).href}?v=${Math.round(st.mtimeMs)}`;
+  });
   handle('file:open-default', async (ctx, rel) => {
     const err = await shell.openPath(resolveInWorkspace(ctx, rel));
     if (err) throw new Error(err);

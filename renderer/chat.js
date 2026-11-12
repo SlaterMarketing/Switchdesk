@@ -120,9 +120,13 @@ function checkResetWaits() {
 setInterval(checkResetWaits, 20 * 1000);
 
 function emptyState() {
+  // In Desk, a new chat in a project opens on the project's home: its instructions and latest chats.
+  const home = h('div', { class: 'project-home' });
+  if (document.body.classList.contains('desk')) setTimeout(() => fillProjectHome(home));
   return h(
     'div',
     { class: 'empty-chat' },
+    home,
     h('h2', { class: 'desk-intro' }, 'What would you like to work on?'),
     state.folder
       ? h('p', { class: 'code-intro' }, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
@@ -433,32 +437,116 @@ async function loadHistory(fresh) {
   if ((state.folder ? state.folder.root : '') === root) loadHistory();
 }
 
+// Your own names and pins for past chats, kept in settings by the chat's id (Claude's session id, or
+// the other agent's), so they're the same in Code and Desk and in every window.
+const chatKey = (c) => c.sessionId || null;
+const pinnedChats = () => new Set((state.settings && state.settings.chatPins) || []);
+const chatTitleFor = (id, fallback) => (id && state.settings && state.settings.chatTitles && state.settings.chatTitles[id]) || fallback;
+
+async function togglePin(id) {
+  if (!id) return toast('Send a message first, then you can pin this chat.');
+  const pins = pinnedChats();
+  pins.has(id) ? pins.delete(id) : pins.add(id);
+  state.settings = await desk.setSettings({ chatPins: [...pins].slice(-200) });
+  loadHistory();
+}
+
+async function renameChat(id, title, chat) {
+  title = (title || '').trim().slice(0, 80);
+  if (chat) {
+    chat.title = title || chat.title;
+    renderChatTabs();
+  }
+  if (id) {
+    const titles = { ...((state.settings && state.settings.chatTitles) || {}) };
+    if (title) titles[id] = title;
+    else delete titles[id];
+    const keep = Object.entries(titles).slice(-500);
+    state.settings = await desk.setSettings({ chatTitles: Object.fromEntries(keep) });
+  }
+  loadHistory();
+}
+
+// Turns a row's title into a box to type its new name in. Enter saves, Escape cancels.
+function startRename(row, id, current, chat) {
+  const t = $('.t', row);
+  const box = h('input', { class: 'history-rename', value: current, spellcheck: 'false' });
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    if (save && box.value.trim() && box.value.trim() !== current) renameChat(id, box.value, chat);
+    else loadHistory();
+  };
+  box.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  box.addEventListener('blur', () => finish(true));
+  box.addEventListener('click', (e) => e.stopPropagation());
+  t.replaceChildren(box);
+  box.focus();
+  box.select();
+}
+
+// When a chat was last used, in the groups Claude's app lists them in.
+function chatGroup(at, now = new Date()) {
+  if (!at) return 'Older';
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (at >= day) return 'Today';
+  if (at >= day - 864e5) return 'Yesterday';
+  if (at >= day - 7 * 864e5) return 'Previous 7 days';
+  if (at >= day - 30 * 864e5) return 'Previous 30 days';
+  return 'Older';
+}
+
+function historyRow({ id, title, agent, when, active, open, chat, pinned, onclick }) {
+  const row = h(
+    'div',
+    { class: `history-row${active ? ' active' : ''}${pinned ? ' pinned' : ''}`, ...(chat ? { 'data-chat': chat.id } : {}), ...(id ? { 'data-session': id } : {}), onclick },
+    h('div', { class: 't' }, title),
+    h('div', { class: 'd' }, h('span', { class: 'agent-tag' }, agent), open ? 'Open now' : when ? new Date(when).toLocaleString() : ''),
+    h(
+      'div',
+      { class: 'history-actions' },
+      h('button', { class: 'history-act', title: 'Rename', onclick: (e) => (e.stopPropagation(), startRename(row, id, title, chat)) }, '✎'),
+      h('button', { class: `history-act pin${pinned ? ' on' : ''}`, title: pinned ? 'Unpin' : 'Pin to the top', onclick: (e) => (e.stopPropagation(), togglePin(id)) }, pinned ? '★' : '☆')
+    )
+  );
+  return row;
+}
+
 function renderHistory(list, rows, loading) {
-  rows = rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 150);
+  rows = rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 300);
+  const query = (($('#history-filter') || {}).value || '').trim().toLowerCase();
+  const pins = pinnedChats();
   // Chats open in tabs that their agent hasn't listed yet go first, so a new chat is there straight away.
   const listed = new Set(rows.map((r) => r.id));
   const open = chats.filter((c) => !isPristine(c) && !(c.sessionId && listed.has(c.sessionId)));
-  const items = [
-    ...open.map((c) =>
-      h(
-        'div',
-        { class: `history-row${c === activeChat() ? ' active' : ''}`, 'data-chat': c.id, onclick: () => switchChat(c.id) },
-        h('div', { class: 't' }, c.title),
-        h('div', { class: 'd' }, h('span', { class: 'agent-tag' }, agentLabel(c)), 'Open now')
-      )
-    ),
-    ...(rows.length || open.length || loading ? [] : [h('div', { class: 'muted small', style: 'padding:12px' }, state.folder ? 'No chats in this folder yet.' : 'No chats yet.')]),
-    ...rows.map((r) =>
-      h(
-        'div',
-        { class: `history-row${activeChat()?.sessionId === r.id ? ' active' : ''}`, 'data-session': r.id, onclick: () => openSession(r) },
-        h('div', { class: 't' }, r.title),
-        h('div', { class: 'd' }, h('span', { class: 'agent-tag' }, agentInfo(r.agent).label), r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '')
-      )
-    ),
-    loading ? h('div', { class: 'muted small', style: 'padding:8px 12px' }, 'Looking for chats from your other agents…') : null,
-  ];
-  list.replaceChildren(...items.filter(Boolean));
+  const entries = [
+    ...open.map((c) => ({ id: chatKey(c), title: chatTitleFor(chatKey(c), c.title), agent: agentLabel(c), when: Date.now(), open: true, chat: c, active: c === activeChat(), onclick: () => switchChat(c.id) })),
+    ...rows.map((r) => ({ id: r.id, title: chatTitleFor(r.id, r.title), agent: agentInfo(r.agent).label, when: r.updatedAt, active: activeChat()?.sessionId === r.id, chat: chats.find((c) => c.sessionId === r.id), onclick: () => openSession(r) })),
+  ]
+    .map((e) => ({ ...e, pinned: !!e.id && pins.has(e.id) }))
+    .filter((e) => !query || String(e.title).toLowerCase().includes(query) || e.agent.toLowerCase().includes(query));
+  const groups = new Map();
+  for (const e of entries) {
+    const g = e.pinned ? 'Pinned' : e.open ? 'Open now' : chatGroup(e.when);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(e);
+  }
+  const order = ['Pinned', 'Open now', 'Today', 'Yesterday', 'Previous 7 days', 'Previous 30 days', 'Older'];
+  const items = [];
+  for (const g of order) {
+    if (!groups.has(g)) continue;
+    items.push(h('div', { class: 'history-group' }, g));
+    items.push(...groups.get(g).slice(0, g === 'Older' ? 100 : 300).map(historyRow));
+  }
+  if (!entries.length && !loading)
+    items.push(h('div', { class: 'muted small', style: 'padding:12px' }, query ? `No chats match "${query}".` : state.folder ? 'No chats in this folder yet.' : 'No chats yet.'));
+  if (loading) items.push(h('div', { class: 'muted small', style: 'padding:8px 12px' }, 'Looking for chats from your other agents…'));
+  list.replaceChildren(...items);
 }
 
 // Shows earlier messages in a chat tab.
@@ -496,7 +584,7 @@ async function openSession(row, worktree, account) {
     refreshWorktree(chat);
   }
   chat.sessionId = row.id;
-  chat.title = row.title.slice(0, 60);
+  chat.title = chatTitleFor(row.id, row.title).slice(0, 60);
   chat.el.replaceChildren();
   chat.lastReply = null;
   chat.resumeAt = null;
@@ -620,7 +708,7 @@ function userBubble(chat, body, rw) {
   const el = h(
     'div',
     { class: 'msg-user' },
-    h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it', onclick: () => rewindTo(chat, el) }, '↺ Rewind'),
+    h('button', { class: 'rewind-btn', title: 'Rewind to here: undo this message and everything after it, and put it back in the box to change', onclick: () => rewindTo(chat, el) }, h('span', { class: 'code-only' }, '↺ Rewind'), h('span', { class: 'desk-only' }, '✎ Edit')),
     ...body
   );
   el.rw = rw;
@@ -637,7 +725,7 @@ function startTurn(chat, shown, mode, images, rwText) {
         shown,
         images && images.length ? h('div', { class: 'msg-images' }, ...images.map((im) => h('img', { src: `data:${im.mediaType};base64,${im.data}` }))) : null,
       ],
-      { text: rwText ?? shown, after: chat.resumeAt || chat.lastReply || null, turnId: null }
+      { text: rwText ?? shown, after: chat.resumeAt || chat.lastReply || null, turnId: null, mode }
     ),
     chat
   );
@@ -774,10 +862,14 @@ function handleEvent(chat, ev) {
         else {
           const secs = Math.round((ev.duration_ms || Date.now() - turn.started) / 1000);
           const denied = (ev.permission_denials || []).length;
-          appendChat(h('div', { class: 'turn-foot' }, `${secs}s · ${ev.num_turns || 1} step${ev.num_turns === 1 ? '' : 's'}${denied ? ` · ${denied} action${denied > 1 ? 's' : ''} denied` : ''}`), chat);
+          appendChat(turnFoot(chat, turn, `${secs}s · ${ev.num_turns || 1} step${ev.num_turns === 1 ? '' : 's'}${denied ? ` · ${denied} action${denied > 1 ? 's' : ''} denied` : ''}`), chat);
         }
       }
       if (turn) chat.lastTurnText = (turn.replyTexts || []).map((b) => b.text).join('\n\n');
+      if (turn && turn.foot) {
+        turn.foot.reply = chat.lastTurnText;
+        if (!chat.lastTurnText.trim()) $('.reply-act', turn.foot).remove(); // nothing written to copy
+      }
       // Subagents still running in the background: Claude carries on when they finish. A long run
       // doesn't wait for them (an editor or server left running would hold it up for good).
       if (turn && !turn.interrupted && !ev.is_error && runningInBackground(chat) && !chat.longRun) {
@@ -802,6 +894,23 @@ function handleEvent(chat, ev) {
       }
       break;
   }
+}
+
+// Under each finished reply: how long it took, and Copy and Retry, like Claude's app.
+function turnFoot(chat, turn, text) {
+  const foot = h('div', { class: 'turn-foot' }, h('span', { class: 'turn-stats' }, text));
+  const copy = h('button', { class: 'reply-act', title: 'Copy this reply' }, 'Copy');
+  copy.addEventListener('click', () =>
+    navigator.clipboard.writeText(foot.reply || '').then(() => {
+      copy.textContent = 'Copied';
+      setTimeout(() => (copy.textContent = 'Copy'), 1500);
+    })
+  );
+  const bubble = turn.bubble;
+  const retry = bubble ? h('button', { class: 'reply-act', title: 'Ask again for a new reply to this message', onclick: () => rewindTo(chat, bubble, { retry: true }) }, '↻ Retry') : null;
+  foot.append(h('span', { class: 'reply-acts' }, copy, retry));
+  turn.foot = foot;
+  return foot;
 }
 
 function handleStream(chat, turn, e) {
@@ -1355,6 +1464,11 @@ function changesCard(chat, turnId, changes) {
   card.undo = undo;
   // What this chat has made or changed, for the Desk view's panel. The latest change to a file wins.
   for (const c of changes) if (!c.worktree) chat.outputs.delete(c.rel), chat.outputs.set(c.rel, c);
+  // Something new to show: the panel comes back if you'd closed it, and shows the newest file.
+  if (changes.some((c) => !c.worktree && !c.undone)) {
+    chat.outputsHidden = false;
+    if (deskOut.chat === chat) deskOut.rel = null;
+  }
   renderDeskOutputs();
   changeCards.set(turnId, card);
   appendChat(card, chat);
@@ -1369,8 +1483,10 @@ function changesCard(chat, turnId, changes) {
 // conversation that's given the one up to here), the message goes back in the box to edit, and the
 // files can go back to how they were before it.
 
-async function rewindTo(chat, bubble) {
-  if (chat.busy) return toast(`Wait for ${agentLabel(chat)} to finish, or stop it, before rewinding.`);
+// Retry is the same, except the message is sent again straight away instead of going back in the
+// box. It only asks first when there's something to decide (later messages, or files to put back).
+async function rewindTo(chat, bubble, { retry = false } = {}) {
+  if (chat.busy) return toast(`Wait for ${agentLabel(chat)} to finish, or stop it, before ${retry ? 'trying again' : 'rewinding'}.`);
   const forks = agentOf(chat) === 'claude';
   const all = [...chat.el.querySelectorAll('.msg-user')];
   const from = all.slice(all.indexOf(bubble));
@@ -1378,29 +1494,7 @@ async function rewindTo(chat, bubble) {
   const files = bubble.rw.turnId ? await desk.rewindFiles(turnIds) : { available: false, files: [] };
   const restore = h('input', { type: 'checkbox', checked: files.files.length > 0 });
   const later = from.length - 1;
-  const content = [
-    h('h3', {}, 'Rewind to this message?'),
-    h(
-      'p',
-      { class: 'muted' },
-      `The conversation goes back to just before this message${later ? `, along with ${later === 1 ? 'the message' : `the ${later} messages`} after it` : ''}, and the message is put back in the box so you can change it and send again. ${forks ? 'The original conversation stays in History.' : `${agentLabel(chat)} starts a new conversation that carries on from here.`}`
-    ),
-  ];
-  if (files.files.length)
-    content.push(
-      h('label', { class: 'rewind-files' }, restore, ` Also put back ${files.files.length} file${files.files.length > 1 ? 's' : ''} as they were before this message`),
-      h('div', { class: 'rewind-list' }, ...files.files.slice(0, 12).map((f) => h('div', {}, f)), files.files.length > 12 ? h('div', {}, `and ${files.files.length - 12} more`) : null)
-    );
-  else if (!files.available)
-    content.push(h('p', { class: 'muted small' }, 'Files can only be rewound for messages sent since Switchdesk was opened, so only the conversation will rewind.'));
-  else content.push(h('p', { class: 'muted small' }, 'No files have changed since this message.'));
-  const go = h('button', { class: 'btn primary' }, 'Rewind');
-  const cancel = h('button', { class: 'btn' }, 'Cancel');
-  const close = modal([h('div', { class: 'body' }, ...content), h('div', { class: 'foot' }, cancel, go)]);
-  cancel.addEventListener('click', close);
-  go.focus();
-  go.addEventListener('click', async () => {
-    close();
+  const apply = async () => {
     if (restore.checked && files.files.length) {
       await desk.rewindApply(turnIds);
       dropReviews(files.files);
@@ -1423,12 +1517,41 @@ async function rewindTo(chat, bubble) {
     // Other agents can't fork a conversation, so the new one is given what's left of this one.
     if (!forks) chat.handoff = handoffNote(chat, `The user rewound this conversation to an earlier point and is carrying on from there. Here it is up to that point. Anything after it was undone, so ignore what you remember of it. The files are as they are now.`) || null;
     if (!chat.el.children.length) chat.el.append(emptyState());
+    renderTree();
+    if (retry) return send(bubble.rw.text || '', MODES.includes(bubble.rw.mode) ? bubble.rw.mode : chat.lastMode || 'agent', undefined, chat);
     const input = $('#input');
     input.value = bubble.rw.text || '';
     autoGrow();
     input.focus();
-    renderTree();
     toast(restore.checked && files.files.length ? 'Rewound the conversation and files.' : 'Rewound the conversation.');
+  };
+  if (retry && !later && !files.files.length) return apply();
+  const content = [
+    h('h3', {}, retry ? 'Try this message again?' : 'Rewind to this message?'),
+    h(
+      'p',
+      { class: 'muted' },
+      retry
+        ? `${agentLabel(chat)} answers this message again from scratch${later ? `, and ${later === 1 ? 'the message' : `the ${later} messages`} after it ${later === 1 ? 'goes' : 'go'} too` : ''}. ${forks ? 'The original reply stays in History.' : ''}`
+        : `The conversation goes back to just before this message${later ? `, along with ${later === 1 ? 'the message' : `the ${later} messages`} after it` : ''}, and the message is put back in the box so you can change it and send again. ${forks ? 'The original conversation stays in History.' : `${agentLabel(chat)} starts a new conversation that carries on from here.`}`
+    ),
+  ];
+  if (files.files.length)
+    content.push(
+      h('label', { class: 'rewind-files' }, restore, ` Also put back ${files.files.length} file${files.files.length > 1 ? 's' : ''} as they were before this message`),
+      h('div', { class: 'rewind-list' }, ...files.files.slice(0, 12).map((f) => h('div', {}, f)), files.files.length > 12 ? h('div', {}, `and ${files.files.length - 12} more`) : null)
+    );
+  else if (!files.available)
+    content.push(h('p', { class: 'muted small' }, 'Files can only be rewound for messages sent since Switchdesk was opened, so only the conversation will rewind.'));
+  else content.push(h('p', { class: 'muted small' }, 'No files have changed since this message.'));
+  const go = h('button', { class: 'btn primary' }, retry ? 'Try again' : 'Rewind');
+  const cancel = h('button', { class: 'btn' }, 'Cancel');
+  const close = modal([h('div', { class: 'body' }, ...content), h('div', { class: 'foot' }, cancel, go)]);
+  cancel.addEventListener('click', close);
+  go.focus();
+  go.addEventListener('click', () => {
+    close();
+    apply();
   });
 }
 

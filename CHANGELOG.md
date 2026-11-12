@@ -2,6 +2,13 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.40.0
+
+- **Projects in Desk, like Claude's app.** The top of Desk's chat list is now the project you're in. Click it to swap to another (each one comes back with its own open chats, where you left them), find one by name, or make a **New project**: give it a name and, if you like, instructions, and Switchdesk makes its folder in Documents → Switchdesk Projects. **Instructions** are what every agent follows in that project's chats (they're kept in AGENTS.md, which Claude reads too). A new chat in a project opens on its home: the instructions, with Edit, and its latest chats. **Use a folder…** makes any folder a project.
+- **Desk works more like Claude's app.** Pages the agent makes (HTML), drawings (SVG) and PDFs now show as themselves beside the chat, not as their text: a page runs, scripts and all, in a sandbox with no access to your computer or Switchdesk. **Code** (or **Text** for a PDF) flips to what's inside, and **Copy** copies it. The panel has a close button, and Escape closes it too; ▤ in the chat's header brings it back, and it comes back by itself when the agent makes something new.
+- **Find your chats.** The chat list has a search box (Ctrl+K, or ⌘K on a Mac, in Desk), and chats are grouped by when you last used them: Today, Yesterday, Previous 7 days and so on. Hover over a chat to **rename** it or **pin** it to the top. Names and pins are kept across restarts and in both views.
+- **Copy and Retry under each reply.** Copy copies what the agent wrote. Retry asks the same message again for a fresh reply; it only checks with you first when that would also undo later messages or put files back. Every code block in a reply has its own Copy button. In Desk, your messages show **Edit** (the same as Rewind in Code): it takes the conversation back to that message and puts it in the box to change.
+
 ## 0.39.1
 
 - **Easier on your battery.** A chat's agent that's been idle for 10 minutes now stops, along with the MCP servers it started. Your next message starts it again on the same conversation, a few seconds slower. A chat that's working, waiting on you, or has something running in the background is left alone. Before, every chat you'd used that day kept its agent running.
