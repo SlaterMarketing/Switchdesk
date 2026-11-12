@@ -1086,3 +1086,78 @@ body.desk .code-intro { display: none; }
 .run-output { max-height: 180px; overflow: auto; font-size: 11px; background: var(--bg-elev); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
 .run-state.waiting .dot { background: var(--warn); }
 .mcp-entry { font-size: 11px; background: var(--bg-elev); padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; user-select: text; }
+
+/* Desk, closer to Claude's app: searching, grouping, pinning and renaming chats */
+.history-search { padding-top: 0; }
+#history-filter { width: 100%; }
+.history-group { padding: 10px 12px 4px; font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.history-row { position: relative; }
+.history-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; opacity: 0; }
+.history-row:hover .history-actions, .history-row:focus-within .history-actions { opacity: 1; }
+.history-row:hover .t { padding-right: 46px; }
+.history-act { border: none; background: var(--bg-elev); color: var(--text-dim); border-radius: 5px; padding: 1px 5px; font-size: 12px; cursor: pointer; }
+.history-act:hover { color: var(--text-strong); }
+.history-act.pin.on { color: var(--accent); }
+.history-row.pinned .history-actions .pin { opacity: 1; }
+.history-rename { width: 100%; font: inherit; padding: 1px 4px; background: var(--bg-input); color: var(--text-strong); border: 1px solid var(--accent); border-radius: 4px; outline: none; }
+
+/* Copy and Retry under a reply, Copy on code blocks, Edit on your messages in Desk */
+.turn-foot { display: flex; align-items: center; gap: 10px; }
+.reply-acts { display: inline-flex; gap: 4px; opacity: 0.55; transition: opacity 0.15s; }
+.turn-foot:hover .reply-acts, .reply-acts:focus-within { opacity: 1; }
+body.desk .reply-acts { opacity: 1; }
+.reply-act { border: 1px solid transparent; background: none; color: var(--text-dim); font: 11px var(--sans); padding: 1px 7px; border-radius: 5px; cursor: pointer; }
+.reply-act:hover { color: var(--text-strong); border-color: var(--border); background: var(--bg-hover); }
+.msg-text pre { position: relative; }
+.code-copy { position: absolute; top: 5px; right: 5px; opacity: 0; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text-dim); font: 11px var(--sans); padding: 1px 7px; border-radius: 5px; cursor: pointer; }
+.msg-text pre:hover .code-copy { opacity: 1; }
+.code-copy:hover { color: var(--text-strong); }
+.desk-only { display: none; }
+body.desk .desk-only { display: inline; }
+body.desk .msg-user .code-only { display: none; }
+
+/* The panel of what the chat made: close it, flip between preview and code, live pages */
+.desk-outputs-btn { display: none; font-size: 12px; }
+body.desk .desk-outputs-btn:not(.hidden) { display: inline-block; }
+.desk-outputs-btn.active { color: var(--accent); }
+.out-head .spacer { flex: 1; }
+.out-tools { padding-top: 0; flex-wrap: wrap; }
+.out-tools .spacer { flex: 1; }
+.out-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.out-seg .seg-btn { border: none; background: none; color: var(--text-dim); font: 12px var(--sans); padding: 3px 9px; cursor: pointer; }
+.out-seg .seg-btn.active { background: var(--bg-hover); color: var(--text-strong); }
+.out-body.live { padding: 0 8px 8px; display: flex; }
+.out-live { flex: 1; width: 100%; min-height: 300px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+
+/* Projects in Desk: the switcher at the top of the chat list, and a project's home in a new chat */
+body.desk #desk-folder { position: relative; }
+.project-current { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text); cursor: pointer; text-align: left; font: 13px var(--sans); }
+.project-current:hover { border-color: var(--accent); }
+.project-icon { color: var(--accent); font-size: 14px; }
+.project-label { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.project-kicker { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+.project-name { color: var(--text-strong); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-caret { color: var(--text-dim); font-size: 11px; }
+.project-tools { display: flex; gap: 4px; padding: 4px 0 0; }
+.project-tools .ghost-btn { font-size: 12px; }
+.project-menu { position: absolute; left: 8px; right: 8px; top: 52px; z-index: 40; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 60vh; }
+.project-filter { width: 100%; box-sizing: border-box; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); outline: none; }
+.project-items { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.project-item { position: relative; display: flex; flex-direction: column; padding: 6px 28px 6px 8px; border-radius: 6px; cursor: pointer; }
+.project-item:hover { background: var(--bg-hover); }
+.project-item.active { background: var(--accent-soft); }
+.project-item-name { color: var(--text-strong); font-size: 13px; }
+.project-item-path { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-forget { position: absolute; right: 4px; top: 8px; opacity: 0; font-size: 11px; }
+.project-item:hover .project-forget { opacity: 1; }
+.project-menu-foot { display: flex; gap: 6px; padding-top: 4px; border-top: 1px solid var(--border); }
+.project-instructions { width: 100%; box-sizing: border-box; margin-top: 8px; font: 13px/1.5 var(--sans); background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 8px; color: var(--text); resize: vertical; }
+.modal input.input { width: 100%; box-sizing: border-box; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font: 13px var(--sans); }
+.project-home { display: none; }
+body.desk .project-home:not(:empty) { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; margin: 0 auto 18px; text-align: left; }
+.project-home-name { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; text-align: center; }
+.project-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg-panel); display: flex; flex-direction: column; gap: 4px; }
+.project-card-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--text-strong); }
+.project-chat { display: flex; justify-content: space-between; gap: 10px; border: none; background: none; padding: 5px 4px; border-radius: 6px; cursor: pointer; color: var(--text); font: 13px var(--sans); text-align: left; }
+.project-chat:hover { background: var(--bg-hover); }
+.project-chat-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

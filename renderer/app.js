@@ -665,6 +665,22 @@ function renderMarkdown(el, text) {
       if (id) monaco.editor.colorize(code.textContent, id, {}).then((html) => (code.innerHTML = DOMPurify.sanitize(html)));
     }
   }
+  // A Copy button on every code block, as in Claude's app.
+  for (const pre of el.querySelectorAll('pre')) {
+    const btn = document.createElement('button');
+    btn.className = 'code-copy';
+    btn.title = 'Copy';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const code = pre.querySelector('code') || pre;
+      navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.textContent = 'Copied';
+        setTimeout(() => (btn.textContent = 'Copy'), 1500);
+      });
+    });
+    pre.append(btn);
+  }
   // Make inline `path/to/file.ts:12` mentions clickable.
   for (const code of el.querySelectorAll(':not(pre) > code')) {
     const m = /^([\w./@-]+?)(?::(\d+))?(?:-\d+)?$/.exec(code.textContent.trim());
@@ -1162,7 +1178,7 @@ function wire() {
     else if (cmd === 'quick-open') quickOpen();
     else if (cmd === 'new-chat') newChat();
     else if (cmd === 'add-selection') addSelectionToChat();
-    else if (cmd === 'inline-edit') inlineEdit();
+    else if (cmd === 'inline-edit') document.body.classList.contains('desk') && !$('#workbench').classList.contains('peek') ? searchChats() : inlineEdit();
     else if (cmd === 'cycle-mode') setMode(MODES[(MODES.indexOf(state.mode) + 1) % MODES.length]);
     else if (cmd === 'toggle-sidebar') $('#workbench').classList.toggle('no-sidebar');
     else if (cmd === 'toggle-view') toggleView();

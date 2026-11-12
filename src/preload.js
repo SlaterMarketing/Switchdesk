@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('desk', {
 
   pickFolder: call('folder:pick'),
   openFolder: call('folder:open'),
+  createProject: call('project:create'),
   currentFolder: call('folder:current'),
   startFolder: call('folder:start'),
   addFolder: call('folder:add'),
@@ -72,6 +73,7 @@ contextBridge.exposeInMainWorld('desk', {
   writeFile: call('file:write'),
   revealFile: call('file:reveal'),
   previewFile: call('file:preview'),
+  fileUrl: call('file:url'),
   openFileDefault: call('file:open-default'),
 
   listSessions: call('sessions:list'),

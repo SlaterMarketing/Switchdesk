@@ -393,6 +393,115 @@ test('the Desk view: just the chat with your chats down the left, files beside i
   }
 });
 
+test('Desk, like Claude\'s app: live previews, Copy and Retry, and chats you can search, pin and rename', { timeout: 90000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const demo = path.join(p.agentDir, 'demo.json');
+  const page = '<!doctype html><title>Card</title><h1 id="hi">Hello page</h1><script>document.getElementById("hi").dataset.ran = "yes"</script>';
+  require('fs').writeFileSync(
+    demo,
+    JSON.stringify([
+      { match: 'tell me a fact', steps: [{ say: 'Fact number one.' }] },
+      { match: 'make the page', steps: [{ write: { path: 'site/card.html', content: page } }, { say: 'Made it.\n\n```js\nconsole.log(1)\n```' }] },
+    ])
+  );
+  const { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
+  try {
+    await w.click('#view-switch [data-view=desk]');
+    await w.waitForFunction(() => document.body.classList.contains('desk'));
+    await chatWith(w, 'cursor');
+    await sendMessage(w, 'make the page');
+    await idle(w);
+    // The page shows live beside the chat, scripts and all, and flips to its code.
+    await w.waitForSelector('#desk-outputs webview.out-live');
+    const ran = await w.waitForFunction(
+      () => {
+        const v = document.querySelector('#desk-outputs webview.out-live');
+        return v && v.getURL && v.getURL().startsWith('file:') && v.executeJavaScript('document.getElementById("hi") && document.getElementById("hi").dataset.ran').catch(() => null);
+      },
+      null,
+      { timeout: 20000, polling: 300 }
+    );
+    assert.equal(await ran.jsonValue(), 'yes');
+    await w.click('#desk-outputs .seg-btn:has-text("Code")');
+    await w.waitForSelector('#desk-outputs pre.out-text:has-text("Hello page")');
+    // Escape closes the panel, the header button brings it back.
+    await w.click('#messages-host');
+    await w.keyboard.press('Escape');
+    await w.waitForFunction(() => !document.querySelector('#workbench').classList.contains('has-outputs'));
+    await w.click('#btn-desk-outputs');
+    await w.waitForFunction(() => document.querySelector('#workbench').classList.contains('has-outputs'));
+    // Code blocks and replies can be copied.
+    assert.equal(await w.$$eval('.messages-pane:not(.hidden) pre .code-copy', (b) => b.length), 1);
+    await w.click('.messages-pane:not(.hidden) .turn-foot .reply-act:has-text("Copy")');
+    assert.match(await w.evaluate(() => navigator.clipboard.readText()), /Made it\./);
+    // Retry asks the same message again.
+    await sendMessage(w, 'tell me a fact');
+    await idle(w);
+    await w.evaluate(() => (window.oldAsk = [...document.querySelectorAll('.messages-pane:not(.hidden) .msg-user')].pop()));
+    await w.click('.messages-pane:not(.hidden) .turn-foot:last-child .reply-act:has-text("Retry")');
+    await w.waitForFunction(() => !window.oldAsk.isConnected && activeChat().busy === false && activeChat().sessionId && document.querySelectorAll('.messages-pane:not(.hidden) .msg-user').length === 2 && /tell me a fact[\s\S]*Fact number one[\s\S]*Retry$/.test(document.querySelector('.messages-pane:not(.hidden)').innerText.trim()), null, { timeout: 30000 });
+    assert.equal(await w.evaluate(() => [...document.querySelectorAll('.messages-pane:not(.hidden) .msg-user')].pop().innerText.includes('tell me a fact')), true);
+    assert.equal(await w.$eval('.messages-pane:not(.hidden) .msg-user .desk-only', (e) => getComputedStyle(e).display !== 'none'), true);
+    // Chats: renamed, pinned, grouped and found by search.
+    const id = await w.evaluate(() => activeChat().sessionId);
+    assert.ok(id, 'the chat has an id');
+    await w.evaluate(() => renameChat(activeChat().sessionId, 'Page and facts', activeChat()));
+    await w.waitForSelector('#history-list .history-row .t:has-text("Page and facts")');
+    await w.evaluate((sid) => togglePin(sid), id);
+    await w.waitForFunction(() => document.querySelector('#history-list .history-group')?.textContent === 'Pinned');
+    assert.deepEqual(await w.evaluate(() => state.settings.chatPins), [id]);
+    await w.keyboard.press('Control+K');
+    await w.waitForFunction(() => document.activeElement && document.activeElement.id === 'history-filter');
+    await w.keyboard.type('zzz-nothing');
+    await w.waitForSelector('#history-list :text("No chats match")');
+    await w.fill('#history-filter', 'page and');
+    await w.waitForSelector('#history-list .history-row .t:has-text("Page and facts")');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test('Desk projects: make one with instructions, see its home, and swap back', { timeout: 90000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const { app, w, errors } = await launch(p, dir);
+  try {
+    await w.click('#view-switch [data-view=desk]');
+    await w.waitForFunction(() => document.body.classList.contains('desk'));
+    await w.click('#desk-folder .project-current');
+    await w.waitForSelector('#project-menu:not(.hidden) .project-item.active');
+    await w.click('#project-menu button:has-text("New project")');
+    await w.fill('.modal input.input', 'Spring launch');
+    await w.fill('.modal textarea.project-instructions', 'Write for small business owners. Keep it short.');
+    await w.click('.modal button:has-text("Create project")');
+    await w.waitForFunction(() => state.folder && state.folder.name === 'Spring launch');
+    const made = path.join(await app.evaluate(({ app }) => app.getPath('documents')), 'Switchdesk Projects', 'Spring launch');
+    assert.equal(await w.evaluate(() => state.folder.root), made);
+    assert.match(fs.readFileSync(path.join(made, 'AGENTS.md'), 'utf8'), /small business owners/);
+    assert.match(fs.readFileSync(path.join(made, 'CLAUDE.md'), 'utf8'), /^@AGENTS\.md/);
+    // A new chat opens on the project's home, with its instructions.
+    await w.waitForSelector('.messages-pane:not(.hidden) .project-home :text("Write for small business owners")');
+    assert.match(await w.$eval('#desk-folder', (e) => e.innerText), /Spring launch/);
+    // Instructions can be changed from the project.
+    await w.click('#desk-folder button:has-text("Instructions")');
+    await w.fill('.modal textarea.project-instructions', 'Friendly and brief.');
+    await w.click('.modal button:has-text("Save")');
+    await w.waitForSelector('.messages-pane:not(.hidden) .project-home :text("Friendly and brief.")');
+    // Both projects are in the menu, and picking the first goes back to it.
+    await w.click('#desk-folder .project-current');
+    const names = await w.$$eval('#project-menu .project-item-name', (e) => e.map((x) => x.textContent));
+    assert.equal(names[0], 'Spring launch');
+    assert.ok(names.includes(path.basename(dir)), names.join(', '));
+    await w.click(`#project-menu .project-item:has-text("${path.basename(dir)}")`);
+    await w.waitForFunction((d) => state.folder && state.folder.root === d, dir);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
 test('pull requests: fix a check and a comment, push, review with an agent, and an issue to a PR', { timeout: 180000 }, async () => {
   const p = profile();
   const dir = project();
