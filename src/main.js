@@ -65,7 +65,23 @@ if (process.env.SWITCHDESK_USER_DATA) app.setPath('userData', process.env.SWITCH
 // window shares settings, usage and your phone's view.
 const firstInstance = app.requestSingleInstanceLock();
 if (!firstInstance) app.exit(0);
-app.on('second-instance', () => app.isReady() && newWindow(null));
+// Opening Switchdesk again with files or folders (Open with, a double click, `switchdesk file.json`)
+// opens them in the one that's running; with none it opens a new window.
+app.on('second-instance', (_e, argv, cwd) => {
+  if (!app.isReady()) return;
+  const paths = pathsFromArgs(argv, cwd);
+  if (paths.length) openPaths(paths);
+  else newWindow(null);
+});
+// Files and folders handed over before the windows are up: the command line, and macOS's
+// open-file events (Open With, dropping on the Dock icon), which can come before 'ready'.
+const launchPaths = firstInstance ? pathsFromArgs(process.argv, process.cwd()) : [];
+let windowsUp = false;
+app.on('open-file', (e, file) => {
+  e.preventDefault();
+  if (windowsUp) openPaths([file]);
+  else launchPaths.push(file);
+});
 
 // ---------- settings ----------
 
@@ -1651,8 +1667,8 @@ function registerIpc() {
   // What a window shows when it first loads: its folder, the one it was opened for, or nothing.
   handle('folder:start', async (ctx) => {
     if (ctx.workspace) return folderInfo(ctx);
-    const dir = ctx.start;
-    ctx.start = null;
+    const dir = ctx.start || ctx.openDir;
+    ctx.start = ctx.openDir = null;
     return dir && (remote.parseUrl(dir) || fs.existsSync(dir)) ? openFolder(ctx, dir).catch(() => null) : null;
   });
   // Workspaces: more folders in one window.
@@ -1661,6 +1677,20 @@ function registerIpc() {
     return dir ? addFolder(ctx, dir) : null;
   });
   handle('folder:remove', (ctx, dir) => removeFolder(ctx, dir));
+  // Files opened from outside (Open with, a double click) waiting for this window, as its paths. The
+  // window asks once its folder is open, and again each time it's told more have come.
+  handle('files:take-opened', async (ctx) => {
+    ctx.openReady = true;
+    let folder = null;
+    if (ctx.openDir) {
+      const dir = ctx.openDir;
+      ctx.openDir = null;
+      if (!ctx.workspace) folder = await openFolder(ctx, dir).catch(() => null);
+    }
+    const files = (ctx.openQueue || []).map((f) => relOf(ctx, f)).filter((r) => r);
+    ctx.openQueue = [];
+    return { folder, files };
+  });
   handle('window:new', (ctx, dir) => newWindow(dir));
   handle('files:list', (ctx) => listFiles(ctx));
   handle('files:search', async (ctx, query, opts) => (ctx.workspace ? search.search((rel) => resolveInWorkspace(ctx, rel), await listFiles(ctx), query, { ...opts, group: ctx.id }) : { results: [] }));
@@ -2362,6 +2392,78 @@ function createWindow(start) {
   return ctx;
 }
 
+// The files and folders on a command line. Flags are left out, and so is the app's own folder when
+// it runs from source (`electron . file.json`); paths are relative to where it was started.
+function pathsFromArgs(argv, cwd) {
+  const args = (argv || []).slice(1).filter((a) => a && !a.startsWith('-'));
+  if (process.defaultApp) args.shift();
+  const out = [];
+  for (const a of args) {
+    const p = /^file:\/\//i.test(a) ? require('url').fileURLToPath(a) : path.resolve(cwd || process.cwd(), a);
+    if (fs.existsSync(p)) out.push(p);
+  }
+  return out;
+}
+
+// Opens files and folders from outside: a folder gets a window (or the one that has it), a file opens
+// in a tab of the window whose folder holds it.
+async function openPaths(paths) {
+  for (const p of paths) {
+    let dir = false;
+    try {
+      dir = fs.statSync(p).isDirectory();
+    } catch {
+      continue;
+    }
+    if (dir) openOsFolder(p);
+    else await openOsFile(p).catch(() => {});
+  }
+}
+
+const emptyWindow = (c) => c && c.win && !c.win.isDestroyed() && !c.remote && !c.workspace && !c.start && !c.openDir;
+
+// A window for a folder: the one that has it (or is opening it), else an empty one, else a new one.
+function windowForFolder(folder) {
+  const has = [...contexts.values()].find((c) => localRoots(c)[0] && path.resolve(localRoots(c)[0]) === folder);
+  if (has) return has;
+  const focused = ctxOfWindow(BrowserWindow.getFocusedWindow());
+  const ctx = emptyWindow(focused) ? focused : [...contexts.values()].find(emptyWindow);
+  if (!ctx) return createWindow(folder);
+  ctx.openDir = folder; // its page opens it as it starts, or when it next asks for files
+  return ctx;
+}
+
+function openOsFolder(folder) {
+  const ctx = windowForFolder(path.resolve(folder));
+  focusWindow(ctx);
+  if (ctx.openReady && ctx.openDir) sendTo(ctx, 'open-files');
+}
+
+// The local folders a window has, or is about to open.
+function localRoots(ctx) {
+  if (ctx.remote || !ctx.win || ctx.win.isDestroyed()) return [];
+  if (ctx.workspace) return roots(ctx).map((r) => r.dir);
+  const next = ctx.start || ctx.openDir;
+  return next && !remote.parseUrl(next) ? [next] : [];
+}
+
+// A file from outside: open it in the window whose folder holds it (the deepest such folder), else
+// open its project (its git repo, or the folder it's in) in an empty window or a new one.
+async function openOsFile(file) {
+  file = path.resolve(file);
+  let ctx = null;
+  let best = -1;
+  for (const c of contexts.values())
+    for (const dir of localRoots(c)) if (within(dir, file) && dir.length > best) (ctx = c), (best = dir.length);
+  if (!ctx) {
+    const parent = path.dirname(file);
+    ctx = windowForFolder(await gitRoot(parent).then((r) => (r ? path.resolve(r) : parent), () => parent));
+  }
+  (ctx.openQueue = ctx.openQueue || []).push(file);
+  focusWindow(ctx);
+  if (ctx.openReady) sendTo(ctx, 'open-files');
+}
+
 // Opens a window, or goes to the one that already has the folder.
 function newWindow(dir) {
   const open = dir && windowWith(dir);
@@ -2572,6 +2674,8 @@ app.whenReady().then(() => {
   const last = (settings.openWindows || []).filter((d) => fs.existsSync(d));
   const starts = last.length ? [...new Set(last)] : [(settings.recentFolders || [])[0] || null];
   for (const dir of starts) createWindow(dir);
+  windowsUp = true;
+  if (launchPaths.length) openPaths(launchPaths.splice(0));
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow((settings.recentFolders || [])[0] || null);
   });
