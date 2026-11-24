@@ -44,11 +44,11 @@ function gitEnv() {
 }
 
 // The real Claude Code is left off PATH, so the tests behave the same with or without it installed.
-async function launch(p, folder, extraEnv = {}) {
+async function launch(p, folder, extraEnv = {}, extraArgs = []) {
   const exe = require('electron'); // the path to Electron's binary
   const app = await _electron.launch({
     executablePath: exe,
-    args: [ROOT, '--no-sandbox'],
+    args: [ROOT, '--no-sandbox', ...extraArgs],
     cwd: ROOT,
     env: { ...gitEnv(), HOME: p.home, PATH: [FAKES, ...process.env.PATH.split(path.delimiter).filter((d) => !fs.existsSync(path.join(d, 'claude')))].join(path.delimiter), SWITCHDESK_USER_DATA: p.userData, FAKE_AGENT_DIR: p.agentDir, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', ...extraEnv },
     timeout: 60000,

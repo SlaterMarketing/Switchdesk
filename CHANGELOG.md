@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.41.0
+
+- **Open with Switchdesk opens the file.** Opening a file with Switchdesk (Open with, a double click, or `Switchdesk file.json` on the command line) now opens it in a tab, not just the app. If a window already has the file's folder, it opens there; otherwise Switchdesk opens the file's project (its git repo, or the folder it's in) in an empty window or a new one. It works whether Switchdesk was running or not, and folders open the same way.
+- **Switchdesk is in the Open with menu.** On Windows, the installer adds Switchdesk to Open with for code and text files (.json, .js, .ts, .py, .md and the like) without changing what opens them by default, and adds **Open folder in Switchdesk** when you right-click a folder. On a Mac, Switchdesk is offered under Open With for the same files. Existing installs get these with this update.
+
 ## 0.40.0
 
 - **Projects in Desk, like Claude's app.** The top of Desk's chat list is now the project you're in. Click it to swap to another (each one comes back with its own open chats, where you left them), find one by name, or make a **New project**: give it a name and, if you like, instructions, and Switchdesk makes its folder in Documents → Switchdesk Projects. **Instructions** are what every agent follows in that project's chats (they're kept in AGENTS.md, which Claude reads too). A new chat in a project opens on its home: the instructions, with Edit, and its latest chats. **Use a folder…** makes any folder a project.

@@ -1176,6 +1176,45 @@ test('opening Switchdesk again opens a window in the one that is running', { tim
   }
 });
 
+test('Open with: a file opens in the window whose folder has it, else in a window for its own folder', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const { app, w, errors } = await launch(p, dir);
+  try {
+    const exe = require('electron');
+    const root = path.join(__dirname, '..');
+    const env = { ...process.env, HOME: p.home, SWITCHDESK_USER_DATA: p.userData };
+    const openWith = (args, cwd) =>
+      new Promise((r) => require('child_process').spawn(exe, [root, '--no-sandbox', ...args], { env, cwd }).on('exit', r));
+    // A file in the open folder (given relative to where it's run from): a tab in the same window.
+    assert.equal(await openWith([path.join('lib', 'price.js')], dir), 0, 'the second copy hands over and closes');
+    await until(w, () => activeTab() && activeTab().rel === 'lib/price.js');
+    assert.equal(app.windows().length, 1);
+    // A file somewhere else: a new window with its folder open and the file in a tab.
+    const other = fs.mkdtempSync(path.join(require('os').tmpdir(), 'switchdesk-loose-'));
+    fs.writeFileSync(path.join(other, 'data.json'), '{ "ok": true }\n');
+    const [win] = await Promise.all([app.waitForEvent('window', { timeout: 30000 }), openWith([path.join(other, 'data.json')], root)]);
+    await until(win, (f) => typeof state !== 'undefined' && state.folder && state.folder.root === f && activeTab() && activeTab().rel === 'data.json', fs.realpathSync(other));
+    assert.match(await win.evaluate(() => editor.getValue()), /"ok": true/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test('a file given when Switchdesk starts opens in its folder', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project({ git: false });
+  const { app, w, errors } = await launch(p, null, {}, [path.join(dir, 'README.md')]);
+  try {
+    await until(w, (f) => state.folder && state.folder.root === f && activeTab() && activeTab().rel === 'README.md', dir);
+    assert.equal(app.windows().length, 1, 'the empty window is used, not a second one');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
 test('a chat started with no folder carries on when you open one', { timeout: 120000 }, async () => {
   const p = profile();
   const { app, w, errors } = await launch(p, null);

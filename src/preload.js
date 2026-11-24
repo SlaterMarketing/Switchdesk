@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('desk', {
   removeFolder: call('folder:remove'),
   newWindow: call('window:new'),
   onOpenFolder: on('menu-open-folder'),
+  takeOpenedFiles: call('files:take-opened'),
+  onOpenFiles: on('open-files'),
   onSettingsChanged: on('settings-changed'),
   listFiles: call('files:list'),
   searchFiles: call('files:search'),

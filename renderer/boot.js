@@ -1,4 +1,4 @@
-/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents, wireCompare, wireOpinion, wireSchedules, wireLongRuns, wireDeskView */
+/* global $, desk, state, isMac, applyTheme, wire, wireImageInput, wireTerminal, wireGit, setMode, renderRecent, checkCli, loadMonaco, createEditors, wireDiff, wireReview, wirePreview, createChat, setFolder, loadAccounts, loadAgents, wireAgents, wireCompare, wireOpinion, wireSchedules, wireLongRuns, wireDeskView, toast, openFile */
 'use strict';
 
 // Runs last, once every renderer script has loaded.
@@ -68,7 +68,20 @@ async function init() {
   createChat();
   // This window's folder: the one it had (after a reload), the one it opened with, or none.
   const start = await desk.startFolder();
-  if (start) setFolder(start);
+  if (start) await setFolder(start);
+  // Files opened from outside (Open with, a double click), now and whenever more come.
+  await openFilesFromOutside();
+  desk.onOpenFiles(openFilesFromOutside);
+}
+
+let openingFromOutside = Promise.resolve();
+function openFilesFromOutside() {
+  openingFromOutside = openingFromOutside.then(async () => {
+    const { folder, files } = await desk.takeOpenedFiles();
+    if (folder) await setFolder(folder);
+    for (const rel of files) await openFile(rel);
+  }).catch((e) => toast(`Couldn't open the file: ${e.message}`));
+  return openingFromOutside;
 }
 
 init();
