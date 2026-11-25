@@ -26,8 +26,8 @@ function start() {
       req.on('end', async () => {
         let out;
         try {
-          const { name, args, agent } = JSON.parse(body || '{}');
-          out = await run(name, args || {}, agent || '');
+          const { name, args, agent, chat } = JSON.parse(body || '{}');
+          out = await run(name, args || {}, agent || '', chat || '');
         } catch (err) {
           out = { error: String(err.message || err) };
         }
@@ -58,10 +58,10 @@ function forget(ctx) {
 
 // How an agent starts the MCP server: this app's own executable, running as Node. Packaged, the
 // script is unpacked from the asar so a plain Node process can read it.
-// agent is which one starts it, since some tools are only for Claude Code.
-function serverSpec(url, agent) {
+// agent is which one starts it, since some tools are only for Claude Code; chat is the chat it's for.
+function serverSpec(url, agent, chat) {
   const script = path.join(__dirname, 'preview-mcp.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
-  return { name: 'switchdesk-preview', command: process.execPath, args: [script], env: { ELECTRON_RUN_AS_NODE: '1', SWITCHDESK_PREVIEW_URL: url, SWITCHDESK_AGENT: agent || '' } };
+  return { name: 'switchdesk-preview', command: process.execPath, args: [script], env: { ELECTRON_RUN_AS_NODE: '1', SWITCHDESK_PREVIEW_URL: url, SWITCHDESK_AGENT: agent || '', SWITCHDESK_CHAT: chat || '' } };
 }
 
 module.exports = { urlFor, forget, serverSpec };

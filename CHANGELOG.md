@@ -2,6 +2,11 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.43.0
+
+- **In Desk, messages steer instead of queueing.** Send something while Claude is working and it goes straight into what Claude is doing: Claude takes it in at its next step and changes course, without stopping or starting over. Your message shows in the chat where you sent it, marked **Claude will see this at its next step** until it has. If Claude was already finishing, it answers your message straight after. Other agents can't be steered, so for them Desk stops the agent and sends your message, as **Send now** does. Code view still queues messages, as before.
+- **Start something in its own chat.** While Claude works, **New chat ↗** by Send (or Alt+Enter, ⌥+Enter on a Mac) sends what you typed to a new chat that runs alongside this one, and you stay where you are, with a link to it. Claude does this itself, too: if you send it something unrelated while it works, it starts that in its own chat, says so, and carries on.
+
 ## 0.42.0
 
 - **Desk looks much more like Claude's desktop app.** Anything you open while chatting (a file, a web preview, the board) now opens in a panel on the **right**, and the chat stays in the middle instead of being squeezed to the side. Drag the line between them to resize.

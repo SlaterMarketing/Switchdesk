@@ -41,7 +41,7 @@ const { LangServers, fileOf: fileOfUri } = require('./langservers');
 const agents = require('./agents');
 const { CodexSession, codexStatus, codexModels, codexSessions, codexHistory } = require('./codex-session');
 const { AcpSession, acpStatus, acpSessions, acpHistory } = require('./acp-session');
-const { stripAppNotes } = require('./agent-events');
+const { stripAppNotes, appNote } = require('./agent-events');
 
 const APP_ROOT = path.join(__dirname, '..');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -174,7 +174,7 @@ const ctxOfWindow = (bw) => (bw && contexts.get(bw.webContents.id)) || null;
 
 // A Preview tool call from an agent, answered by the window's renderer (preview.js).
 const previewCalls = new Map(); // id -> resolve
-function previewTool(ctx, name, args, agent) {
+function previewTool(ctx, name, args, agent, chat) {
   if (name === 'connect_mcp_server') return agent && agent !== 'claude' ? connectGateway(ctx, args) : connectMcp(ctx, args);
   if (name === 'gateway_tools') return gateway().tools().then((tools) => ({ tools }));
   if (name === 'gateway_call')
@@ -186,7 +186,7 @@ function previewTool(ctx, name, args, agent) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => previewCalls.delete(id) && resolve({ error: 'The Preview took too long to answer.' }), 90000);
     previewCalls.set(id, (r) => (clearTimeout(timer), resolve(r)));
-    sendTo(ctx, 'preview-tool', { id, name, args });
+    sendTo(ctx, 'preview-tool', { id, name, args, chat });
   });
 }
 
@@ -822,6 +822,10 @@ async function loadSession(ctx, id, cwd, account) {
       if (agentId) for (const b of ev.message?.content || []) if (b.type === 'tool_result') messages.push({ role: 'tool-result', id: b.tool_use_id, agentId, text: ev.toolUseResult.isAsync ? '' : textOf(b.content) });
       const t = textOf(ev.message?.content).trim();
       if (t && !t.startsWith('<')) messages.push({ role: 'user', text: t.replace(/^\[Ask mode:[^\]]*\]\s*/, ''), after: lastReply });
+    } else if (ev.type === 'attachment' && ev.attachment && ev.attachment.type === 'queued_command') {
+      // A message sent mid-turn (steering) that Claude took in between its steps.
+      const t = textOf(ev.attachment.prompt).trim();
+      if (t && !t.startsWith('<')) messages.push({ role: 'user', text: t, after: lastReply, steered: true });
     } else if (ev.type === 'assistant') {
       if (ev.uuid) lastReply = ev.uuid;
       for (const b of ev.message?.content || []) {
@@ -899,6 +903,8 @@ async function finishTurn(chatId, chat) {
   // Claude ended its turn with background subagents still running: it carries on by itself when
   // they finish (backgroundTurn).
   if (chat.background) chat.backgroundOwed = true;
+  // Messages sent mid-turn that it hadn't taken in yet: Claude Code answers them next, by itself.
+  if (chat.steers && chat.steers.length) chat.steerOwed = true;
   let changes = [];
   try {
     if (turn.snapReady) turn.snap = await turn.snapReady;
@@ -964,8 +970,11 @@ function backgroundTurn(ctx, chatId, chat, ev) {
   if (ev.parent_tool_use_id) return;
   if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') chat.background = (ev.tasks || []).length;
   const starts = (ev.type === 'system' && ev.subtype === 'init') || ev.type === 'stream_event' || ev.type === 'assistant';
-  if (chat.turn || !chat.backgroundOwed || !starts) return;
-  chat.backgroundOwed = false;
+  if (chat.turn || !(chat.backgroundOwed || chat.steerOwed) || !starts) return;
+  // A message sent mid-turn (steering) that the turn ended before taking in: Claude answers it now.
+  const steer = !!chat.steerOwed;
+  chat.steerOwed = false;
+  if (!steer) chat.backgroundOwed = false;
   const touched = [];
   const turn = { id: crypto.randomUUID(), snap: { touch: (abs) => touched.push(abs) }, blocks: new Map() };
   // Edits made before the snapshot is ready are read first, as with any turn.
@@ -975,7 +984,7 @@ function backgroundTurn(ctx, chatId, chat, ev) {
     return snap;
   });
   chat.turn = turn;
-  sendTo(ctx, 'chat-event', { chatId, ev: { type: 'system', subtype: 'background_turn', turnId: turn.id } });
+  sendTo(ctx, 'chat-event', { chatId, ev: { type: 'system', subtype: steer ? 'steer_turn' : 'background_turn', turnId: turn.id } });
 }
 
 function denyPending(chat, message) {
@@ -997,7 +1006,7 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
   if (sessionId && agent === 'claude' && !ctx.remote) await accounts.ensureTranscript(settings, account, chat.cwd, sessionId);
   const Session = a.kind === 'codex' ? CodexSession : a.kind === 'acp' ? AcpSession : ChatSession;
   // The Preview tools (preview-mcp.js), so the agent can open and check the running app itself.
-  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args, agent) => previewTool(ctx, name, args, agent)), agent);
+  const mcp = settings.previewTools === false || ctx.remote ? null : previewBridge.serverSpec(await previewBridge.urlFor(ctx, (name, args, agent, chat) => previewTool(ctx, name, args, agent, chat)), agent, chatId);
   const hostArgs = (args) => ctx.remote.spawnArgs(chat.cwd, [bin, ...args]);
   chat.session = new Session({
     mcp,
@@ -1020,8 +1029,11 @@ async function openChat(ctx, chatId, { sessionId, resumeAt, model, effort, mode,
     holdAuto: permissions.policyOf(settings).ask.length > 0,
     onEvent: (ev) => {
       chat.lastActive = Date.now();
+      if (ev.type === 'user' && ev.isReplay) steerSeen(chat, ev);
       backgroundTurn(ctx, chatId, chat, ev);
       trackStream(ctx, chat.turn, ev);
+      // The turn ended with a message sent mid-turn still waiting: Claude Code answers it next.
+      if (ev.type === 'result' && chat.steers && chat.steers.length) ev.steerNext = true;
       sendTo(ctx, 'chat-event', { chatId, ev });
       if (ev.type === 'result') finishTurn(chatId, chat);
     },
@@ -1169,12 +1181,48 @@ async function chatSend(ctx, chatId, { content, mode, model, effort, sessionId, 
   else await chat.session.setModel(model);
   const turn = { id: crypto.randomUUID(), snap: await beginSnapshot(ctx, chat), blocks: new Map() };
   chat.turn = turn;
+  chat.steers = [];
+  chat.steerOwed = false;
   chat.lastActive = Date.now();
   chat.mode = mode;
   chat.session.unrestricted = permissions.policyOf(settings).skipAll;
   chat.session.holdAuto = permissions.policyOf(settings).ask.length > 0;
   await chat.session.send(withRealPaths(ctx, content), mode);
   return { turnId: turn.id };
+}
+
+// Steering (Desk): a message sent while Claude works goes into the running turn instead of
+// waiting for it to end. Claude Code takes it in at its next step (after the tool it's running)
+// and adjusts course; if the turn ends first, it answers it straight after as a turn of its own
+// (backgroundTurn). Only Claude Code can be steered; for the others the app sends it as before.
+const STEER_NOTE = appNote(
+  "The user sent this while you were working. If it changes or adds to what you're doing, take it on board and carry on from where you are, without starting over. If it's a separate task that has nothing to do with the current one, don't switch to it here: call start_parallel_chat (from switchdesk-preview; search for it if it isn't loaded) with a self-contained prompt for it, tell the user in one short sentence that you've started it in its own chat, and carry on with your current work."
+);
+
+async function chatSteer(ctx, chatId, { content, mode }) {
+  const chat = chats.get(chatKey(ctx, chatId));
+  if (!chat || !chat.session.alive || !chat.turn || chat.agent !== 'claude' || !chat.session.steer) return { steered: false };
+  // Claude Code tells Claude to take it in as it carries on; this adds when to spin it off instead.
+  const note = chat.session.mcp ? STEER_NOTE : '';
+  content = withRealPaths(ctx, content);
+  const i = content.findIndex((b) => b.type === 'text');
+  if (note) content = i < 0 ? [{ type: 'text', text: note }, ...content] : content.map((b, j) => (j === i ? { ...b, text: note + b.text } : b));
+  (chat.steers = chat.steers || []).push(steerKey(content));
+  chat.lastActive = Date.now();
+  chat.mode = mode || chat.mode;
+  await chat.session.steer(content, chat.mode);
+  return { steered: true };
+}
+
+const steerKey = (content) => (Array.isArray(content) ? content : [{ text: String(content || '') }]).map((b) => (b.type === 'text' || !b.type ? b.text || '' : '')).join('');
+
+// Claude Code echoing a message back as it takes it in: a steered one has reached Claude.
+function steerSeen(chat, ev) {
+  if (!chat.steers || !chat.steers.length) return;
+  const i = chat.steers.indexOf(steerKey(ev.message && ev.message.content));
+  if (i < 0) return;
+  chat.steers.splice(i, 1);
+  ev.steered = true; // the renderer marks it as seen
 }
 
 async function chatInterrupt(ctx, chatId) {
@@ -1874,6 +1922,7 @@ function registerIpc() {
 
   handle('chat:send', (ctx, chatId, opts) => chatSend(ctx, chatId, opts));
   handle('chat:interrupt', (ctx, chatId) => chatInterrupt(ctx, chatId));
+  handle('chat:steer', (ctx, chatId, opts) => chatSteer(ctx, chatId, opts));
   handle('chat:close', (ctx, chatId) => closeChat(chatKey(ctx, chatId)));
   handle('chat:set-mode', (ctx, chatId, mode) => {
     const chat = chats.get(chatKey(ctx, chatId));

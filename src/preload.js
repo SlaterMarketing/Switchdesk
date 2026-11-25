@@ -84,6 +84,7 @@ contextBridge.exposeInMainWorld('desk', {
 
   chatSend: call('chat:send'),
   chatInterrupt: call('chat:interrupt'),
+  chatSteer: call('chat:steer'),
   chatClose: call('chat:close'),
   chatSetMode: call('chat:set-mode'),
   answerApproval: call('approval:answer'),

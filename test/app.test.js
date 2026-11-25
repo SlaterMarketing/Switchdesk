@@ -406,6 +406,86 @@ test('the Desk view: just the chat with your chats down the left, files beside i
   }
 });
 
+test('Desk: a message sent while Claude works steers it (Code still queues), and one can go to a chat of its own', { timeout: 120000 }, async () => {
+  const p = profile();
+  const dir = project();
+  const demo = path.join(p.agentDir, 'demo.json');
+  fs.writeFileSync(
+    demo,
+    JSON.stringify([
+      { match: 'tidy the cart', steps: [{ say: 'Looking at the cart.' }, { wait: 1500 }, { read: 'cart.js' }, { say: 'Tidied.' }] },
+      { match: 'quick answer', steps: [{ say: 'Quick.' }, { wait: 1200 }] },
+      { match: 'count the files', steps: [{ say: 'Counting.' }] },
+    ])
+  );
+  const { app, w, errors } = await launch(p, dir, { FAKE_AGENT_DEMO: demo });
+  const pane = '.messages-pane:not(.hidden)';
+  const working = () => w.waitForFunction(() => activeChat() && activeChat().busy);
+  const claudeLog = () => fs.readFileSync(path.join(p.agentDir, 'claude.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  try {
+    await w.evaluate(async (bin) => {
+      state.settings = await desk.setSettings({ claudePath: bin });
+      await agentStatus('claude', true);
+      await checkCli();
+    }, path.join(__dirname, 'fake-claude', 'claude'));
+    await w.click('#view-switch [data-view=desk]');
+    await w.waitForFunction(() => document.body.classList.contains('desk'));
+    await chatWith(w, 'claude');
+    // Sent mid-turn: it goes into the running turn, and Claude takes it in at its next step.
+    await sendMessage(w, 'tidy the cart');
+    await w.waitForSelector(`${pane} .msg-text:has-text("Looking at the cart")`);
+    assert.match(await w.$eval('#input', (e) => e.placeholder), /steer/);
+    await sendMessage(w, 'use reduce');
+    await w.waitForSelector(`${pane} .msg-user.steer:has-text("use reduce")`);
+    assert.equal(await w.evaluate(() => activeChat().queue.length), 0);
+    await w.waitForSelector(`${pane} .msg-text:has-text("Taking that in: use reduce")`);
+    await idle(w);
+    assert.equal(await w.$$eval(`${pane} .msg-user.steer.pending`, (els) => els.length), 0);
+    const steered = claudeLog().filter((m) => m.steered).map((m) => m.steered);
+    assert.equal(steered.length, 1);
+    assert.match(steered[0], /start_parallel_chat[\s\S]*use reduce$/);
+    // Too late to be taken in: Claude answers it straight after, by itself.
+    await sendMessage(w, 'quick answer');
+    await w.waitForSelector(`${pane} .msg-text:has-text("Quick.")`);
+    await sendMessage(w, 'and add a test');
+    await w.waitForSelector(`${pane} .msg-text:has-text("Answering after: and add a test")`);
+    await idle(w);
+    assert.equal(await w.$$eval(`${pane} .msg-user.steer.pending`, (els) => els.length), 0);
+    // Alt+Enter (or the button by Send) starts it in a chat of its own instead; you stay here.
+    await sendMessage(w, 'tidy the cart');
+    await working();
+    const first = await w.evaluate(() => activeChat().id);
+    await w.fill('#input', 'count the files');
+    assert.equal(await w.$eval('#spin-btn', (e) => getComputedStyle(e).display !== 'none'), true);
+    await w.press('#input', 'Alt+Enter');
+    await w.waitForSelector(`${pane} .notice.spun-off:has-text("count the files")`);
+    assert.equal(await w.evaluate(() => activeChat().id), first);
+    assert.equal(await w.$eval('#input', (e) => e.value), '');
+    await w.waitForFunction(() => chats.some((c) => c.title === 'count the files' && /Counting/.test(c.el.innerText)));
+    await idle(w);
+    // Claude can do the same with an unrelated ask (its start_parallel_chat tool).
+    const { env } = JSON.parse(fs.readFileSync(path.join(p.agentDir, 'mcp-config.json'), 'utf8')).mcpServers['switchdesk-preview'];
+    assert.ok(env.SWITCHDESK_CHAT);
+    const call = (args) => fetch(env.SWITCHDESK_PREVIEW_URL, { method: 'POST', body: JSON.stringify({ name: 'start_parallel_chat', args, agent: 'claude', chat: env.SWITCHDESK_CHAT }) }).then((r) => r.json());
+    assert.match((await call({ prompt: 'count the files in lib', title: 'Count the lib files' })).text, /^Started "Count the lib files" in its own chat/);
+    await w.waitForFunction(() => chats.some((c) => c.title === 'Count the lib files' && /Counting/.test(c.el.innerText)));
+    assert.equal(await w.evaluate(() => activeChat().id), first);
+    // Code keeps its queue.
+    await w.click('#view-switch [data-view=code]');
+    await sendMessage(w, 'tidy the cart');
+    await working();
+    await sendMessage(w, 'later please');
+    assert.equal(await w.evaluate(() => activeChat().queue.length), 1);
+    assert.equal(await w.$$eval(`${pane} .msg-user.steer:has-text("later please")`, (els) => els.length), 0);
+    await w.evaluate(() => ((activeChat().queue.length = 0), renderQueue()));
+    await idle(w);
+    assert.equal(claudeLog().filter((m) => m.steered || m.answeredAfter).length, 2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
 test('Desk, like Claude\'s app: live previews, Copy and Retry, and chats you can search, pin and rename', { timeout: 90000 }, async () => {
   const p = profile();
   const dir = project();

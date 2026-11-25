@@ -4,7 +4,9 @@
 // run_in_background; when the subagent finishes, it carries on by itself and proposes a plan with
 // ExitPlanMode, asking permission. What the app answers is appended to $FAKE_AGENT_DIR/claude.jsonl.
 // With $FAKE_AGENT_DEMO set to a JSON file of { match, steps }, a matching message plays those steps
-// instead (reads, edits, commands and replies), for screenshots.
+// instead (reads, edits, commands and replies), for screenshots. A message that arrives while one
+// plays is taken in before its next read, edit or command, as Claude Code does mid-turn (steering);
+// if none is left, it's answered as a turn of its own once the turn ends.
 // MCP servers live in $FAKE_AGENT_DIR/mcp.json: `mcp list` and `mcp add` read and change it, and
 // signing in to one hands back a page on 127.0.0.1 that connects it when opened.
 'use strict';
@@ -56,6 +58,11 @@ const SID = `fake-claude-${process.pid}`;
 const later = (ms) => new Promise((r) => setTimeout(r, ms));
 const pending = new Map();
 let n = 0;
+const REPLAY = arg.includes('--replay-user-messages');
+let playing = false;
+const steers = []; // messages sent mid-turn, not yet taken in
+const replay = (content) => REPLAY && out({ type: 'user', session_id: SID, parent_tool_use_id: null, message: { role: 'user', content }, isReplay: true });
+const textOf = (c) => (typeof c === 'string' ? c : c.map((b) => b.text || '').join(''));
 
 const init = () => out({ type: 'system', subtype: 'init', session_id: SID, model: 'fake-model', slash_commands: [] });
 const assistant = (content, parent = null) => out({ type: 'assistant', parent_tool_use_id: parent, session_id: SID, message: { id: `msg_${++n}`, role: 'assistant', content } });
@@ -101,11 +108,20 @@ async function turn(text) {
   result(2);
 }
 
-async function demo(steps) {
+async function demo(steps, content) {
+  playing = true;
   init();
+  replay(content);
   let turns = 0;
   for (const s of steps) {
     const id = `toolu_demo_${++n}`;
+    // Messages sent mid-turn reach Claude between its steps.
+    if ((s.read || s.write || s.run) && steers.length)
+      for (const c of steers.splice(0)) {
+        replay(c);
+        log({ steered: textOf(c) });
+        assistant([{ type: 'text', text: `Taking that in: ${textOf(c).replace(/<switchdesk-context>[\s\S]*?<\/switchdesk-context>\s*/, '')}` }]);
+      }
     if (s.wait) await later(s.wait);
     else if (s.say) assistant([{ type: 'text', text: s.say }]);
     else if (s.read) {
@@ -128,6 +144,15 @@ async function demo(steps) {
     turns++;
   }
   result(turns);
+  playing = false;
+  // Sent too late to be taken in: answered next, as a turn of its own.
+  for (const c of steers.splice(0)) {
+    init();
+    replay(c);
+    log({ answeredAfter: textOf(c) });
+    assistant([{ type: 'text', text: `Answering after: ${textOf(c).replace(/<switchdesk-context>[\s\S]*?<\/switchdesk-context>\s*/, '')}` }]);
+    result(1);
+  }
 }
 
 function control(id, req) {
@@ -165,9 +190,14 @@ process.stdin.on('data', (c) => {
       pending.delete(m.response.request_id);
     } else if (m.type === 'user') {
       const c = m.message.content;
-      const text = typeof c === 'string' ? c : c.map((b) => b.text || '').join('');
+      const text = textOf(c);
+      if (playing) {
+        log({ midTurn: text });
+        steers.push(c);
+        continue;
+      }
       const scripted = process.env.FAKE_AGENT_DEMO && JSON.parse(fs.readFileSync(process.env.FAKE_AGENT_DEMO, 'utf8')).find((d) => text.includes(d.match) && (!d.agent || d.agent === 'claude'));
-      if (scripted) demo(scripted.steps);
+      if (scripted) demo(scripted.steps, c);
       else turn(text);
     }
   }

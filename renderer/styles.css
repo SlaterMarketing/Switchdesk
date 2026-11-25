@@ -1393,7 +1393,7 @@ body.desk .composer-row #agent-wrap { order: 2; margin-left: 4px; }
 body.desk .composer-row .spacer { order: 4; }
 body.desk .composer-row #chat-usage { order: 5; padding-right: 4px; }
 body.desk .composer-row #model-select, body.desk .composer-row #effort-select { order: 6; }
-body.desk .composer-row #send-btn { order: 7; }
+body.desk .composer-row #send-btn { order: 8; }
 body.desk .attach-btn { padding: 6px; border-radius: 9px; border: 1px solid var(--border); }
 body.desk #mic-btn { border-color: transparent; }
 body.desk .attach-btn:hover { background: var(--bg-hover); }
@@ -1401,6 +1401,15 @@ body.desk .agent-btn, body.desk .composer-row select { font-size: 13px; color: v
 body.desk .agent-btn:hover, body.desk .composer-row select:hover { background: var(--bg-hover); color: var(--text-strong); }
 body.desk .mode-pill { font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 8px; }
 body.desk .send-btn { width: 32px; height: 32px; border-radius: 10px; font-size: 15px; margin-left: 4px; }
+body.desk .send-btn.stop { font-size: 0; }
+/* Steering: a message sent while Claude works, and the button that starts one in a new chat instead. */
+body.desk .composer-row #spin-btn { order: 7; }
+.spin-btn { border: 1px solid var(--border); background: none; color: var(--text-dim); font: 500 12px var(--sans); padding: 5px 10px; border-radius: 9px; cursor: pointer; white-space: nowrap; margin-left: 4px; }
+.spin-btn:hover { background: var(--bg-hover); color: var(--text-strong); }
+body:not(.desk) .spin-btn { display: none; }
+.msg-user.steer .steer-tag { font-size: 11px; color: var(--text-dim); margin-top: 4px; white-space: normal; }
+.msg-user.steer.pending { opacity: 0.7; }
+.notice.spun-off a { color: var(--accent); }
 body.desk #chips { margin: 0 0 8px; }
 body.desk .chip { border-radius: 8px; }
 body.desk .chip.image img { height: 64px; max-width: 120px; border-radius: 8px; }
