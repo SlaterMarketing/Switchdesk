@@ -19,7 +19,7 @@ function previewTab() {
 }
 
 function openPreview(url) {
-  ensureWebview();
+  livePreview();
   activateTab(previewTab().id);
   if (url) navigatePreview(url);
   else if (!preview.url && preview.seen.length) navigatePreview(preview.seen[preview.seen.length - 1]);
@@ -53,8 +53,63 @@ function ensureWebview() {
   });
   v.addEventListener('did-navigate', (e) => setPreviewUrl(e.url));
   v.addEventListener('did-navigate-in-page', (e) => e.isMainFrame && setPreviewUrl(e.url));
+  // A page that closes itself (window.close(), as some sign-in pages do) takes the webview's page
+  // with it for good. Put a fresh one in its place, on the same address.
+  v.addEventListener('close', () => setTimeout(() => preview.view === v && reviveOnce(() => revivePreview('The page closed itself, so the Preview opened it again.')), 0));
+  // A crashed page shows nothing and answers nothing until it's reloaded.
+  v.addEventListener('render-process-gone', (e) => {
+    if (preview.view !== v || e.details?.reason === 'clean-exit') return;
+    reviveOnce(() => (v.reload(), toast('The Preview page crashed, so it was reloaded.')));
+  });
   preview.view = v;
   return v;
+}
+
+// True when the webview's page has gone (closed or destroyed). Electron doesn't tell the
+// <webview> element: it keeps the old page's id, and every call on it then fails with
+// "Invalid guestInstanceId". One still starting up has no id yet and isn't gone.
+function previewGone(v) {
+  if (!v || !v.isConnected) return true;
+  try {
+    v.getWebContentsId();
+  } catch {
+    return false;
+  }
+  try {
+    v.getURL();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+// A page that closes itself as soon as it loads would loop: bring the Preview back at most once
+// every few seconds.
+let lastRevive = 0;
+function reviveOnce(fn) {
+  if (Date.now() - lastRevive < 5000) return false;
+  lastRevive = Date.now();
+  fn();
+  return true;
+}
+
+// Swaps the dead webview for a new one and loads the address it was on.
+function revivePreview(why) {
+  const old = preview.view;
+  preview.view = null;
+  old?.remove();
+  const v = ensureWebview();
+  const url = preview.url;
+  v.loaded = url ? Promise.race([v.ready.then(() => v.loadURL(url)).catch(() => {}), settle(15000)]) : v.ready;
+  if (why && url) toast(why);
+  return v;
+}
+
+// The Preview's webview, replaced first if its page has gone.
+function livePreview() {
+  const v = preview.view;
+  if (v && previewGone(v)) return revivePreview();
+  return ensureWebview();
 }
 
 function normaliseUrl(url) {
@@ -67,7 +122,7 @@ function normaliseUrl(url) {
 function navigatePreview(url) {
   url = normaliseUrl(url);
   if (!url) return;
-  const v = ensureWebview();
+  const v = livePreview();
   v.ready.then(() => v.loadURL(url)).catch(() => {});
   setPreviewUrl(url);
 }
@@ -149,7 +204,7 @@ function resetPreview() {
   preview.url = '';
   preview.seen = [];
   preview.errors = [];
-  if (preview.view) preview.view.ready.then(() => preview.view.loadURL('about:blank')).catch(() => {});
+  if (preview.view && !previewGone(preview.view)) preview.view.ready.then(() => preview.view.loadURL('about:blank')).catch(() => {});
   $('#btn-term-preview').classList.add('hidden');
   renderPreviewBar();
 }
@@ -162,7 +217,7 @@ function fixPreviewErrors() {
 
 async function captureToChat(rect) {
   const v = preview.view;
-  if (!v || !preview.url) return null;
+  if (!v || !preview.url || previewGone(v)) return null;
   const data = await desk.preview.capture(v.getWebContentsId(), rect || null);
   if (!data) return null;
   state.chips.push({ kind: 'image', mediaType: 'image/png', data });
@@ -197,9 +252,10 @@ const PICKER = `new Promise((resolve) => {
 })`;
 
 async function pickElement() {
-  const v = preview.view;
-  if (!v || !preview.url) return toast('Open a page in the preview first.');
+  if (!preview.view || !preview.url) return toast('Open a page in the preview first.');
   if (preview.picking) return;
+  const v = livePreview();
+  await v.loaded;
   preview.picking = true;
   $('#preview-pick').classList.add('on');
   try {
@@ -286,14 +342,29 @@ function pageInPage() {
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 async function showPreviewForAgent() {
-  const v = ensureWebview();
+  const v = livePreview();
   if (activeTab()?.kind !== 'preview') activateTab(previewTab().id);
   renderPreviewEmpty();
   await Promise.race([v.ready, settle(10000)]);
+  if (v.loaded) await v.loaded;
   return v;
 }
 
+// The tools always work on the webview that's there now. If its page goes while a tool is running
+// (it closed itself after a click, say), the Preview is brought back and the tool tried once more.
 async function runPreviewTool(name, args) {
+  try {
+    return await previewToolOnce(name, args);
+  } catch (err) {
+    // "Invalid guestInstanceId" from the gone page, or "must be attached" from one already swapped out.
+    if (!/guestInstanceId|must be attached/.test(err?.message) && !previewGone(preview.view)) throw err;
+    if (previewGone(preview.view)) revivePreview();
+    if (name === 'preview_click' || name === 'preview_type') return { text: `The page closed itself after that, so the Preview opened ${preview.url || 'it'} again.` };
+    return previewToolOnce(name, args);
+  }
+}
+
+async function previewToolOnce(name, args) {
   const v = await showPreviewForAgent();
   const needPage = () => (preview.url ? null : { error: 'Nothing is open in the Preview yet. Call preview_open with the address of the running app (start its dev server first if needed).' });
   if (name === 'preview_open') {
@@ -355,9 +426,9 @@ function wirePreview() {
     if (e.key === 'Enter') navigatePreview(url.value), url.blur();
     if (e.key === 'Escape') (url.value = preview.url), url.blur();
   });
-  $('#preview-back').addEventListener('click', () => preview.view?.canGoBack() && preview.view.goBack());
-  $('#preview-fwd').addEventListener('click', () => preview.view?.canGoForward() && preview.view.goForward());
-  $('#preview-reload').addEventListener('click', () => preview.url && preview.view?.reload());
+  $('#preview-back').addEventListener('click', () => preview.view && !previewGone(preview.view) && preview.view.canGoBack() && preview.view.goBack());
+  $('#preview-fwd').addEventListener('click', () => preview.view && !previewGone(preview.view) && preview.view.canGoForward() && preview.view.goForward());
+  $('#preview-reload').addEventListener('click', () => preview.url && (previewGone(preview.view) ? revivePreview() : preview.view.reload()));
   $('#preview-pick').addEventListener('click', pickElement);
   $('#preview-shot').addEventListener('click', screenshotPreview);
   $('#preview-errors').addEventListener('click', fixPreviewErrors);

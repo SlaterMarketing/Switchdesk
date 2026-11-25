@@ -231,6 +231,32 @@ appTest('agents can drive the Preview', async ({ w }) => {
   }
 });
 
+appTest('the Preview tools keep working after the page closes itself', async ({ w, app }) => {
+  const http = require('http');
+  const page = '<title>Inbox</title><button id="bye" onclick="window.close()">Sign out</button> <span id="n">ok</span>';
+  const server = http.createServer((req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(page));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const tool = (name, args = {}) => w.evaluate(([n, a]) => runPreviewTool(n, a), [name, args]);
+    const guests = () => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((x) => x.getType() === 'webview').map((x) => x.id));
+    assert.match((await tool('preview_open', { url })).text, /Inbox/);
+    const first = await guests();
+    // window.close() in the page destroys the webview's page. The tools used to keep calling it
+    // ("Invalid guestInstanceId") until Switchdesk was restarted.
+    assert.match((await tool('preview_click', { text: 'Sign out' })).text, /closed itself/);
+    assert.match((await tool('preview_page')).text, /Sign out/);
+    assert.notDeepEqual(await guests(), first, 'a new page in the Preview');
+    // Gone with no warning (destroyed from outside), then the tab closed and opened again.
+    await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((x) => x.getType() === 'webview').forEach((x) => x.close()));
+    await w.evaluate(() => (closeTab('preview'), openPreview()));
+    assert.equal((await tool('preview_eval', { expression: 'n.textContent' })).text, '"ok"');
+    assert.equal(await w.$$eval('#preview-frame webview', (v) => v.length), 1, 'only one webview in the pane');
+  } finally {
+    server.close();
+  }
+});
+
 appTest('a scheduled task runs on its own in a copy of the folder', async ({ w, p, dir }) => {
   // When it's next due.
   const due = await w.evaluate(() => {

@@ -2,6 +2,10 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.42.1
+
+- **The agent's Preview tools no longer get stuck on a closed page.** If a page in the Preview closed itself (some sign-in and sign-out pages do) or was otherwise torn down, the agent's Preview tools kept talking to the page that had gone and every call failed with "Invalid guestInstanceId" until you restarted Switchdesk; closing and reopening the Preview didn't help. Now the Preview opens the page again in its place and the tools carry on with it, and a crashed page reloads by itself.
+
 ## 0.42.0
 
 - **Desk looks much more like Claude's desktop app.** Anything you open while chatting (a file, a web preview, the board) now opens in a panel on the **right**, and the chat stays in the middle instead of being squeezed to the side. Drag the line between them to resize.
