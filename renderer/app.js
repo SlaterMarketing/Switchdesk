@@ -1148,6 +1148,11 @@ function wire() {
       if (e.key === 'Enter' || e.key === 'Tab') return e.preventDefault(), pickMention(mention.items[mention.index]);
       if (e.key === 'Escape') return (mention = null), $('#mention-popup').classList.add('hidden');
     }
+    // Desk: Alt+Enter starts the message in a new chat, alongside this one.
+    if (e.key === 'Enter' && e.altKey && !e.isComposing && document.body.classList.contains('desk')) {
+      e.preventDefault();
+      return spinOff();
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       send();
@@ -1158,6 +1163,7 @@ function wire() {
     }
   });
   $('#send-btn').addEventListener('click', () => ($('#send-btn').classList.contains('stop') ? stop() : send()));
+  $('#spin-btn').addEventListener('click', spinOff);
   $('#input').addEventListener('input', updateSendButton);
   // The "no choice" entry reads Model / Effort in the chat box, and Default in the open list.
   for (const [id, name] of [['#model-select', 'Model'], ['#effort-select', 'Effort']]) {

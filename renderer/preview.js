@@ -1,4 +1,4 @@
-/* global $, h, state, desk, toast, activeTab, activateTab, renderTabs, renderChips, send, toggleTerminal, newTerminal */
+/* global $, h, state, desk, toast, activeTab, activateTab, renderTabs, renderChips, send, toggleTerminal, newTerminal, spinOffFromAgent */
 'use strict';
 
 // ------------------------------------------------------------------ preview pane
@@ -337,10 +337,11 @@ async function runPreviewTool(name, args) {
 }
 
 function wirePreviewTools() {
-  desk.previewTools.onCall(async ({ id, name, args }) => {
+  desk.previewTools.onCall(async ({ id, name, args, chat }) => {
     let out;
     try {
-      out = await runPreviewTool(name, args || {});
+      // Not a Preview tool: Claude starting a separate task in its own chat (chat.js).
+      out = name === 'start_parallel_chat' ? await spinOffFromAgent(args || {}, chat) : await runPreviewTool(name, args || {});
     } catch (err) {
       out = { error: String(err.message || err) };
     }

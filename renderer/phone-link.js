@@ -59,7 +59,7 @@ async function phoneRequest({ what, args }) {
     if (!args.text.trim()) return { error: 'Type a message first.' };
     // The chat box's model and effort are the active chat's, so it's the one that sends.
     if (chat !== activeChat()) switchChat(chat.id);
-    send(args.text, null, null, chat);
+    send(args.text, null, null, chat, { steer: true }); // in Desk, steers it if it's working
     return { ok: true };
   }
   if (what === 'answer') {

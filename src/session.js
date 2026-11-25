@@ -35,6 +35,9 @@ class ChatSession {
       'stream-json',
       '--verbose',
       '--include-partial-messages',
+      // Echoes each message we send as Claude takes it in, so we know when one sent mid-turn
+      // (steering, in Desk) has reached it.
+      '--replay-user-messages',
       '--permission-prompt-tool',
       'stdio',
       '--permission-mode',
@@ -152,6 +155,13 @@ class ChatSession {
   }
 
   async send(content, mode) {
+    await this.setMode(mode);
+    this.write({ type: 'user', message: { role: 'user', content } });
+  }
+
+  // A message for the turn that's running: Claude Code takes it in at its next step and adjusts
+  // course, or, if the turn ends first, answers it straight after as a turn of its own.
+  async steer(content, mode) {
     await this.setMode(mode);
     this.write({ type: 'user', message: { role: 'user', content } });
   }

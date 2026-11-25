@@ -66,9 +66,27 @@ TOOLS.push({
   },
 });
 
+// Steering in Desk: a message sent mid-turn that's a separate task goes to a chat of its own.
+if (AGENT === 'claude')
+  TOOLS.push({
+    name: 'start_parallel_chat',
+    description:
+      "Start a separate task in a new chat of its own in Switchdesk, which runs alongside this one while you carry on here. Use it when the user sends something unrelated to what you're working on (Switchdesk's note on their message says so), instead of switching to it. The new chat doesn't see this conversation, so make the prompt self-contained: what to do, and any detail from here it needs. Only works in Switchdesk's Desk view.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: "The new chat's first message: the task, in the user's words where you can, with any context it needs." },
+        title: { type: 'string', description: 'A short title for the new chat, three to six words.' },
+      },
+      required: ['prompt'],
+    },
+  });
+
+const CHAT = process.env.SWITCHDESK_CHAT || '';
+
 const write = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
 
-const ask = (name, args) => fetch(URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, args: args || {}, agent: AGENT }) }).then((res) => res.json());
+const ask = (name, args) => fetch(URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, args: args || {}, agent: AGENT, chat: CHAT }) }).then((res) => res.json());
 
 async function call(name, args) {
   if (!URL) return { content: [{ type: 'text', text: 'The Preview is not available (Switchdesk did not pass its address).' }], isError: true };

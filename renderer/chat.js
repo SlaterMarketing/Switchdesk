@@ -15,6 +15,8 @@ let activeChatId = null;
 
 const activeChat = () => chats.find((c) => c.id === activeChatId) || null;
 const chatById = (id) => chats.find((c) => c.id === id) || null;
+const inDesk = () => document.body.classList.contains('desk');
+const ALT_KEY = navigator.platform.startsWith('Mac') ? '⌥' : 'Alt';
 
 // An error that ended a turn, with a way to report it (a GitHub issue you read before sending).
 // raw: the agent's own words, which can say when a limit resets.
@@ -555,7 +557,7 @@ function renderHistory(list, rows, loading) {
 function renderPast(chat, msgs) {
   for (const m of msgs) {
     if (m.uuid) chat.lastReply = m.uuid;
-    if (m.role === 'user') appendChat(userBubble(chat, [m.text], { text: m.text, after: m.after || null, turnId: null }), chat);
+    if (m.role === 'user') appendChat(m.steered ? steerBubble(m.text, [], true) : userBubble(chat, [m.text], { text: m.text, after: m.after || null, turnId: null }), chat);
     else if (m.role === 'assistant') {
       const el = h('div', { class: 'msg-text' });
       renderMarkdown(el, m.text);
@@ -753,10 +755,13 @@ function startTurn(chat, shown, mode, images, rwText) {
 }
 
 // Claude's own turn after its background subagents finished: like one you sent, minus the message.
-function startBackgroundTurn(chat) {
-  waitingForBackground(chat, false);
+// steer: it's answering a message you sent mid-turn that the last turn ended before taking in.
+function startBackgroundTurn(chat, steer) {
   const mode = MODES.includes(chat.lastMode) ? chat.lastMode : 'agent';
-  appendChat(h('div', { class: 'notice' }, 'Claude is carrying on with what its background subagents reported.'), chat);
+  if (!steer) {
+    waitingForBackground(chat, false);
+    appendChat(h('div', { class: 'notice' }, 'Claude is carrying on with what its background subagents reported.'), chat);
+  }
   chat.turn = { bubble: null, mode, blocks: new Map(), tools: new Map(), streamedMsgIds: new Set(), autoEdits: mode === 'agent' || mode === 'auto' || mode === 'debug', started: Date.now(), background: true, planBuild: (chat.bgCarry && chat.bgCarry.planBuild) || null };
   chat.bgCarry = null;
   chat.busy = true;
@@ -795,6 +800,7 @@ function handleEvent(chat, ev) {
   if (ev.type === 'system' && /^(task_|background_tasks)/.test(ev.subtype || '')) subagentStatus(chat, ev);
   // Claude carrying on by itself after its background subagents finished.
   if (ev.type === 'system' && ev.subtype === 'background_turn') return !chat.turn && startBackgroundTurn(chat);
+  if (ev.type === 'system' && ev.subtype === 'steer_turn') return !chat.turn && startBackgroundTurn(chat, true);
   const turn = chat.turn;
   switch (ev.type) {
     case 'system':
@@ -845,6 +851,11 @@ function handleEvent(chat, ev) {
       break;
     }
     case 'user':
+      // Claude Code echoing a message as Claude takes it in: one you sent mid-turn has reached it.
+      if (ev.isReplay) {
+        if (ev.steered) steerTakenIn(chat);
+        break;
+      }
       if (!turn) break;
       for (const b of ev.message?.content || []) {
         if (b.type !== 'tool_result') continue;
@@ -887,6 +898,11 @@ function handleEvent(chat, ev) {
       else if (chat.planJob && chat.planJob.idle) chat.planJob.idle();
       if (turn && turn.mode === 'plan' && !turn.planShown && !turn.interrupted && !ev.is_error && agentOf(chat) !== 'claude') offerPlan(chat, turn);
       endTurn(chat);
+      // A message you sent mid-turn that the turn ended before taking in: Claude answers it now.
+      if (ev.steerNext) {
+        startBackgroundTurn(chat, true);
+        break;
+      }
       if (chat.pr && chat.pr.watch && chat.pr.watch.fixing) prTurnEnded(chat, ev.is_error || !turn || turn.interrupted);
       if (chat.longRun) longRunTurnEnded(chat, turn, ev);
       else if (chat.scheduled) scheduleDone(chat, ev.is_error);
@@ -1572,7 +1588,13 @@ function setMode(mode) {
 function setRunning(running) {
   const input = $('#input');
   if (!input.dataset.placeholder) input.dataset.placeholder = input.placeholder;
-  input.placeholder = running ? 'Claude is working. Enter queues a message; Enter again (empty box) sends it now.' : input.dataset.placeholder;
+  input.placeholder = running
+    ? inDesk() && agentOf(activeChat()) === 'claude'
+      ? `Claude is working. Send a message to steer it, or ${ALT_KEY}+Enter to start it in a new chat.`
+      : inDesk()
+        ? `${agentLabel(activeChat())} is working. Sending a message stops it and sends yours.`
+        : 'Claude is working. Enter queues a message; Enter again (empty box) sends it now.'
+    : input.dataset.placeholder;
   updateSendButton();
 }
 
@@ -1583,7 +1605,9 @@ function updateSendButton() {
   const typed = !!$('#input').value.trim() || state.chips.length > 0;
   const stopping = busy && !typed;
   btn.classList.toggle('stop', stopping);
-  btn.title = stopping ? 'Stop' : busy ? 'Queue this message (Enter)' : 'Send (Enter)';
+  btn.title = stopping ? 'Stop' : busy ? (inDesk() ? 'Send now: Claude takes it in as it works (Enter)' : 'Queue this message (Enter)') : 'Send (Enter)';
+  // Desk: while Claude works, what you type can go to a chat of its own instead.
+  $('#spin-btn').classList.toggle('hidden', !(busy && typed && inDesk()));
 }
 
 // Plans end with their steps as a checklist, which the plan tab shows as its to-do list.
@@ -1596,7 +1620,7 @@ function buildPrompt(text) {
   return `${ctx}\n\n${text}`;
 }
 
-async function send(textOverride, modeOverride, display, target) {
+async function send(textOverride, modeOverride, display, target, { steer: steerOk = false } = {}) {
   const chat = target || activeChat();
   if (!chat) return;
   if (agentOf(chat) === 'claude') {
@@ -1645,7 +1669,12 @@ async function send(textOverride, modeOverride, display, target) {
       prompt = buildPrompt(body);
     }
   }
+  // Desk: a message you send while Claude works steers the running turn instead of waiting for
+  // it (Code queues it, as before). Commands, and the app's own follow-ups, still wait their turn.
+  const steering = chat.busy && inDesk() && (!textOverride || steerOk) && !slash;
   if (asTyped) prompt = text;
+  // A steer is part of the running turn, so it goes as written, in that turn's mode.
+  else if (steering);
   else if (mode === 'ask') prompt = ASK_PREFIX + prompt;
   else if (mode === 'plan') prompt += PLAN_TODOS;
   else if (mode === 'debug') prompt = await debugModePrompt(chat, prompt);
@@ -1666,6 +1695,7 @@ async function send(textOverride, modeOverride, display, target) {
     { type: 'text', text: prompt },
   ];
   const item = { content, shown, mode, images, compact, rwText: textOverride ? display || text : text };
+  if (steering) return steer(chat, item);
   // While Claude is working, new messages wait their turn.
   if (chat.busy) {
     chat.queue.push(item);
@@ -1757,6 +1787,86 @@ function runQueue(chat) {
   if (chat.busy || !chat.queue.length) return;
   dispatch(chat, chat.queue.shift());
   if (chat.id === activeChatId) renderQueue();
+}
+
+// ------------------------------------------------------------------ steering (Desk)
+//
+// A message sent while Claude works goes into the running turn: Claude Code takes it in at its next
+// step and adjusts course (or, if the turn ends first, answers it straight after). Claude can also
+// move an unrelated ask into a chat of its own (start_parallel_chat, spinOffFromAgent). Agents that
+// can't be steered are stopped and given the message straight away, as Send now does in Code.
+async function steer(chat, item) {
+  if (agentOf(chat) !== 'claude' || !chat.turn) {
+    chat.queue.unshift(item);
+    return sendNow(chat, 0);
+  }
+  const bubble = appendChat(steerBubble(item.shown, item.images), chat);
+  scrollChat(chat, true);
+  if (chat.id === activeChatId) updateSendButton(); // the box is empty again: back to Stop
+  (chat.steering = chat.steering || []).push(bubble);
+  const r = await desk.chatSteer(chat.id, { content: item.content }).catch(() => null);
+  if (r && r.steered) return;
+  // The turn ended (or Claude Code restarted) before it got there: send it the usual way.
+  bubble.remove();
+  chat.steering = chat.steering.filter((b) => b !== bubble);
+  if (chat.busy) chat.queue.push(item), renderQueue();
+  else dispatch(chat, item);
+}
+
+function steerBubble(shown, images, seen) {
+  return h(
+    'div',
+    { class: `msg-user steer${seen ? '' : ' pending'}` },
+    shown,
+    images && images.length ? h('div', { class: 'msg-images' }, ...images.map((im) => h('img', { src: `data:${im.mediaType};base64,${im.data}` }))) : null,
+    h('div', { class: 'steer-tag' }, seen ? 'Sent while Claude was working' : 'Claude will see this at its next step')
+  );
+}
+
+function steerTakenIn(chat) {
+  const bubble = (chat.steering || []).shift();
+  if (!bubble) return;
+  bubble.classList.remove('pending');
+  $('.steer-tag', bubble).textContent = 'Sent while Claude was working';
+}
+
+// The chat box's message, in a new chat of its own that runs alongside this one (Alt+Enter, or the
+// button by Send while Claude works). You stay where you are; a note links to the new chat.
+async function spinOff() {
+  const from = activeChat();
+  if (!from || !inDesk() || (!$('#input').value.trim() && !state.chips.length)) return;
+  const chat = newChatLike(from);
+  const sent = send(undefined, undefined, undefined, chat); // takes the box's message straight away
+  switchChat(from.id);
+  spunOffNote(from, chat);
+  $('#input').focus();
+  await sent;
+}
+
+// Claude moving an unrelated ask into its own chat (the start_parallel_chat tool).
+async function spinOffFromAgent({ prompt, title }, fromId) {
+  if (!inDesk()) return { error: "Separate chats can only be started from Switchdesk's Desk view. Do the task here instead." };
+  if (!String(prompt || '').trim()) return { error: 'Give the prompt for the new chat.' };
+  const from = chatById(fromId) || activeChat();
+  const keep = activeChatId;
+  const chat = newChatLike(from);
+  if (title) chat.title = String(title).slice(0, 60);
+  const mode = from && MODES.includes(from.lastMode) ? from.lastMode : 'agent';
+  const sent = send(String(prompt), mode, String(prompt), chat);
+  if (keep && chatById(keep)) switchChat(keep);
+  if (from) spunOffNote(from, chat);
+  await sent;
+  return { text: `Started "${chat.title}" in its own chat. It runs alongside this one, and the user can open it from the chat list.` };
+}
+
+function newChatLike(from) {
+  const chat = createChat();
+  if (from) Object.assign(chat, { agent: from.agent, account: from.account, auto: from.auto });
+  return chat;
+}
+
+function spunOffNote(from, chat) {
+  appendChat(h('div', { class: 'notice spun-off' }, 'Started in its own chat: ', h('a', { href: '#', onclick: (e) => (e.preventDefault(), chatById(chat.id) && switchChat(chat.id)) }, chat.title)), from);
 }
 
 function stop() {
