@@ -2,6 +2,13 @@
 
 Each release's notes, newest first. The release page on GitHub shows the same notes.
 
+## 0.42.0
+
+- **Desk looks much more like Claude's desktop app.** Anything you open while chatting (a file, a web preview, the board) now opens in a panel on the **right**, and the chat stays in the middle instead of being squeezed to the side. Drag the line between them to resize.
+- **A quieter sidebar.** At the top: **New chat**, **Search chats** (Ctrl+K, or ⌘K on a Mac), **Board**, **Scheduled**, **Long runs** and **Compare agents**. Your chats are one line each, grouped by Pinned, Open now, Today and so on. At the bottom: who you're signed in as, with Settings beside it. Desk has no status bar any more; an update to install, skipped permission prompts and your plan limits show above your name instead.
+- **Conversation and composer.** Your messages are bubbles on the right, replies are in a larger, easier-to-read column, and Copy and Retry show when you point at a reply (the latest keeps them). The box you type in is softer and rounder, with attach on the left and the model and send on the right. A new chat greets you with the box in the middle of the window; it moves to the bottom once you send.
+- **Warmer colours in Desk,** in both light and dark. The chat's header is just its name and a couple of buttons. Code view is unchanged.
+
 ## 0.41.0
 
 - **Open with Switchdesk opens the file.** Opening a file with Switchdesk (Open with, a double click, or `Switchdesk file.json` on the command line) now opens it in a tab, not just the app. If a window already has the file's folder, it opens there; otherwise Switchdesk opens the file's project (its git repo, or the folder it's in) in an empty window or a new one. It works whether Switchdesk was running or not, and folders open the same way.

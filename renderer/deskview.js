@@ -1,4 +1,4 @@
-/* global $, h, desk, state, toast, setFolder, loadHistory, showSidePanel, activeChat, openFile, renderMarkdown, newChat, renderProjectSwitcher, fillProjectHome */
+/* global $, h, desk, state, toast, setFolder, loadHistory, showSidePanel, activeChat, openFile, renderMarkdown, newChat, renderProjectSwitcher, fillProjectHome, cliState, acct, accountName, openSettings */
 'use strict';
 
 // Two views of the same window. Code is the editor. Desk hides the editor, files and terminal and
@@ -15,6 +15,72 @@ function applyView() {
     renderDeskFolder();
     loadHistory();
   } else if (state.sidePanel && state.sidePanel !== 'history') showSidePanel(state.sidePanel);
+  // The box's resting hint (setRunning swaps it while an agent works and puts this back after).
+  const input = $('#input');
+  const resting = input.dataset.placeholder || input.placeholder;
+  if (!input.dataset.codePlaceholder) input.dataset.codePlaceholder = resting;
+  const want = deskView ? 'Ask anything or start a task…' : input.dataset.codePlaceholder;
+  if (input.placeholder === resting) input.placeholder = want;
+  input.dataset.placeholder = want;
+  placeStatusItems(deskView);
+  renderDeskAccount();
+  markPristine();
+}
+
+// ------------------------------------------------------------------ Desk's sidebar footer
+
+// Desk has no status bar. What matters from it outside code (an update to install, prompts being
+// skipped, plan limits) moves to the foot of the sidebar, under who you're signed in as, and goes
+// back to the status bar in Code. The elements move rather than being copied, so their clicks and
+// updates keep working.
+const STATUS_ITEMS = ['status-update', 'status-perms', 'status-limit'];
+function placeStatusItems(deskView) {
+  const foot = $('#desk-account');
+  const bar = $('#statusbar');
+  if (!foot || !bar) return;
+  let extras = $('.account-extras', foot);
+  if (!extras) foot.append((extras = h('div', { class: 'account-extras' })));
+  for (const id of STATUS_ITEMS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (deskView) extras.append(el);
+    else if (el.parentElement !== bar) bar.insertBefore(el, $('#status-index') || null);
+  }
+}
+
+// Your Claude sign-in at the foot of Desk's sidebar, with Settings beside it.
+function renderDeskAccount() {
+  const foot = $('#desk-account');
+  if (!foot) return;
+  let row = $('.account-row', foot);
+  if (!row) foot.prepend((row = h('div', { class: 'account-row' })));
+  const s = typeof cliState !== 'undefined' ? cliState : null;
+  const signedIn = !!(s && s.found && (s.auth ? s.auth.loggedIn : true));
+  const email = s && s.auth && s.auth.email;
+  const many = typeof acct !== 'undefined' && acct.accounts && acct.accounts.length > 1;
+  const name = many ? accountName(acct.folderAccount) : email ? email.split('@')[0] : signedIn ? 'Claude Code' : 'Not signed in';
+  const plan = !s ? 'Checking…' : !s.found ? 'Claude Code not installed' : !signedIn ? 'Click to sign in' : s.auth && s.auth.authMethod === 'claude.ai' ? 'Subscription' : s.auth && /api.?key/i.test(s.auth.authMethod || '') ? 'API key' : 'Signed in';
+  row.replaceChildren(
+    h(
+      'button',
+      { class: 'account-who', title: [email, s && s.version ? `Claude Code ${s.version.replace(/\s*\(Claude Code\)/, '')}` : ''].filter(Boolean).join('\n') || 'Accounts', onclick: () => (signedIn ? openSettings('accounts') : $('#status-cli').click()) },
+      h('span', { class: `account-avatar${signedIn ? '' : ' off'}` }, (name || '?').trim().charAt(0).toUpperCase()),
+      h('span', { class: 'account-text' }, h('span', { class: 'account-name' }, name), h('span', { class: 'account-plan' }, plan))
+    ),
+    h('button', { class: 'icon-btn account-settings', title: 'Settings', onclick: () => openSettings() }, '⚙')
+  );
+}
+
+// A new chat in Desk opens with the box in the middle of the window, as Claude's app does; the
+// first message moves it to the bottom.
+function markPristine() {
+  const chat = activeChat();
+  $('#chat').classList.toggle('pristine', !!chat && !!$('.empty-chat', chat.el));
+}
+
+function deskGreeting(now = new Date()) {
+  const hr = now.getHours();
+  return hr < 5 ? 'Working late?' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
 }
 
 async function setView(view) {
@@ -58,6 +124,8 @@ function wireDeskView() {
     }
   });
   $('#btn-desk-outputs').addEventListener('click', toggleDeskOutputs);
+  for (const b of document.querySelectorAll('#desk-nav [data-go]')) b.addEventListener('click', () => document.getElementById(b.dataset.go).click());
+  $('.history-search .search-icon').addEventListener('click', () => filter.focus());
   // In Desk, where there's no editor to edit a selection in: Ctrl/⌘+K searches your chats, and
   // Escape closes the panel beside the chat (Claude's app does both).
   window.addEventListener(

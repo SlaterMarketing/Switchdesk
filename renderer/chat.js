@@ -1,6 +1,6 @@
 /* global $, h, state, desk, toast, renderMarkdown, toRel, openFile, openDiff, reloadOpenFiles, refreshFiles, renderTree,
    activeTab, activateTab, cliState, showSetup, autoGrow, MODES, MODE_LABEL, EDIT_TOOLS, HIDDEN_TOOLS, refreshGit, reviews, addReviews, dropReviews, revealFirstChange, renderWorktreeBar, refreshWorktree, closeWorktreeChat, openPlanDoc, renderCompareBar, opinionDone, secondOpinion, longRunTurnEnded, longRunApproval,
-   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker, agentState, agentStatus, agentInfo, reopenAgentChat */
+   acct, chatAccount, multiAccount, renderAccountPill, noteAccountUsage, signInAccount, agentOf, agentLabel, renderAgentPicker, agentState, agentStatus, agentInfo, reopenAgentChat, markPristine, deskGreeting */
 'use strict';
 
 // ------------------------------------------------------------------ chat tabs
@@ -127,7 +127,7 @@ function emptyState() {
     'div',
     { class: 'empty-chat' },
     home,
-    h('h2', { class: 'desk-intro' }, 'What would you like to work on?'),
+    h('h2', { class: 'desk-intro' }, h('span', { class: 'desk-mark', 'aria-hidden': 'true' }, '✦'), `${deskGreeting()}. What are we working on?`),
     state.folder
       ? h('p', { class: 'code-intro' }, h('b', {}, 'Ask'), ' to explore the code, ', h('b', {}, 'Plan'), ' to agree an approach first, or ', h('b', {}, 'Agent'), ' to make changes.')
       : h('p', {}, 'Ask anything. With no folder open this is a plain chat. Open a folder to let the agent work on your files.'),
@@ -191,6 +191,7 @@ function switchChat(id) {
   renderAgentPicker();
   for (const el of document.querySelectorAll('.history-row')) el.classList.toggle('active', el.dataset.chat ? el.dataset.chat === activeChat()?.id : el.dataset.session === activeChat()?.sessionId);
   renderDeskOutputs();
+  markPristine();
   // Every chat shares one scroller, so a switched-to chat opens at its latest messages, not wherever
   // the last one was. Again on the next frame, after the bars above it have settled.
   scrollChat(activeChat(), true);
@@ -288,6 +289,7 @@ function appendChat(node, chat = activeChat()) {
   const empty = $('.empty-chat', chat.el);
   if (empty) empty.remove();
   chat.el.append(node);
+  if (empty && chat === activeChat()) markPristine();
   scrollChat(chat);
   return node;
 }

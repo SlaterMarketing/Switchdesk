@@ -948,6 +948,7 @@ async function checkCli({ showSetupIfNeeded = false } = {}) {
       multiAccount() ? ` · ${accountName(acct.folderAccount)}${s.auth && s.auth.email ? ` (${s.auth.email})` : ''}` : ''
     );
   renderAccountPill();
+  if (typeof renderDeskAccount === 'function') renderDeskAccount();
   el.style.cursor = signedIn ? 'default' : 'pointer';
   $('#cli-check').textContent = '';
   if (showSetupIfNeeded && !signedIn) setupIfNoAgent();
@@ -1250,6 +1251,8 @@ function wire() {
       const which = r.dataset.resize;
       const move = (ev) => {
         if (which === 'sidebar') document.documentElement.style.setProperty('--sidebar-w', Math.max(160, Math.min(520, ev.clientX)) + 'px');
+        // In Desk the chat is in the middle and what's open beside it is on the right.
+        else if (document.body.classList.contains('desk')) document.documentElement.style.setProperty('--desk-side-w', Math.max(320, Math.min(window.innerWidth - 480, window.innerWidth - ev.clientX)) + 'px');
         else document.documentElement.style.setProperty('--chat-w', Math.max(320, Math.min(900, window.innerWidth - ev.clientX)) + 'px');
       };
       const up = () => {

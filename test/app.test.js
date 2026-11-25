@@ -362,10 +362,18 @@ test('the Desk view: just the chat with your chats down the left, files beside i
     assert.equal(await shown('#history-list'), true);
     assert.equal(await shown('.side-tabs'), false);
     assert.match(await w.$eval('#desk-folder', (e) => e.innerText), new RegExp(path.basename(dir)));
+    // Laid out like Claude's app: no status bar, your sign-in and plan limits at the foot of the
+    // sidebar, places to go at its top, and a new chat's box in the middle of the window.
+    assert.equal(await shown('#statusbar'), false);
+    assert.equal(await shown('#desk-account .account-row'), true);
+    assert.equal(await w.evaluate(() => !!document.querySelector('#desk-account #status-limit') && !!document.querySelector('#desk-account #status-update')), true);
+    assert.equal(await shown('#desk-nav'), true);
     await chatWith(w, 'cursor');
     assert.equal(await shown('.desk-starters'), true);
+    assert.equal(await w.evaluate(() => $('#chat').classList.contains('pristine')), true);
     await sendMessage(w, 'hello from desk');
     await idle(w);
+    assert.equal(await w.evaluate(() => $('#chat').classList.contains('pristine')), false);
     assert.match(await w.$eval('#chat', (e) => e.innerText), /got: hello from desk/);
     // What the agent writes is listed beside the chat, with a preview.
     await sendMessage(w, 'write the notes');
@@ -377,6 +385,8 @@ test('the Desk view: just the chat with your chats down the left, files beside i
     await w.evaluate(() => openFile('cart.js'));
     await w.waitForFunction(() => document.querySelector('#workbench').classList.contains('peek'));
     assert.equal(await shown('#editor-area'), true);
+    // The chat stays in the middle, and the file opens in a panel on its right.
+    assert.equal(await w.evaluate(() => $('#chat').getBoundingClientRect().right <= $('#editor-area').getBoundingClientRect().left + 1), true);
     await w.evaluate(() => closeTab(state.activeTab));
     assert.equal(await shown('#editor-area'), false);
     // The view is remembered.
@@ -386,6 +396,9 @@ test('the Desk view: just the chat with your chats down the left, files beside i
     await w.click('#view-switch [data-view=code]');
     assert.equal(await shown('#editor-area'), true);
     assert.equal(await shown('.side-tabs'), true);
+    assert.equal(await shown('#statusbar'), true);
+    assert.equal(await w.evaluate(() => !!document.querySelector('#statusbar #status-limit')), true);
+    assert.equal(await w.evaluate(() => $('#chat').getBoundingClientRect().left >= $('#editor-area').getBoundingClientRect().right - 1), true);
     assert.equal(await w.evaluate(() => state.settings.view), 'code');
     assert.deepEqual(errors, []);
   } finally {
