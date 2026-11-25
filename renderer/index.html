@@ -51,10 +51,19 @@
           <section id="panel-git" class="side-panel hidden"></section>
           <section id="panel-debug" class="side-panel hidden"></section>
           <section id="panel-history" class="side-panel hidden">
-            <div class="panel-tools"><button id="btn-new-chat-side" class="btn small">New chat</button></div>
-            <div class="panel-tools history-search"><input id="history-filter" placeholder="Search chats" spellcheck="false" title="Search your chats by name (Ctrl+K in Desk)" /></div>
+            <div class="panel-tools"><button id="btn-new-chat-side" class="btn small"><span class="nav-icon desk-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>New chat</button></div>
+            <div class="panel-tools history-search"><span class="nav-icon desk-icon search-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><input id="history-filter" placeholder="Search chats" spellcheck="false" title="Search your chats by name (Ctrl+K in Desk)" /><kbd class="desk-icon">Ctrl K</kbd></div>
+            <!-- Desk only: the tools the chat header has in Code, as places to go, like the top of Claude's sidebar. -->
+            <nav id="desk-nav">
+              <button data-go="btn-board" title="Every chat's work at a glance, and start several at once"><span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Board</button>
+              <button data-go="btn-schedule" title="Prompts that run on their own"><span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Scheduled</button>
+              <button data-go="btn-long-run" title="A big job planned as milestones, left to work on its own"><span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Long runs</button>
+              <button data-go="btn-compare" title="Send one message to several agents and compare what they do"><span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h6v14H4zM14 5h6v14h-6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Compare agents</button>
+            </nav>
             <div id="history-list"></div>
           </section>
+          <!-- Desk only: who you're signed in as, your plan limits and updates, in place of the status bar. -->
+          <div id="desk-account"></div>
         </aside>
         <div class="resizer" data-resize="sidebar"></div>
 
